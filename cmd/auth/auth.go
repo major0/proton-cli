@@ -6,9 +6,9 @@ import (
 )
 
 var authCmd = &cobra.Command{
-	Use:   "auth [options] <command>",
-	Short: "authenticate with ProtonDrive",
-	Long:  `authenticate with ProtonDrive`,
+	Use:   "auth",
+	Short: "Manage user authentication with ProtonDrive",
+	Long:  "Manage user authentication with ProtonDrive",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
@@ -16,6 +16,4 @@ var authCmd = &cobra.Command{
 
 func init() {
 	pdcli.RootCmd.AddCommand(authCmd)
-	authCmd.Flags().BoolP("help", "h", false, "Help for pdcli")
-	authCmd.Flags().Lookup("help").Hidden = true
 }
