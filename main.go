@@ -2,7 +2,7 @@ package main
 
 import (
   "github.com/major0/protondrive-cli/cmd"
-  //_ "github.com/major0/protondrive-cli/cmd/auth"
+  _ "github.com/major0/protondrive-cli/cmd/auth"
   //_ "github.com/major0/protondrive-cli/cmd/copy"
   //_ "github.com/major0/protondrive-cli/cmd/find"
   //_ "github.com/major0/protondrive-cli/cmd/mkdir"
