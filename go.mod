@@ -1,4 +1,4 @@
-module github.com/major0/protondrive-cli
+module github.com/major0/proton-cli
 
 go 1.23.4
 

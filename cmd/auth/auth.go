@@ -1,7 +1,7 @@
 package authCmd
 
 import (
-	"github.com/major0/protondrive-cli/cmd"
+	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -15,5 +15,5 @@ var authCmd = &cobra.Command{
 }
 
 func init() {
-	pdcli.RootCmd.AddCommand(authCmd)
+	cli.RootCmd.AddCommand(authCmd)
 }

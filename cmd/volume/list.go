@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
 	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/protondrive-cli/cmd"
+	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +18,7 @@ var VolumeListCmd = &cobra.Command{
 	Long:  "List volumes",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		volumes, err := pdcli.Client.ListVolumes(ctx)
+		volumes, err := cli.Client.ListVolumes(ctx)
 		if err != nil {
 			return err
 		}

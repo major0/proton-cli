@@ -1,10 +1,10 @@
 package authCmd
 
 import (
-	  "context"
+	"context"
 	"fmt"
 
-	"github.com/major0/protondrive-cli/cmd"
+	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -13,11 +13,11 @@ var authInfoCmd = &cobra.Command{
 	Short: "report auth information",
 	Long:  `report information about currently logged in user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if pdcli.Config.Username == "" {
+		if cli.Config.Username == "" {
 			fmt.Println("Not logged in")
 			return nil
 		}
-		user, err := pdcli.Client.GetUser(context.Background())
+		user, err := cli.Client.GetUser(context.Background())
 		if err != nil {
 			return err
 		}

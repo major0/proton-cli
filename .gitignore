@@ -2,7 +2,7 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 # Binaries for programs and plugins
-protondrive-cli
+proton-cli
 *.exe
 *.exe~
 *.dll

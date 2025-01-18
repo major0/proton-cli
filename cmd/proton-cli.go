@@ -1,4 +1,4 @@
-package pdcli
+package cli
 
 import (
 	"context"
@@ -18,7 +18,7 @@ const (
 	configFileName = "protondrive/config.yaml"
 	Version        = "0.0.1"
 	AppVersion     = "Other"
-	UserAgent      = "protondrive-cli" + "/" + Version + " (ProtonDrive CLI v" + Version + ")"
+	UserAgent      = "proton-cli" + "/" + Version + " (ProtonDrive CLI v" + Version + ")"
 )
 
 type SavedConfig struct {
@@ -130,7 +130,7 @@ func init() {
 	// Hide the help flags as it ends up sorted into everything, which is a bit confusing.
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true
-	RootCmd.PersistentFlags().BoolP("help", "h", false, "Help for pdcli")
+	RootCmd.PersistentFlags().BoolP("help", "h", false, "Help for proton-cli")
 	RootCmd.PersistentFlags().Lookup("help").Hidden = true
 }
 

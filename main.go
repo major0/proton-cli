@@ -1,21 +1,17 @@
 package main
 
 import (
-	pdcli "github.com/major0/protondrive-cli/cmd"
-	_ "github.com/major0/protondrive-cli/cmd/auth"
+	cli "github.com/major0/proton-cli/cmd"
+	_ "github.com/major0/proton-cli/cmd/auth"
 
-	//_ "github.com/major0/protondrive-cli/cmd/copy"
-	//_ "github.com/major0/protondrive-cli/cmd/find"
-	//_ "github.com/major0/protondrive-cli/cmd/mkdir"
-	//_ "github.com/major0/protondrive-cli/cmd/move"
-	//_ "github.com/major0/protondrive-cli/cmd/purge"
-	//_ "github.com/major0/protondrive-cli/cmd/rename"
-	//_ "github.com/major0/protondrive-cli/cmd/remove"
-	//_ "github.com/major0/protondrive-cli/cmd/revisions"
-	//_ "github.com/major0/protondrive-cli/cmd/shares"
-	_ "github.com/major0/protondrive-cli/cmd/volume"
+	//_ "github.com/major0/proton-cli/cmd/calendar"
+	//_ "github.com/major0/proton-cli/cmd/drive"
+	//_ "github.com/major0/proton-cli/cmd/mail"
+	//_ "github.com/major0/proton-cli/cmd/pass"
+	_ "github.com/major0/proton-cli/cmd/volume"
+	//_ "github.com/major0/proton-cli/cmd/wallet"
 )
 
 func main() {
-	pdcli.Execute()
+	cli.Execute()
 }

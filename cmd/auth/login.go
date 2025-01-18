@@ -6,8 +6,8 @@ import (
 	"log/slog"
 
 	"github.com/ProtonMail/go-proton-api"
-	pdcli "github.com/major0/protondrive-cli/cmd"
-	"github.com/major0/protondrive-cli/internal"
+	cli "github.com/major0/proton-cli/cmd"
+	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -36,13 +36,13 @@ var authLoginCmd = &cobra.Command{
 		}
 
 		slog.Debug("login", "username", username, "password", password)
-		client, auth, err := pdcli.Manager.NewClientWithLogin(ctx, username, []byte(password))
+		client, auth, err := cli.Manager.NewClientWithLogin(ctx, username, []byte(password))
 		if err != nil {
 			return err
 		}
-		pdcli.Client = client
-		pdcli.Client.AddAuthHandler(pdcli.AuthHandler)
-		pdcli.Client.AddDeauthHandler(pdcli.DeauthHandler)
+		cli.Client = client
+		cli.Client.AddAuthHandler(cli.AuthHandler)
+		cli.Client.AddDeauthHandler(cli.DeauthHandler)
 
 		if auth.TwoFA.Enabled&proton.HasTOTP != 0 {
 			twoFA, _ := cmd.Flags().GetString("2fa")
@@ -60,10 +60,10 @@ var authLoginCmd = &cobra.Command{
 				return err
 			}
 		}
-		pdcli.Config.UID = auth.UID
-		pdcli.Config.Username = username
-		pdcli.Config.AccessToken = auth.AccessToken
-		pdcli.Config.RefreshToken = auth.RefreshToken
+		cli.Config.UID = auth.UID
+		cli.Config.Username = username
+		cli.Config.AccessToken = auth.AccessToken
+		cli.Config.RefreshToken = auth.RefreshToken
 
 		var keypass []byte
 		if auth.PasswordMode == proton.TwoPasswordMode {
@@ -82,8 +82,8 @@ var authLoginCmd = &cobra.Command{
 			return err
 		}
 
-		pdcli.Config.KeyPass = base64.StdEncoding.EncodeToString(keypass)
-		if err := pdcli.SaveConfig(); err != nil {
+		cli.Config.KeyPass = base64.StdEncoding.EncodeToString(keypass)
+		if err := cli.SaveConfig(); err != nil {
 			return err
 		}
 
@@ -100,12 +100,12 @@ func init() {
 }
 
 func getKeypass(ctx context.Context, password []byte) ([]byte, error) {
-	user, err := pdcli.Client.GetUser(ctx)
+	user, err := cli.Client.GetUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	salts, err := pdcli.Client.GetSalts(ctx)
+	salts, err := cli.Client.GetSalts(ctx)
 	if err != nil {
 		return nil, err
 	}
