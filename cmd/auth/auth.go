@@ -10,7 +10,7 @@ var authCmd = &cobra.Command{
 	Short: "Manage user authentication with ProtonDrive",
 	Long:  "Manage user authentication with ProtonDrive",
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		_ = cmd.Help()
 	},
 }
 

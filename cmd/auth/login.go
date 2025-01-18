@@ -43,7 +43,7 @@ var authLoginCmd = &cobra.Command{
 		pdcli.Client.AddAuthHandler(pdcli.AuthHandler)
 		pdcli.Client.AddDeauthHandler(pdcli.DeauthHandler)
 
-		if auth.TwoFA.Enabled & proton.HasTOTP != 0 {
+		if auth.TwoFA.Enabled&proton.HasTOTP != 0 {
 			twoFA, _ := cmd.Flags().GetString("2fa")
 			if twoFA == "" {
 				twoFA, err = pdcli.UserPrompt("2FA code", false)
@@ -82,7 +82,9 @@ var authLoginCmd = &cobra.Command{
 		}
 
 		pdcli.Config.KeyPass = base64.StdEncoding.EncodeToString(keypass)
-		pdcli.SaveConfig()
+		if err := pdcli.SaveConfig(); err != nil {
+			return err
+		}
 
 		return nil
 	},

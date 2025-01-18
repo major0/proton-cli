@@ -11,7 +11,7 @@ var volumeCmd = &cobra.Command{
 	Short: "Manage ProtonDrive volumes",
 	Long:  "Manage ProtonDrive volumes",
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		_ = cmd.Help()
 	},
 }
 

@@ -19,30 +19,30 @@ import (
 
 const (
 	configFileName = "protondrive.yaml"
-	Version = "0.0.1"
-	AppVersion = "Other"
-	UserAgent = "protondrive-cli" + "/" + Version + " (ProtonDrive CLI v" + Version + ")"
+	Version        = "0.0.1"
+	AppVersion     = "Other"
+	UserAgent      = "protondrive-cli" + "/" + Version + " (ProtonDrive CLI v" + Version + ")"
 )
 
 type SavedConfig struct {
-	UID string `yaml:"uid"`
-	Username string `yaml:"username"`
-	AccessToken string `yaml:"access_token"`
+	UID          string `yaml:"uid"`
+	Username     string `yaml:"username"`
+	AccessToken  string `yaml:"access_token"`
 	RefreshToken string `yaml:"refresh_token"`
-	KeyPass string `yaml:"keypass"`
+	KeyPass      string `yaml:"keypass"`
 }
 
-var  (
-	Ctx      = context.Background()
-	Salts   proton.Salts
-	Client  *proton.Client
-	Manager *proton.Manager
-	Config  SavedConfig
-	KeyPass []byte
-	UserKeyRing *crypto.KeyRing
+var (
+	Ctx            = context.Background()
+	Salts          proton.Salts
+	Client         *proton.Client
+	Manager        *proton.Manager
+	Config         SavedConfig
+	KeyPass        []byte
+	UserKeyRing    *crypto.KeyRing
 	AddressKeyRing map[string]*crypto.KeyRing
-	logLevel = new(slog.LevelVar)
-	RootCmd = &cobra.Command{
+	logLevel       = new(slog.LevelVar)
+	RootCmd        = &cobra.Command{
 		Use:   "protondrive [options] <command>",
 		Short: "protondrive is a command line interface for ProtonDrive",
 		Long:  `protondrive is a command line interface for managing and manipulating the ProtonDrive storage solution`,
@@ -115,7 +115,7 @@ var  (
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 		},
 	}
 )
@@ -129,10 +129,10 @@ func init() {
 	slog.SetDefault(logger)
 
 	RootCmd.PersistentFlags().CountP("verbose", "v", "Enable verbose output. Can be specified multiple times to increase verbosity.")
-	
+
 	// Hide the help flags as it ends up sorted into everything, which is a bit confusing.
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
-  RootCmd.SilenceUsage = true
+	RootCmd.SilenceUsage = true
 	RootCmd.PersistentFlags().BoolP("help", "h", false, "Help for pdcli")
 	RootCmd.PersistentFlags().Lookup("help").Hidden = true
 }
@@ -172,14 +172,13 @@ func PurgeConfig() error {
 	return nil
 }
 
-
 func AuthHandler(auth proton.Auth) {
 	// Save the login credentials into our app cache
 	slog.Debug("auth", "uid", auth.UID, "access_token", auth.AccessToken, "refresh_token", auth.RefreshToken)
 	Config.UID = auth.UID
 	Config.AccessToken = auth.AccessToken
 	Config.RefreshToken = auth.RefreshToken
-	SaveConfig()
+	_ = SaveConfig()
 }
 
 func DeauthHandler() {
