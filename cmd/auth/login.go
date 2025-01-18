@@ -5,8 +5,9 @@ import (
 	"encoding/base64"
 	"log/slog"
 
-	"github.com/major0/protondrive-cli/cmd"
 	"github.com/ProtonMail/go-proton-api"
+	pdcli "github.com/major0/protondrive-cli/cmd"
+	"github.com/major0/protondrive-cli/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,7 @@ var authLoginCmd = &cobra.Command{
 
 		username, _ := cmd.Flags().GetString("username")
 		if username == "" {
-			username, err = pdcli.UserPrompt("Username", false)
+			username, err = internal.UserPrompt("Username", false)
 			if err != nil {
 				return err
 			}
@@ -28,7 +29,7 @@ var authLoginCmd = &cobra.Command{
 
 		password, _ := cmd.Flags().GetString("password")
 		if password == "" {
-			password, err = pdcli.UserPrompt("Password", true)
+			password, err = internal.UserPrompt("Password", true)
 			if err != nil {
 				return err
 			}
@@ -46,7 +47,7 @@ var authLoginCmd = &cobra.Command{
 		if auth.TwoFA.Enabled&proton.HasTOTP != 0 {
 			twoFA, _ := cmd.Flags().GetString("2fa")
 			if twoFA == "" {
-				twoFA, err = pdcli.UserPrompt("2FA code", false)
+				twoFA, err = internal.UserPrompt("2FA code", false)
 				if err != nil {
 					return err
 				}
@@ -68,7 +69,7 @@ var authLoginCmd = &cobra.Command{
 		if auth.PasswordMode == proton.TwoPasswordMode {
 			mboxPasswd, _ := cmd.Flags().GetString("mailbox-password")
 			if mboxPasswd == "" {
-				mboxPasswd, err = pdcli.UserPrompt("Mailbox password", true)
+				mboxPasswd, err = internal.UserPrompt("Mailbox password", true)
 				if err != nil {
 					return err
 				}

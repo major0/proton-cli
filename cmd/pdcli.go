@@ -1,19 +1,15 @@
 package pdcli
 
 import (
-	"bufio"
 	"context"
 	"encoding/base64"
-	"fmt"
 	"log/slog"
 	"os"
-	"syscall"
 
-	"github.com/adrg/xdg"
-	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
 
@@ -193,29 +189,3 @@ func Execute() {
 		os.Exit(1)
 	}
 }
-
-func UserPrompt(prompt string, password bool) (string, error) {
-	var err error
-	var input string
-	var bytePasswd []byte
-	reader := bufio.NewReader(os.Stdin)
-
-	for input == "" {
-		fmt.Print(prompt + ": ")
-		if password {
-			bytePasswd, err = term.ReadPassword(int(syscall.Stdin))
-			input = string(bytePasswd)
-			fmt.Println("")
-		} else {
-			input, err = reader.ReadString('\n')
-		}
-
-		if err != nil {
-			return "", err
-		}
-	}
-	slog.Debug("userPrompt", prompt, input)
-	return input, nil
-}
-
-
