@@ -43,4 +43,8 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 )
 
-replace github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.0.0-20250116150400-5238ae2b1651
+replace (
+	github.com/ProtonMail/go-crypto => github.com/ProtonMail/go-crypto v1.1.5-proton
+	github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.0.4-proton-cleanup
+	github.com/ProtonMail/gopenpgp/v2 => github.com/ProtonMail/gopenpgp/v2 v2.8.2-proton
+)
