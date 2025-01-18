@@ -30,6 +30,10 @@ func UserPrompt(prompt string, password bool) (string, error) {
 			return "", err
 		}
 	}
-	slog.Debug("userPrompt", prompt, input)
+	if password {
+		slog.Debug("userPrompt", prompt, "<hidden>")
+	} else {
+		slog.Debug("userPrompt", prompt, input)
+	}
 	return input, nil
 }
