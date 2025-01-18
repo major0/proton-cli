@@ -63,7 +63,7 @@ var (
 			}
 			Manager = proton.New(opts...)
 
-			configFilePath, _ := xdg.SearchConfigFile("protondrive.yaml")
+			configFilePath, _ := xdg.SearchCacheFile(configFileName)
 			if configFilePath != "" {
 				slog.Debug("config", "path", configFilePath)
 				configFile, err := os.ReadFile(configFilePath)
@@ -139,7 +139,7 @@ func SaveConfig() error {
 		return err
 	}
 
-	configFilePath, err := xdg.ConfigFile(configFileName)
+	configFilePath, err := xdg.CacheFile(configFileName)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func SaveConfig() error {
 }
 
 func PurgeConfig() error {
-	configFilePath, _ := xdg.SearchConfigFile(configFileName)
+	configFilePath, _ := xdg.SearchCacheFile(configFileName)
 
 	if configFilePath != "" {
 		return os.Remove(configFilePath)
