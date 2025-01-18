@@ -12,7 +12,7 @@ import (
   //_ "github.com/major0/protondrive-cli/cmd/remove"
   //_ "github.com/major0/protondrive-cli/cmd/revisions"
   //_ "github.com/major0/protondrive-cli/cmd/shares"
-  //_ "github.com/major0/protondrive-cli/cmd/volumes"
+  _ "github.com/major0/protondrive-cli/cmd/volume"
 )
 
 func main() {

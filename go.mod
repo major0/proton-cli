@@ -6,6 +6,8 @@ require (
 	github.com/ProtonMail/go-proton-api v0.4.0
 	github.com/ProtonMail/gopenpgp/v2 v2.8.2
 	github.com/adrg/xdg v0.5.3
+	github.com/docker/go-units v0.5.0
+	github.com/jedib0t/go-pretty/v6 v6.6.5
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/term v0.28.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -27,7 +29,9 @@ require (
 	github.com/go-resty/resty/v2 v2.16.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	gitlab.com/c0b/go-ordered-json v0.0.0-20201030195603-febf46534d5a // indirect
