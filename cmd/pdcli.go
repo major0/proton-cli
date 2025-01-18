@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	configFileName = "protondrive.yaml"
+	cacheFileName  = "protondrive/cache.yaml"
+	configFileName = "protondrive/config.yaml"
 	Version        = "0.0.1"
 	AppVersion     = "Other"
 	UserAgent      = "protondrive-cli" + "/" + Version + " (ProtonDrive CLI v" + Version + ")"
@@ -63,7 +64,7 @@ var (
 			}
 			Manager = proton.New(opts...)
 
-			configFilePath, _ := xdg.SearchCacheFile(configFileName)
+			configFilePath, _ := xdg.SearchCacheFile(cacheFileName)
 			if configFilePath != "" {
 				slog.Debug("config", "path", configFilePath)
 				configFile, err := os.ReadFile(configFilePath)
@@ -88,24 +89,24 @@ var (
 				Client = Manager.NewClient(Config.UID, Config.AccessToken, Config.RefreshToken)
 				Client.AddAuthHandler(AuthHandler)
 				Client.AddDeauthHandler(DeauthHandler)
-			}
 
-			slog.Debug("GetUser")
-			user, err := Client.GetUser(Ctx)
-			if err != nil {
-				return err
-			}
+				slog.Debug("GetUser")
+				user, err := Client.GetUser(Ctx)
+				if err != nil {
+					return err
+				}
 
-			slog.Debug("GetAddresses")
-			addrs, err := Client.GetAddresses(Ctx)
-			if err != nil {
-				return err
-			}
+				slog.Debug("GetAddresses")
+				addrs, err := Client.GetAddresses(Ctx)
+				if err != nil {
+					return err
+				}
 
-			slog.Debug("Unlock")
-			UserKeyRing, AddressKeyRing, err = proton.Unlock(user, addrs, KeyPass, nil)
-			if err != nil {
-				return err
+				slog.Debug("Unlock")
+				UserKeyRing, AddressKeyRing, err = proton.Unlock(user, addrs, KeyPass, nil)
+				if err != nil {
+					return err
+				}
 			}
 
 			return nil
@@ -139,7 +140,7 @@ func SaveConfig() error {
 		return err
 	}
 
-	configFilePath, err := xdg.CacheFile(configFileName)
+	configFilePath, err := xdg.CacheFile(cacheFileName)
 	if err != nil {
 		return err
 	}
@@ -159,7 +160,7 @@ func SaveConfig() error {
 }
 
 func PurgeConfig() error {
-	configFilePath, _ := xdg.SearchCacheFile(configFileName)
+	configFilePath, _ := xdg.SearchCacheFile(cacheFileName)
 
 	if configFilePath != "" {
 		return os.Remove(configFilePath)
