@@ -8,9 +8,9 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/docker/go-units v0.5.0
 	github.com/jedib0t/go-pretty/v6 v6.6.5
+	github.com/miteshbsjat/textfilekv v1.1.1
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/term v0.28.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -34,6 +34,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/stretchr/testify v1.10.0 // indirect
 	gitlab.com/c0b/go-ordered-json v0.0.0-20201030195603-febf46534d5a // indirect
 	golang.org/x/crypto v0.32.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
@@ -41,6 +42,7 @@ require (
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
+	google.golang.org/protobuf v1.36.3 // indirect
 )
 
 replace (

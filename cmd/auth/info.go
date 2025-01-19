@@ -13,11 +13,17 @@ var authInfoCmd = &cobra.Command{
 	Short: "report auth information",
 	Long:  `report information about currently logged in user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if cli.Config.Username == "" {
+		session, err := cli.SessionRestore()
+		if err != nil {
+			return err
+		}
+
+		if session == nil {
 			fmt.Println("Not logged in")
 			return nil
 		}
-		user, err := cli.Client.GetUser(context.Background())
+
+		user, err := session.Client.GetUser(context.Background())
 		if err != nil {
 			return err
 		}

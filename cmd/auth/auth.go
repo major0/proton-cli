@@ -15,5 +15,5 @@ var authCmd = &cobra.Command{
 }
 
 func init() {
-	cli.RootCmd.AddCommand(authCmd)
+	cli.AddCommand(authCmd)
 }

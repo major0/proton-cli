@@ -15,5 +15,5 @@ var driveCmd = &cobra.Command{
 }
 
 func init() {
-	cli.RootCmd.AddCommand(driveCmd)
+	cli.AddCommand(driveCmd)
 }

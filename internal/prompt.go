@@ -31,9 +31,9 @@ func UserPrompt(prompt string, password bool) (string, error) {
 		}
 	}
 	if password {
-		slog.Debug("userPrompt", prompt, "<hidden>")
+		slog.Debug("UserPrompt", prompt, "<hidden>")
 	} else {
-		slog.Debug("userPrompt", prompt, input)
+		slog.Debug("UserPrompt", prompt, input)
 	}
 	return input, nil
 }
