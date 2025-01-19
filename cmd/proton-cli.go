@@ -165,7 +165,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&rootParams.account, "account", "a", "default", "Nickname of the account to use. This can be any string the user desires.")
 	rootCmd.PersistentFlags().StringVar(&rootParams.configFile, "config-file", "", "Config file to use. Defaults to value XDG_CONFIG_FILE")
 	rootCmd.PersistentFlags().StringVar(&rootParams.sessionFile, "session-file", "", "Session file to use. Defaults to value XDG_CACHE_FILE")
-	rootCmd.PersistentFlags().DurationVarP(&rootParams.timeout, "timeout", "t", 60, "Timeout for requests. Defaults to 60 seconds.")
+	rootCmd.PersistentFlags().DurationVarP(&rootParams.timeout, "timeout", "t", 60*time.Second, "Timeout for requests.")
 
 	// Hide the help flags as it ends up sorted into everything, which is a bit confusing.
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
