@@ -8,6 +8,7 @@ import (
 	//_ "github.com/major0/proton-cli/cmd/drive"
 	//_ "github.com/major0/proton-cli/cmd/mail"
 	//_ "github.com/major0/proton-cli/cmd/pass"
+	_ "github.com/major0/proton-cli/cmd/share"
 	_ "github.com/major0/proton-cli/cmd/volume"
 	//_ "github.com/major0/proton-cli/cmd/wallet"
 )
