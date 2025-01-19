@@ -121,6 +121,15 @@ func Execute() {
 	}
 }
 
+func GetAccounts() ([]string, error) {
+	accounts := internal.NewFileCache(rootParams.sessionFile)
+	keys, err := accounts.Keys()
+	if err != nil {
+		return nil, err
+	}
+	return keys, err
+}
+
 func GetKeyPass() ([]byte, error) {
 	if sessionConfig.SaltedKeyPass == "" {
 		return nil, nil

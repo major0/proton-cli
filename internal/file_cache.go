@@ -29,6 +29,23 @@ func NewFileCache(filename string) *FileCache {
 	}
 }
 
+func (sc *FileCache) Keys() ([]string, error) {
+	sessionCachePath, err := xdg.CacheFile(sc.Filename)
+	if err != nil {
+		return nil, err
+	}
+	if sessionCachePath == "" {
+		return nil, nil
+	}
+
+	kvs, err := tkv.NewKeyValueStore(sessionCachePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return kvs.Keys(), nil
+}
+
 func (sc *FileCache) Get(key string) ([]byte, error) {
 	sessionCachePath, err := xdg.CacheFile(sc.Filename)
 	if err != nil {
