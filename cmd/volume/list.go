@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var VolumeListCmd = &cobra.Command{
+var volumeListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List volumes",
 	Long:  "List volumes",
@@ -63,5 +63,5 @@ func getVolState(state proton.VolumeState) string {
 }
 
 func init() {
-	volumeCmd.AddCommand(VolumeListCmd)
+	volumeCmd.AddCommand(volumeListCmd)
 }
