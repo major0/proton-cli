@@ -1,12 +1,12 @@
-package authCmd
+package accountCmd
 
 import (
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
-var authCmd = &cobra.Command{
-	Use:   "auth",
+var accountCmd = &cobra.Command{
+	Use:   "account",
 	Short: "Manage user authentication with ProtonDrive",
 	Long:  "Manage user authentication with ProtonDrive",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -15,5 +15,5 @@ var authCmd = &cobra.Command{
 }
 
 func init() {
-	cli.AddCommand(authCmd)
+	cli.AddCommand(accountCmd)
 }

@@ -1,4 +1,4 @@
-package authCmd
+package accountCmd
 
 import (
 	cli "github.com/major0/proton-cli/cmd"
@@ -21,6 +21,6 @@ var authLogoutCmd = &cobra.Command{
 }
 
 func init() {
-	authCmd.AddCommand(authLogoutCmd)
+	accountCmd.AddCommand(authLogoutCmd)
 	authLogoutCmd.Flags().BoolVarP(&authLogoutForce, "force", "f", false, "Force logout of ProtonDrive")
 }

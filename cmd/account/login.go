@@ -1,4 +1,4 @@
-package authCmd
+package accountCmd
 
 import (
 	cli "github.com/major0/proton-cli/cmd"
@@ -23,7 +23,7 @@ var authLoginCmd = &cobra.Command{
 }
 
 func init() {
-	authCmd.AddCommand(authLoginCmd)
+	accountCmd.AddCommand(authLoginCmd)
 	authLoginCmd.Flags().StringVarP(&authLoginParams.username, "username", "u", "", "Proton username")
 	authLoginCmd.Flags().StringVarP(&authLoginParams.password, "password", "p", "", "Proton password")
 	authLoginCmd.Flags().StringVarP(&authLoginParams.mboxpass, "mboxpass", "m", "", "Required of 2 password mode is enabled.")

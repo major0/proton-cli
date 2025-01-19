@@ -1,4 +1,4 @@
-package authCmd
+package accountCmd
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var authInfoCmd = &cobra.Command{
+var accountInfoCmd = &cobra.Command{
 	Use:   "info",
-	Short: "report auth information",
+	Short: "report account information",
 	Long:  `report information about currently logged in user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		session, err := cli.SessionRestore()
@@ -38,5 +38,5 @@ var authInfoCmd = &cobra.Command{
 }
 
 func init() {
-	authCmd.AddCommand(authInfoCmd)
+	accountCmd.AddCommand(accountInfoCmd)
 }

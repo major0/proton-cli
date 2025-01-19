@@ -2,7 +2,7 @@ package main
 
 import (
 	cli "github.com/major0/proton-cli/cmd"
-	_ "github.com/major0/proton-cli/cmd/auth"
+	_ "github.com/major0/proton-cli/cmd/account"
 
 	//_ "github.com/major0/proton-cli/cmd/calendar"
 	//_ "github.com/major0/proton-cli/cmd/drive"

@@ -12,6 +12,10 @@ This tool is a basic CLI wrapper around the [go-proton-api][] library. While it
 is intended to be useful in and of itself, it is also intended to act as a an
 example of interacting with the [Proton][] API.
 
+## Features
+
+- Multiple accounts
+
 ## Installation
 
 Run `go install` and copy the compiled binary into your `$PATH`.
