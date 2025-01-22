@@ -6,6 +6,7 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 )
 
+// Salt the provided keypass. The salted keypass is used to Unlock() the account.
 func SaltKeyPass(ctx context.Context, client *proton.Client, password []byte) ([]byte, error) {
 	user, err := client.GetUser(ctx)
 	if err != nil {

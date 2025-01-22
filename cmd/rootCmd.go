@@ -12,6 +12,10 @@ import (
 )
 
 var (
+	Timeout time.Duration
+
+	// Private variables below this point
+
 	logLevel = new(slog.LevelVar)
 
 	// Handles loading/saving session data
@@ -21,8 +25,6 @@ var (
 		proton.WithAppVersion(AppVersion),
 		proton.WithUserAgent(UserAgent),
 	}
-
-	Timeout time.Duration
 
 	// rootCmd parameter store. Only the results of Flags and our preRun
 	// flag cleanups should be stored here.
@@ -75,6 +77,7 @@ func AddCommand(cmd *cobra.Command) {
 	rootCmd.AddCommand(cmd)
 }
 
+// Needed for the main() entrypoint
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {

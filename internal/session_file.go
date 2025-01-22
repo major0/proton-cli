@@ -9,23 +9,21 @@ import (
 	tkv "github.com/miteshbsjat/textfilekv"
 )
 
-/*
-The SessionStore is used to cache the session information. This allows
-* a session to be restarted inbetween commands without having to login
-* with a username and password.
-*
-* FIXME While using a local file store is fine during development, it is
-* not a very viable long-term solution for production use. Various
-* solutions exist for securely storing secrets that will handle automatic
-* interaction with the user. OSX even supports such a solution for the
-* entire platform.
-
-* In the long run we should see about supporting the default local secrets
-* store for whatever platform we're running on, while also allowing the user
-* to configure their own secrets agent.
-*
-* Ref: https://github.com/keybase/go-keychain
-*/
+/* The SessionStore is used to cache the session information. This allows
+ * a session to be restarted inbetween commands without having to login
+ * with a username and password.
+ *
+ * FIXME While using a local file store is fine during development, it is
+ * not a very viable long-term solution for production use. Various
+ * solutions exist for securely storing secrets that will handle automatic
+ * interaction with the user. OSX even supports such a solution for the
+ * entire platform.
+ *
+ * In the long run we should see about supporting the default local secrets
+ * store for whatever platform we're running on, while also allowing the user
+ * to configure their own secrets agent.
+ *
+ * Ref: https://github.com/keybase/go-keychain */
 type FileStore struct {
 	accountName string
 	fileName    string

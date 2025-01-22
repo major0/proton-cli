@@ -9,6 +9,11 @@ import (
 	common "github.com/major0/proton-cli/proton"
 )
 
+/* Handle restoring/restarting a session from stored credentials. This is
+ * managed at the root of the CLI since the root also defines the
+ * credential store as well as the current account/session name to load
+ * from the store. Generally this means that subcmds simply need to call
+ * SessionRestore() to get a session and then start making API calls. */
 func SessionRestore() (*common.Session, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), rootParams.Timeout)
 	defer cancel()
@@ -52,6 +57,13 @@ func SessionRestore() (*common.Session, error) {
 	return session, nil
 }
 
+/* Handle creating a new session from the username and password. This is
+ * generally only called by `account login`, but it is defined here due to
+ * the need to access the sessionStore and the current accountName we are
+ * logging into.
+ * While the returned session is fully operational, the CLI is tooled in
+ * such a way as to limit logins to the `account login` sub-command. All
+ * other commands are expected to use SessionRestore(). */
 func SessionLogin(username string, password string, mboxpass string, twoFA string) (*common.Session, error) {
 	var err error
 
@@ -128,6 +140,9 @@ func SessionLogin(username string, password string, mboxpass string, twoFA strin
 	return session, err
 }
 
+/* Revoke a session from a session store. This method expects that the CLI
+ * has a valid session established already. Either via SessionRestore() or
+ * SessionLogin() */
 func SessionRevoke(session *common.Session, force bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), rootParams.Timeout)
 	defer cancel()
@@ -141,6 +156,7 @@ func SessionRevoke(session *common.Session, force bool) error {
 	return sessionStore.Delete()
 }
 
+/* Return a list of sessions stored in the session store */
 func SessionList() ([]string, error) {
 	return sessionStore.List()
 }

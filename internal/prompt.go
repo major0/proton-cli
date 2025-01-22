@@ -10,6 +10,8 @@ import (
 	"golang.org/x/term"
 )
 
+/* Prompt user for inputs. If `password` is true then the method will
+ * disable echo'ing the password to the terminal. */
 func UserPrompt(prompt string, password bool) (string, error) {
 	var err error
 	var input string
