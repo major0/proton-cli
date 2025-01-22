@@ -1,6 +1,7 @@
 package volumeCmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -12,16 +13,20 @@ import (
 )
 
 var volumeListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List volumes",
-	Long:  "List volumes",
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List volumes",
+	Long:    "List volumes",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		session, err := cli.SessionRestore()
 		if err != nil {
 			return err
 		}
 
-		volumes, err := session.Client.ListVolumes(cli.Ctx)
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+
+		volumes, err := session.Client.ListVolumes(ctx)
 		if err != nil {
 			return err
 		}

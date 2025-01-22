@@ -2,60 +2,36 @@ package proton
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 
 	p "github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 )
 
-/* The SessionConfig is the minimum data required for restarting a
- * session later. With the exception of the SaltedKeyPass, all of this
- * data is returned by the Client.Login() call, w/ the SaltedKeyPass
- * being a salt of the password+UID.
- *
- * After a succesful login there is a small time window in which the
- * application must call proton.Unlock() to unlock the account.
- * Failure to do so will timeout the authentication process and a new
- * login session will need to be established.
- *
- * WARNING: This information is sensitive and should not be stored in the
- *          clear text anywhere!
- *          See: https://github.com/major0/proton-cli/issues/7 */
-type SessionConfig struct {
-	UID           string `json:"uid"`
-	AccessToken   string `json:"access_token"`
-	RefreshToken  string `json:"refresh_token"`
-	SaltedKeyPass string `json:"saltedkeypass"`
-}
-
-var (
-	ErrorMissingUID          = errors.New("missing UID")
-	ErrorMissingAccessToken  = errors.New("missing access token")
-	ErrorMissingRefreshToken = errors.New("missing refresh token")
-)
-
 type Session struct {
-	Client         *p.Client
-	User           p.User
-	UserKeyRing    *crypto.KeyRing
+	Client *p.Client
+	Auth   p.Auth
+
 	Address        []p.Address
 	AddressKeyRing map[string]*crypto.KeyRing
+	manager        *p.Manager
+	User           p.User
+	UserKeyRing    *crypto.KeyRing
 }
 
-func SessionFromConfig(ctx context.Context, manager *p.Manager, config *SessionConfig) (*Session, error) {
+func SessionFromCredentials(ctx context.Context, options []p.Option, creds *SessionCredentials) (*Session, error) {
 	var err error
 
 	// Initialize the client from our cahced credentials
-	if config.UID == "" {
+	if creds.UID == "" {
 		return nil, ErrorMissingUID
 	}
 
-	if config.AccessToken == "" {
+	if creds.AccessToken == "" {
 		return nil, ErrorMissingAccessToken
 	}
 
-	if config.RefreshToken == "" {
+	if creds.RefreshToken == "" {
 		return nil, ErrorMissingRefreshToken
 	}
 
@@ -63,8 +39,10 @@ func SessionFromConfig(ctx context.Context, manager *p.Manager, config *SessionC
 
 	slog.Debug("refresh client")
 
-	slog.Debug("config", "uid", config.UID, "access_token", config.AccessToken, "refresh_token", config.RefreshToken)
-	session.Client = manager.NewClient(config.UID, config.AccessToken, config.RefreshToken)
+	session.manager = p.New(options...)
+
+	slog.Debug("config", "uid", creds.UID, "access_token", creds.AccessToken, "refresh_token", creds.RefreshToken)
+	session.Client = session.manager.NewClient(creds.UID, creds.AccessToken, creds.RefreshToken)
 
 	slog.Debug("GetUser")
 	session.User, err = session.Client.GetUser(ctx)
@@ -79,4 +57,39 @@ func SessionFromConfig(ctx context.Context, manager *p.Manager, config *SessionC
 	}
 
 	return &session, nil
+}
+
+func SessionFromLogin(ctx context.Context, options []p.Option, username string, password string) (*Session, error) {
+	var err error
+	session := &Session{}
+	session.manager = p.New(options...)
+	slog.Debug("login", "username", username, "password", "<hidden>")
+	session.Client, session.Auth, err = session.manager.NewClientWithLogin(ctx, username, []byte(password))
+	if err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+func (s *Session) Unlock(keypass string) error {
+	var err error
+	s.UserKeyRing, s.AddressKeyRing, err = p.Unlock(s.User, s.Address, []byte(keypass), nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Session) AddAuthHandler(handler p.AuthHandler) {
+	s.Client.AddAuthHandler(handler)
+}
+
+func (s *Session) AddDeauthHandler(handler p.Handler) {
+	s.Client.AddDeauthHandler(handler)
+}
+
+func (s *Session) Stop() {
+	s.manager.Close()
 }

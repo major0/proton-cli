@@ -1,6 +1,7 @@
 package shareCmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -20,7 +21,10 @@ var shareListCmd = &cobra.Command{
 			return err
 		}
 
-		shares, err := session.Client.ListShares(cli.Ctx, true)
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+
+		shares, err := session.Client.ListShares(ctx, true)
 		if err != nil {
 			return err
 		}
