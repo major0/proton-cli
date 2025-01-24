@@ -1,6 +1,6 @@
 package cli
 
-// Application constants unique to proton-cli 
+// Application constants unique to proton-cli
 const (
 	cacheFileName  = "protondrive/cache.yaml"
 	configFileName = "protondrive/config.yaml"

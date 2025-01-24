@@ -4,26 +4,26 @@ import (
 	"context"
 	"log/slog"
 
-	p "github.com/ProtonMail/go-proton-api"
+	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 )
 
 type Session struct {
-	Client *p.Client
-	Auth   p.Auth
-	manager        *p.Manager
+	Client  *proton.Client
+	Auth    proton.Auth
+	manager *proton.Manager
 
-	address        []p.Address
+	address        []proton.Address
 	AddressKeyRing map[string]*crypto.KeyRing
 
-	user           p.User
-	UserKeyRing    *crypto.KeyRing
+	user        proton.User
+	UserKeyRing *crypto.KeyRing
 }
 
 /* Initialize a new session frmo the provided credentials. The session is
  * not fully usable until it has been Unlock()'ed using the user-provided
  * keypass */
-func SessionFromCredentials(ctx context.Context, options []p.Option, creds *SessionCredentials) (*Session, error) {
+func SessionFromCredentials(ctx context.Context, options []proton.Option, creds *SessionCredentials) (*Session, error) {
 	var err error
 
 	// Initialize the client from our cahced credentials
@@ -43,7 +43,7 @@ func SessionFromCredentials(ctx context.Context, options []p.Option, creds *Sess
 
 	slog.Debug("refresh client")
 
-	session.manager = p.New(options...)
+	session.manager = proton.New(options...)
 
 	slog.Debug("config", "uid", creds.UID, "access_token", creds.AccessToken, "refresh_token", creds.RefreshToken)
 	session.Client = session.manager.NewClient(creds.UID, creds.AccessToken, creds.RefreshToken)
@@ -68,10 +68,10 @@ func SessionFromCredentials(ctx context.Context, options []p.Option, creds *Sess
  * Once all authentication challenges have been met, the session will still
  * need to be Unlock()'ed to gain access to the User and Address
  * keyrings. */
-func SessionFromLogin(ctx context.Context, options []p.Option, username string, password string) (*Session, error) {
+func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string) (*Session, error) {
 	var err error
 	session := &Session{}
-	session.manager = p.New(options...)
+	session.manager = proton.New(options...)
 	slog.Debug("login", "username", username, "password", "<hidden>")
 	session.Client, session.Auth, err = session.manager.NewClientWithLogin(ctx, username, []byte(password))
 	if err != nil {
@@ -85,7 +85,7 @@ func SessionFromLogin(ctx context.Context, options []p.Option, username string, 
  * with alternate addresses. */
 func (s *Session) Unlock(keypass string) error {
 	var err error
-	s.UserKeyRing, s.AddressKeyRing, err = p.Unlock(s.user, s.address, []byte(keypass), nil)
+	s.UserKeyRing, s.AddressKeyRing, err = proton.Unlock(s.user, s.address, []byte(keypass), nil)
 	if err != nil {
 		return err
 	}
@@ -93,11 +93,11 @@ func (s *Session) Unlock(keypass string) error {
 	return nil
 }
 
-func (s *Session) AddAuthHandler(handler p.AuthHandler) {
+func (s *Session) AddAuthHandler(handler proton.AuthHandler) {
 	s.Client.AddAuthHandler(handler)
 }
 
-func (s *Session) AddDeauthHandler(handler p.Handler) {
+func (s *Session) AddDeauthHandler(handler proton.Handler) {
 	s.Client.AddDeauthHandler(handler)
 }
 
