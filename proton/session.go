@@ -3,6 +3,7 @@ package proton
 import (
 	"context"
 	"log/slog"
+	"sync"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
@@ -13,7 +14,8 @@ type Session struct {
 	Auth    proton.Auth
 	manager *proton.Manager
 
-	address        []proton.Address
+	maxWorkers     int
+	addresses      map[string]proton.Address
 	AddressKeyRing map[string]*crypto.KeyRing
 
 	user        proton.User
@@ -55,9 +57,15 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 	}
 
 	slog.Debug("GetAddresses")
-	session.address, err = session.Client.GetAddresses(ctx)
+
+	addrs, err := session.Client.GetAddresses(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	session.addresses = make(map[string]proton.Address)
+	for _, addr := range addrs {
+		session.addresses[addr.Email] = addr
 	}
 
 	return &session, nil
@@ -85,7 +93,13 @@ func SessionFromLogin(ctx context.Context, options []proton.Option, username str
  * with alternate addresses. */
 func (s *Session) Unlock(keypass string) error {
 	var err error
-	s.UserKeyRing, s.AddressKeyRing, err = proton.Unlock(s.user, s.address, []byte(keypass), nil)
+
+	var addresses []proton.Address
+	for _, addr := range s.addresses {
+		addresses = append(addresses, addr)
+	}
+
+	s.UserKeyRing, s.AddressKeyRing, err = proton.Unlock(s.user, addresses, []byte(keypass), nil)
 	if err != nil {
 		return err
 	}
@@ -103,4 +117,253 @@ func (s *Session) AddDeauthHandler(handler proton.Handler) {
 
 func (s *Session) Stop() {
 	s.manager.Close()
+}
+
+func (s *Session) ListVolumes(ctx context.Context) ([]Volume, error) {
+	pVolumes, err := s.Client.ListVolumes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	volumes := make([]Volume, 0, len(pVolumes))
+	for i := range pVolumes {
+		volumes[i] = Volume{pVolume: pVolumes[i], session: s}
+	}
+
+	return volumes, nil
+}
+
+func (s *Session) GetVolume(ctx context.Context, id string) (Volume, error) {
+	pVolume, err := s.Client.GetVolume(ctx, id)
+	if err != nil {
+		return Volume{}, err
+	}
+
+	return Volume{pVolume: pVolume, session: s}, nil
+}
+
+func (s *Session) ListSharesMetadata(ctx context.Context, all bool) ([]ShareMetadata, error) {
+	pShares, err := s.Client.ListShares(ctx, all)
+	if err != nil {
+		return nil, err
+	}
+
+	shares := make([]ShareMetadata, len(pShares))
+	for i := range pShares {
+		shares[i] = ShareMetadata(pShares[i])
+	}
+	return shares, nil
+}
+
+func (s *Session) GetShareMetadata(ctx context.Context, id string) (ShareMetadata, error) {
+	shares, err := s.Client.ListShares(ctx, true)
+	if err != nil {
+		return ShareMetadata{}, err
+	}
+
+	for _, share := range shares {
+		if share.ShareID == id {
+			return ShareMetadata(share), nil
+		}
+	}
+
+	return ShareMetadata{}, nil
+}
+
+func (s *Session) ListShares(ctx context.Context, all bool) ([]Share, error) {
+	return s.listShares(ctx, "", all)
+}
+
+func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]Share, error) {
+	pshares, err := s.Client.ListShares(ctx, all)
+	if err != nil {
+		return nil, err
+	}
+
+	var wg sync.WaitGroup
+	idQueue := make(chan string)
+	shareQueue := make(chan Share)
+	for i := 0; i < min(s.maxWorkers, len(pshares)); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				id, ok := <-idQueue
+				if !ok {
+					return
+				}
+				share, err := s.GetShare(ctx, id)
+				if err != nil {
+					slog.Error("getting share", "id", id, "error", err)
+				}
+				shareQueue <- share
+			}
+		}()
+	}
+
+	/* Spawn a producer to feed the idQueue as fast as the workers can
+	 * consume it. */
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for _, s := range pshares {
+			if volumeID != "" && volumeID == s.VolumeID {
+				idQueue <- s.ShareID
+			}
+		}
+		/* Let the workers know there is nothing more to be written to the
+		 * queue */
+		close(idQueue)
+	}()
+
+	/* Spawn a go routine that waits for all the workers to be
+	 * finished and then closes the shareQueue. This acts to signal
+	 * the main thread that all the workers are done. Until then the
+	 * main thread can `select` the shareQueue appending shares to an
+	 * array. */
+	go func() {
+		wg.Wait()
+		close(shareQueue)
+	}()
+
+	var shares []Share
+	for {
+		share, ok := <-shareQueue
+		if !ok {
+			slog.Debug("ListShares", "workers", "done")
+			for s := range shareQueue {
+				shares = append(shares, s)
+			}
+			break
+
+		}
+		shares = append(shares, share)
+	}
+
+	return shares, nil
+}
+
+func (s *Session) GetShare(ctx context.Context, id string) (Share, error) {
+	pShare, err := s.Client.GetShare(ctx, id)
+	if err != nil {
+		return Share{}, err
+	}
+
+	shareAddrKR := s.AddressKeyRing[pShare.AddressID]
+	shareKR, err := pShare.GetKeyRing(shareAddrKR)
+	if err != nil {
+		return Share{}, err
+	}
+
+	// Do not use s.GetLink() here as it will call s.Client.GetShare()
+	// all over again.
+	pLink, err := s.Client.GetLink(ctx, pShare.ShareID, pShare.LinkID)
+	if err != nil {
+		return Share{}, err
+	}
+
+	name, err := pLink.GetName(shareKR, shareAddrKR)
+	if err != nil {
+		return Share{}, err
+	}
+
+	xattr, err := pLink.GetDecXAttrString(shareKR, shareAddrKR)
+	if err != nil {
+		return Share{}, err
+	}
+
+	link := Link{
+		Name: name,
+
+		Type: &pLink.Type,
+
+		XAttr: xattr,
+
+		Size: &pLink.Size,
+
+		CreateTime:     &pLink.CreateTime,
+		ModifyTime:     &pLink.ModifyTime,
+		ExpirationTime: &pLink.ExpirationTime,
+
+		pLink:   &pLink,
+		session: s,
+	}
+
+	if proton.LinkType(*link.Type) == proton.LinkTypeFile {
+		link.Size = &pLink.FileProperties.ActiveRevision.Size
+		link.ModifyTime = &pLink.FileProperties.ActiveRevision.CreateTime
+	}
+
+	share := Share{
+		session:     s,
+		link:        &link,
+		pShare:      &pShare,
+		shareAddrKR: shareAddrKR,
+		shareKR:     shareKR,
+	}
+
+	return share, nil
+}
+
+func (s *Session) GetLink(ctx context.Context, shareID string, linkID string) (Link, error) {
+	pLink, err := s.Client.GetLink(ctx, shareID, linkID)
+	if err != nil {
+		return Link{}, err
+	}
+
+	var parentAddrKR *crypto.KeyRing
+	if pLink.ParentLinkID == "" {
+		pShare, err := s.Client.GetShare(ctx, shareID)
+		if err != nil {
+			return Link{}, err
+		}
+
+		parentAddrKR = s.AddressKeyRing[pShare.AddressID]
+	} else {
+		parentLink, err := s.Client.GetLink(ctx, shareID, pLink.ParentLinkID)
+		if err != nil {
+			return Link{}, err
+		}
+
+		parentAddrKR = s.AddressKeyRing[parentLink.SignatureEmail]
+	}
+
+	linkAddrKR := s.AddressKeyRing[pLink.SignatureEmail]
+
+	parentKR, err := pLink.GetKeyRing(parentAddrKR, linkAddrKR)
+	if err != nil {
+		return Link{}, err
+	}
+
+	name, err := pLink.GetName(parentKR, linkAddrKR)
+	if err != nil {
+		return Link{}, err
+	}
+
+	xattr, err := pLink.GetDecXAttrString(parentKR, linkAddrKR)
+	if err != nil {
+		return Link{}, err
+	}
+
+	link := Link{
+		Name: name,
+
+		Type: &pLink.Type,
+
+		XAttr: xattr,
+
+		CreateTime:     &pLink.CreateTime,
+		ModifyTime:     &pLink.ModifyTime,
+		ExpirationTime: &pLink.ExpirationTime,
+
+		pLink:   &pLink,
+		session: s,
+	}
+
+	if proton.LinkType(*link.Type) == proton.LinkTypeFile {
+		link.ModifyTime = &pLink.FileProperties.ActiveRevision.CreateTime
+		link.Size = &pLink.FileProperties.ActiveRevision.Size
+	}
+
+	return link, nil
 }
