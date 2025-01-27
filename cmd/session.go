@@ -147,9 +147,15 @@ func SessionRevoke(session *common.Session, force bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), rootParams.Timeout)
 	defer cancel()
 
-	err := session.Client.AuthRevoke(ctx, session.Auth.UID)
-	if err != nil && !force {
-		return err
+	if session != nil {
+		slog.Debug("SessionRevoke", "uid", session.Auth.UID)
+		err := session.Client.AuthRevoke(ctx, session.Auth.UID)
+		if err != nil {
+			if !force {
+				return err
+			}
+			slog.Any("error", err)
+		}
 	}
 
 	sessionStore := internal.NewFileStore(rootParams.SessionFile, rootParams.Account)
