@@ -14,7 +14,7 @@ type Link struct {
 
 	Type *proton.LinkType
 
-	XAttr string
+	XAttr *proton.RevisionXAttrCommon
 
 	Size *int64
 

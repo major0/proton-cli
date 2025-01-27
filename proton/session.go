@@ -267,9 +267,12 @@ func (s *Session) GetShare(ctx context.Context, id string) (Share, error) {
 		return Share{}, err
 	}
 
-	xattr, err := pLink.GetDecXAttrString(shareKR, shareAddrKR)
-	if err != nil {
-		return Share{}, err
+	var xattr *proton.RevisionXAttrCommon
+	if pLink.Type == proton.LinkTypeFile {
+		xattr, err = pLink.FileProperties.ActiveRevision.GetDecXAttrString(shareKR, shareAddrKR)
+		if err != nil {
+			return Share{}, err
+		}
 	}
 
 	link := Link{
@@ -340,9 +343,12 @@ func (s *Session) GetLink(ctx context.Context, shareID string, linkID string) (L
 		return Link{}, err
 	}
 
-	xattr, err := pLink.GetDecXAttrString(parentKR, linkAddrKR)
-	if err != nil {
-		return Link{}, err
+	var xattr *proton.RevisionXAttrCommon
+	if pLink.Type == proton.LinkTypeFile {
+		xattr, err = pLink.FileProperties.ActiveRevision.GetDecXAttrString(parentKR, linkAddrKR)
+		if err != nil {
+			return Link{}, err
+		}
 	}
 
 	link := Link{
