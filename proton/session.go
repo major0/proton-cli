@@ -9,12 +9,17 @@ import (
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 )
 
+type SessionOptions struct {
+	MaxWorkers int
+}
+
 type Session struct {
 	Client  *proton.Client
 	Auth    proton.Auth
 	manager *proton.Manager
 
-	maxWorkers     int
+	MaxWorkers int
+
 	addresses      map[string]proton.Address
 	AddressKeyRing map[string]*crypto.KeyRing
 
@@ -42,6 +47,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 	}
 
 	var session Session
+	session.MaxWorkers = 10
 
 	slog.Debug("refresh client")
 
@@ -79,6 +85,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string) (*Session, error) {
 	var err error
 	session := &Session{}
+	session.MaxWorkers = 10
 	session.manager = proton.New(options...)
 	slog.Debug("login", "username", username, "password", "<hidden>")
 	session.Client, session.Auth, err = session.manager.NewClientWithLogin(ctx, username, []byte(password))
@@ -180,23 +187,31 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 		return nil, err
 	}
 
+	slog.Debug("ListShares", "shares", len(pshares))
+	slog.Debug("ListShares", "volumID", volumeID)
+
 	var wg sync.WaitGroup
 	idQueue := make(chan string)
 	shareQueue := make(chan Share)
-	for i := 0; i < min(s.maxWorkers, len(pshares)); i++ {
+	for i := 0; i < min(s.MaxWorkers, len(pshares)); i++ {
 		wg.Add(1)
 		go func() {
+			slog.Debug("starting worker", "id", i)
 			defer wg.Done()
 			for {
 				id, ok := <-idQueue
 				if !ok {
+					slog.Debug("ending worker", "id", i)
 					return
 				}
+
+				slog.Debug("worker", "operation", "get", "ShareID", id)
 				share, err := s.GetShare(ctx, id)
 				if err != nil {
-					slog.Error("getting share", "id", id, "error", err)
+					slog.Error("worker", "shareID", id, "error", err)
 				}
 				shareQueue <- share
+				slog.Debug("worker", "operation", "got", "id", id)
 			}
 		}()
 	}
@@ -205,15 +220,20 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 	 * consume it. */
 	wg.Add(1)
 	go func() {
+		slog.Debug("starting producer")
 		defer wg.Done()
 		for _, s := range pshares {
-			if volumeID != "" && volumeID == s.VolumeID {
-				idQueue <- s.ShareID
+			if volumeID != "" && volumeID != s.VolumeID {
+				slog.Debug("producer", "operation", "skip", "id", s.ShareID)
+				continue
 			}
+			slog.Debug("producer", "operation", "put", "id", s.ShareID)
+			idQueue <- s.ShareID
 		}
 		/* Let the workers know there is nothing more to be written to the
 		 * queue */
 		close(idQueue)
+		slog.Debug("ending producer")
 	}()
 
 	/* Spawn a go routine that waits for all the workers to be
@@ -222,23 +242,27 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 	 * main thread can `select` the shareQueue appending shares to an
 	 * array. */
 	go func() {
+		slog.Debug("ListShares", "sync", "wait")
 		wg.Wait()
 		close(shareQueue)
+		slog.Debug("ListShares", "sync", "done")
 	}()
 
 	var shares []Share
 	for {
 		share, ok := <-shareQueue
 		if !ok {
-			slog.Debug("ListShares", "workers", "done")
 			for s := range shareQueue {
+				slog.Debug("ListShares", "share", s.ProtonShare.ShareID)
 				shares = append(shares, s)
 			}
 			break
-
 		}
+		slog.Debug("ListShares", "share", share.ProtonShare.ShareID)
 		shares = append(shares, share)
 	}
+
+	slog.Debug("ListShares", "workers", "done")
 
 	return shares, nil
 }
@@ -278,29 +302,29 @@ func (s *Session) GetShare(ctx context.Context, id string) (Share, error) {
 	link := Link{
 		Name: name,
 
-		Type: &pLink.Type,
+		Type: pLink.Type,
 
 		XAttr: xattr,
 
-		Size: &pLink.Size,
+		Size: pLink.Size,
 
-		CreateTime:     &pLink.CreateTime,
-		ModifyTime:     &pLink.ModifyTime,
-		ExpirationTime: &pLink.ExpirationTime,
+		CreateTime:     pLink.CreateTime,
+		ModifyTime:     pLink.ModifyTime,
+		ExpirationTime: pLink.ExpirationTime,
 
-		pLink:   &pLink,
-		session: s,
+		ProtonLink: &pLink,
+		session:    s,
 	}
 
-	if proton.LinkType(*link.Type) == proton.LinkTypeFile {
-		link.Size = &pLink.FileProperties.ActiveRevision.Size
-		link.ModifyTime = &pLink.FileProperties.ActiveRevision.CreateTime
+	if proton.LinkType(link.Type) == proton.LinkTypeFile {
+		link.Size = pLink.FileProperties.ActiveRevision.Size
+		link.ModifyTime = pLink.FileProperties.ActiveRevision.CreateTime
 	}
 
 	share := Share{
 		session:     s,
-		link:        &link,
-		pShare:      &pShare,
+		Link:        &link,
+		ProtonShare: &pShare,
 		shareAddrKR: shareAddrKR,
 		shareKR:     shareKR,
 	}
@@ -354,21 +378,21 @@ func (s *Session) GetLink(ctx context.Context, shareID string, linkID string) (L
 	link := Link{
 		Name: name,
 
-		Type: &pLink.Type,
+		Type: pLink.Type,
 
 		XAttr: xattr,
 
-		CreateTime:     &pLink.CreateTime,
-		ModifyTime:     &pLink.ModifyTime,
-		ExpirationTime: &pLink.ExpirationTime,
+		CreateTime:     pLink.CreateTime,
+		ModifyTime:     pLink.ModifyTime,
+		ExpirationTime: pLink.ExpirationTime,
 
-		pLink:   &pLink,
-		session: s,
+		ProtonLink: &pLink,
+		session:    s,
 	}
 
-	if proton.LinkType(*link.Type) == proton.LinkTypeFile {
-		link.ModifyTime = &pLink.FileProperties.ActiveRevision.CreateTime
-		link.Size = &pLink.FileProperties.ActiveRevision.Size
+	if proton.LinkType(link.Type) == proton.LinkTypeFile {
+		link.ModifyTime = pLink.FileProperties.ActiveRevision.CreateTime
+		link.Size = pLink.FileProperties.ActiveRevision.Size
 	}
 
 	return link, nil

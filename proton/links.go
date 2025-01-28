@@ -12,18 +12,18 @@ import (
 type Link struct {
 	Name string
 
-	Type *proton.LinkType
+	Type proton.LinkType
 
 	XAttr *proton.RevisionXAttrCommon
 
-	Size *int64
+	Size int64
 
-	ModifyTime     *int64
-	CreateTime     *int64
-	ExpirationTime *int64
+	ModifyTime     int64
+	CreateTime     int64
+	ExpirationTime int64
 
 	session *Session
 	//volume  *Volume
-	pLink *proton.Link
+	ProtonLink *proton.Link
 	//share   *Share
 }

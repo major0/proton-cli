@@ -59,7 +59,7 @@ func (v *Volume) GetShare(ctx context.Context, id string) (Share, error) {
 		return Share{}, err
 	}
 
-	if share.pShare.VolumeID != v.pVolume.VolumeID {
+	if share.ProtonShare.VolumeID != v.pVolume.VolumeID {
 		return Share{}, nil
 	}
 
