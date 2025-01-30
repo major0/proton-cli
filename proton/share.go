@@ -2,6 +2,7 @@ package proton
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
@@ -10,22 +11,31 @@ import (
 type ShareMetadata proton.ShareMetadata
 
 type Share struct {
-	session     *Session
 	Link        *Link
-	ProtonShare *proton.Share
-
-	shareAddrKR *crypto.KeyRing
-	shareKR     *crypto.KeyRing
+	keyRing     *crypto.KeyRing
+	protonShare *proton.Share
+	session     *Session
 }
 
 func (s *Share) GetName(ctx context.Context) string {
+	slog.Debug("share.GetName")
 	return s.Link.Name
 }
 
-func (s *Share) GetLink(ctx context.Context, id string) (Link, error) {
-	if s.ProtonShare.LinkID == id {
-		return *s.Link, nil
-	}
+func (s *Share) ListChildren(ctx context.Context, all bool) ([]Link, error) {
+	slog.Debug("share.ListChildren", "all", all)
+	return s.Link.ListChildren(ctx, all)
+}
 
-	return s.session.GetLink(ctx, s.ProtonShare.ShareID, id)
+func (s *Share) ResolvePath(ctx context.Context, path string, all bool) (*Link, error) {
+	slog.Debug("share.ResolvePath", "path", path, "all", all)
+	return s.Link.ResolvePath(ctx, path, all)
+}
+
+func (s *Share) getKeyRing() (*crypto.KeyRing, error) {
+	linkKR, ok := s.session.AddressKeyRing[s.protonShare.AddressID]
+	if !ok {
+		return nil, ErrKeyNotFound
+	}
+	return s.protonShare.GetKeyRing(linkKR)
 }

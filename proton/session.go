@@ -3,6 +3,7 @@ package proton
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -49,20 +50,20 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 	var session Session
 	session.MaxWorkers = 10
 
-	slog.Debug("refresh client")
+	slog.Debug("session.refresh client")
 
 	session.manager = proton.New(options...)
 
-	slog.Debug("config", "uid", creds.UID, "access_token", creds.AccessToken, "refresh_token", creds.RefreshToken)
+	slog.Debug("session.config", "uid", creds.UID, "access_token", creds.AccessToken, "refresh_token", creds.RefreshToken)
 	session.Client = session.manager.NewClient(creds.UID, creds.AccessToken, creds.RefreshToken)
 
-	slog.Debug("GetUser")
+	slog.Debug("session.GetUser")
 	session.user, err = session.Client.GetUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	slog.Debug("GetAddresses")
+	slog.Debug("session.GetAddresses")
 
 	addrs, err := session.Client.GetAddresses(ctx)
 	if err != nil {
@@ -87,7 +88,7 @@ func SessionFromLogin(ctx context.Context, options []proton.Option, username str
 	session := &Session{}
 	session.MaxWorkers = 10
 	session.manager = proton.New(options...)
-	slog.Debug("login", "username", username, "password", "<hidden>")
+	slog.Debug("session.login", "username", username, "password", "<hidden>")
 	session.Client, session.Auth, err = session.manager.NewClientWithLogin(ctx, username, []byte(password))
 	if err != nil {
 		return nil, err
@@ -187,31 +188,32 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 		return nil, err
 	}
 
-	slog.Debug("ListShares", "shares", len(pshares))
-	slog.Debug("ListShares", "volumID", volumeID)
+	slog.Debug("session.ListShares", "shares", len(pshares))
+	slog.Debug("session.ListShares", "volumID", volumeID)
 
 	var wg sync.WaitGroup
 	idQueue := make(chan string)
-	shareQueue := make(chan Share)
+	shareQueue := make(chan *Share)
 	for i := 0; i < min(s.MaxWorkers, len(pshares)); i++ {
 		wg.Add(1)
 		go func() {
-			slog.Debug("starting worker", "id", i)
+			//slog.Debug("starting worker", "id", i)
 			defer wg.Done()
 			for {
 				id, ok := <-idQueue
 				if !ok {
-					slog.Debug("ending worker", "id", i)
+					//slog.Debug("ending worker", "id", i)
 					return
 				}
 
-				slog.Debug("worker", "operation", "get", "ShareID", id)
+				//slog.Debug("worker", "operation", "get", "ShareID", id)
 				share, err := s.GetShare(ctx, id)
 				if err != nil {
 					slog.Error("worker", "shareID", id, "error", err)
+					continue
 				}
 				shareQueue <- share
-				slog.Debug("worker", "operation", "got", "id", id)
+				//slog.Debug("worker", "operation", "got", "id", id)
 			}
 		}()
 	}
@@ -220,20 +222,20 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 	 * consume it. */
 	wg.Add(1)
 	go func() {
-		slog.Debug("starting producer")
+		//slog.Debug("starting producer")
 		defer wg.Done()
 		for _, s := range pshares {
 			if volumeID != "" && volumeID != s.VolumeID {
-				slog.Debug("producer", "operation", "skip", "id", s.ShareID)
+				//slog.Debug("producer", "operation", "skip", "id", s.ShareID)
 				continue
 			}
-			slog.Debug("producer", "operation", "put", "id", s.ShareID)
+			//slog.Debug("producer", "operation", "put", "id", s.ShareID)
 			idQueue <- s.ShareID
 		}
 		/* Let the workers know there is nothing more to be written to the
 		 * queue */
 		close(idQueue)
-		slog.Debug("ending producer")
+		//slog.Debug("ending producer")
 	}()
 
 	/* Spawn a go routine that waits for all the workers to be
@@ -242,10 +244,10 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 	 * main thread can `select` the shareQueue appending shares to an
 	 * array. */
 	go func() {
-		slog.Debug("ListShares", "sync", "wait")
+		//slog.Debug("session.ListShares", "sync", "wait")
 		wg.Wait()
 		close(shareQueue)
-		slog.Debug("ListShares", "sync", "done")
+		//slog.Debug("session.ListShares", "sync", "done")
 	}()
 
 	var shares []Share
@@ -253,147 +255,135 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 		share, ok := <-shareQueue
 		if !ok {
 			for s := range shareQueue {
-				slog.Debug("ListShares", "share", s.ProtonShare.ShareID)
-				shares = append(shares, s)
+				//slog.Debug("session.ListShares", "share", s.protonShare.ShareID)
+				shares = append(shares, *s)
 			}
 			break
 		}
-		slog.Debug("ListShares", "share", share.ProtonShare.ShareID)
-		shares = append(shares, share)
+		//slog.Debug("session.ListShares", "share", share.protonShare.ShareID)
+		shares = append(shares, *share)
 	}
 
-	slog.Debug("ListShares", "workers", "done")
+	//slog.Debug("session.ListShares", "workers", "done")
 
 	return shares, nil
 }
 
-func (s *Session) GetShare(ctx context.Context, id string) (Share, error) {
+func (s *Session) GetShare(ctx context.Context, id string) (*Share, error) {
 	pShare, err := s.Client.GetShare(ctx, id)
 	if err != nil {
-		return Share{}, err
+		return nil, err
 	}
 
 	shareAddrKR := s.AddressKeyRing[pShare.AddressID]
 	shareKR, err := pShare.GetKeyRing(shareAddrKR)
 	if err != nil {
-		return Share{}, err
-	}
-
-	// Do not use s.GetLink() here as it will call s.Client.GetShare()
-	// all over again.
-	pLink, err := s.Client.GetLink(ctx, pShare.ShareID, pShare.LinkID)
-	if err != nil {
-		return Share{}, err
-	}
-
-	name, err := pLink.GetName(shareKR, shareAddrKR)
-	if err != nil {
-		return Share{}, err
-	}
-
-	var xattr *proton.RevisionXAttrCommon
-	if pLink.Type == proton.LinkTypeFile {
-		xattr, err = pLink.FileProperties.ActiveRevision.GetDecXAttrString(shareKR, shareAddrKR)
-		if err != nil {
-			return Share{}, err
-		}
-	}
-
-	link := Link{
-		Name: name,
-
-		Type: pLink.Type,
-
-		XAttr: xattr,
-
-		Size: pLink.Size,
-
-		CreateTime:     pLink.CreateTime,
-		ModifyTime:     pLink.ModifyTime,
-		ExpirationTime: pLink.ExpirationTime,
-
-		ProtonLink: &pLink,
-		session:    s,
-	}
-
-	if proton.LinkType(link.Type) == proton.LinkTypeFile {
-		link.Size = pLink.FileProperties.ActiveRevision.Size
-		link.ModifyTime = pLink.FileProperties.ActiveRevision.CreateTime
+		return nil, err
 	}
 
 	share := Share{
+		keyRing:     shareKR,
+		protonShare: &pShare,
 		session:     s,
-		Link:        &link,
-		ProtonShare: &pShare,
-		shareAddrKR: shareAddrKR,
-		shareKR:     shareKR,
 	}
 
-	return share, nil
+	pLink, err := s.Client.GetLink(ctx, pShare.ShareID, pShare.LinkID)
+	if err != nil {
+		return nil, err
+	}
+
+	link, err := s.newLink(ctx, &share, nil, &pLink)
+	if err != nil {
+		return nil, err
+	}
+
+	share.Link = link
+
+	return &share, nil
 }
 
-func (s *Session) GetLink(ctx context.Context, shareID string, linkID string) (Link, error) {
-	pLink, err := s.Client.GetLink(ctx, shareID, linkID)
+func (s *Session) ResolveShare(ctx context.Context, name string, all bool) (*Share, error) {
+	shares, err := s.ListShares(ctx, all)
 	if err != nil {
-		return Link{}, err
+		return nil, err
 	}
 
-	var parentAddrKR *crypto.KeyRing
-	if pLink.ParentLinkID == "" {
-		pShare, err := s.Client.GetShare(ctx, shareID)
-		if err != nil {
-			return Link{}, err
-		}
-
-		parentAddrKR = s.AddressKeyRing[pShare.AddressID]
-	} else {
-		parentLink, err := s.Client.GetLink(ctx, shareID, pLink.ParentLinkID)
-		if err != nil {
-			return Link{}, err
-		}
-
-		parentAddrKR = s.AddressKeyRing[parentLink.SignatureEmail]
-	}
-
-	linkAddrKR := s.AddressKeyRing[pLink.SignatureEmail]
-
-	parentKR, err := pLink.GetKeyRing(parentAddrKR, linkAddrKR)
-	if err != nil {
-		return Link{}, err
-	}
-
-	name, err := pLink.GetName(parentKR, linkAddrKR)
-	if err != nil {
-		return Link{}, err
-	}
-
-	var xattr *proton.RevisionXAttrCommon
-	if pLink.Type == proton.LinkTypeFile {
-		xattr, err = pLink.FileProperties.ActiveRevision.GetDecXAttrString(parentKR, linkAddrKR)
-		if err != nil {
-			return Link{}, err
+	for _, share := range shares {
+		if share.Link.Name == name {
+			return &share, nil
 		}
 	}
+
+	return nil, ErrFileNotFound
+}
+
+func (s *Session) ResolvePath(ctx context.Context, path string, all bool) (*Link, error) {
+	parts := strings.Split(path, "/")
+
+	if len(parts) == 0 {
+		return nil, ErrInvalidPath
+	}
+
+	share, err := s.ResolveShare(ctx, parts[0], all)
+	if err != nil {
+		return nil, err
+	}
+
+	link, err := share.Link.resolveParts(ctx, parts[1:], all)
+	if err != nil {
+		return nil, err
+	}
+
+	return link, nil
+}
+
+func (s *Session) newLink(ctx context.Context, share *Share, parent *Link, pLink *proton.Link) (*Link, error) {
+	slog.Debug("session.newLink", "linkID", pLink.LinkID)
+	var err error
 
 	link := Link{
-		Name: name,
-
-		Type: pLink.Type,
-
-		XAttr: xattr,
-
+		Type:           pLink.Type,
+		Size:           0,
+		State:          &pLink.State,
 		CreateTime:     pLink.CreateTime,
 		ModifyTime:     pLink.ModifyTime,
 		ExpirationTime: pLink.ExpirationTime,
 
-		ProtonLink: &pLink,
+		parentLink: parent,
+		protonLink: pLink,
+		share:      share,
 		session:    s,
 	}
 
-	if proton.LinkType(link.Type) == proton.LinkTypeFile {
-		link.ModifyTime = pLink.FileProperties.ActiveRevision.CreateTime
-		link.Size = pLink.FileProperties.ActiveRevision.Size
+	link.keyRing, err = link.getKeyRing(pLink.SignatureEmail)
+	if err != nil {
+		return nil, err
 	}
 
-	return link, nil
+	link.nameKeyRing, err = link.getKeyRing(pLink.NameSignatureEmail)
+	if err != nil {
+		return nil, err
+	}
+
+	link.Name, err = link.getName()
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("session.newLink", "name", link.Name)
+
+	if pLink.Type == proton.LinkTypeFile {
+		slog.Debug("session.newLink", "linkType", "file")
+		link.Size = pLink.FileProperties.ActiveRevision.Size
+		link.ModifyTime = pLink.FileProperties.ActiveRevision.CreateTime
+		/*
+			link.XAttr, err = pLink.FileProperties.ActiveRevision.GetDecXAttrString(link.parentLink.keyRing, link.keyRing)
+			if err != nil {
+				return nil, err
+			} /**/
+	} else {
+		slog.Debug("share.session", "linkType", "file")
+	}
+
+	return &link, nil
 }

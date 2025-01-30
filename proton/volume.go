@@ -9,6 +9,7 @@ import (
 type Volume struct {
 	session *Session
 	pVolume proton.Volume
+	//shares  []Share
 }
 
 /* ListShareMetadata returns the metadata for all shares in the volume.
@@ -53,14 +54,14 @@ func (v *Volume) GetShareMetadata(ctx context.Context, id string, all bool) (pro
 }
 
 /* GetShare returns the share with the given id. */
-func (v *Volume) GetShare(ctx context.Context, id string) (Share, error) {
+func (v *Volume) GetShare(ctx context.Context, id string) (*Share, error) {
 	share, err := v.session.GetShare(ctx, id)
 	if err != nil {
-		return Share{}, err
+		return nil, err
 	}
 
-	if share.ProtonShare.VolumeID != v.pVolume.VolumeID {
-		return Share{}, nil
+	if share.protonShare.VolumeID != v.pVolume.VolumeID {
+		return nil, nil
 	}
 
 	return share, nil

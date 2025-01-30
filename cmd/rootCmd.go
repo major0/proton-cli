@@ -31,6 +31,7 @@ var (
 	rootParams = struct {
 		Account     string
 		ConfigFile  string
+		MaxWorkers  int
 		SessionFile string
 		Verbose     int
 		Timeout     time.Duration
@@ -93,6 +94,7 @@ func init() {
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, logopts))
 	slog.SetDefault(logger)
+	//proton.WithLogger(common.Logger)
 
 	protonOptions = []proton.Option{
 		proton.WithAppVersion(AppVersion),
@@ -104,6 +106,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootParams.ConfigFile, "config-file", "", "Config file to use. Defaults to value XDG_CONFIG_FILE")
 	rootCmd.PersistentFlags().StringVar(&rootParams.SessionFile, "session-file", "", "Session file to use. Defaults to value XDG_CACHE_FILE")
 	rootCmd.PersistentFlags().DurationVarP(&rootParams.Timeout, "timeout", "t", 60*time.Second, "Timeout for requests.")
+	rootCmd.PersistentFlags().IntVarP(&rootParams.MaxWorkers, "max-jobs", "j", 10, "Maximum number of jobs to run in parallel.")
 
 	// Hide the help flags as it ends up sorted into everything, which is a bit confusing.
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
