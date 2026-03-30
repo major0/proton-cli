@@ -69,8 +69,6 @@ github.com/klauspost/cpuid/v2 v2.2.4 h1:acbojRNwl3o09bUq+yDCtZFc1aiwaAAxtcn8YkZX
 github.com/klauspost/cpuid/v2 v2.2.4/go.mod h1:RVVoqg1df56z8g3pUjL/3lE5UfnlrJX8tyFgg4nqhuY=
 github.com/leodido/go-urn v1.2.4 h1:XlAE/cm/ms7TE/VMVoduSpNBoyc2dOxHs5MZSwAN63Q=
 github.com/leodido/go-urn v1.2.4/go.mod h1:7ZrI8mTSeBSHl/UaRyKQW1qZeMgak41ANeCNaVckg+4=
-github.com/major0/go-proton-api v0.0.4-proton-cleanup h1:Ar0pePIyKmnWmsNHIpky5VtGQAqqsfd26wWzJG3bSY4=
-github.com/major0/go-proton-api v0.0.4-proton-cleanup/go.mod h1:oy8mLH7OSa/wgHMDkMJECBntanLxhuLHp2kYSde1cCk=
 github.com/major0/textfilekv v1.1.1-list-keys h1:0mmMGN2YoiQXNpy5sQCUvah8b6nMvDn+6rEOVHYkDvs=
 github.com/major0/textfilekv v1.1.1-list-keys/go.mod h1:1UnyP8127ohnKlvpKawjMx/vECvSHtCz8MQVttbtv0k=
 github.com/mattn/go-isatty v0.0.19 h1:JITubQf0MOLdlGRuRq+jtsDlekdYPia9ZFsB8h/APPA=
