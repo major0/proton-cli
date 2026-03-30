@@ -22,6 +22,7 @@ type Session struct {
 	MaxWorkers int
 
 	addresses      map[string]proton.Address
+	addressesByID  map[string]proton.Address
 	AddressKeyRing map[string]*crypto.KeyRing
 
 	user        proton.User
@@ -71,8 +72,10 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 	}
 
 	session.addresses = make(map[string]proton.Address)
+	session.addressesByID = make(map[string]proton.Address)
 	for _, addr := range addrs {
 		session.addresses[addr.Email] = addr
+		session.addressesByID[addr.ID] = addr
 	}
 
 	return &session, nil

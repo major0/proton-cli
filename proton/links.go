@@ -131,7 +131,7 @@ func (l *Link) getKeyRing(address string) (*crypto.KeyRing, error) {
 
 func (l *Link) getAddrKeyRing(address string) (*crypto.KeyRing, error) {
 	slog.Debug("link.getAddrKeyRing", "address", address)
-	if addr, ok := l.session.addresses[l.protonLink.NameSignatureEmail]; ok {
+	if addr, ok := l.session.addresses[address]; ok {
 		if addrKR, ok := l.session.AddressKeyRing[addr.ID]; ok {
 			return addrKR, nil
 		}

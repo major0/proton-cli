@@ -1,0 +1,35 @@
+name: Lint and Test
+
+on: push
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get sources
+        uses: actions/checkout@v4
+      
+      - name: Set up Go 1.23.3
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.3'
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.62.0
+          args: --timeout=180s
+          skip-cache: true
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Run tests with race check
+        run: go test -v -race ./...
+
+      - name: Run govulncheck
+        uses: ./.github/actions/govulncheck
+        with:
+          go-version-input: 1.23.3
+          go-package: ./...
+          
