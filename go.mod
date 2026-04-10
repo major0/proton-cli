@@ -46,9 +46,9 @@ require (
 
 replace (
 	github.com/ProtonMail/go-crypto => github.com/ProtonMail/go-crypto v1.1.5-proton
-	github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.0.4-proton-cleanup
-	github.com/ProtonMail/gopenpgp/v2 => github.com/ProtonMail/gopenpgp/v2 v2.8.2-proton
-	github.com/go-resty/resty/v2 => ../go-resty.git
+	github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.0.5-proton-cli
+	github.com/ProtonMail/gopenpgp/v2 => github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton
+	github.com/go-resty/resty/v2 => github.com/LBeernaertProton/resty/v2 v2.0.0-20231129100320-dddf8030d93a
 	github.com/miteshbsjat/textfilekv => github.com/major0/textfilekv v1.1.1-list-keys
 	github.com/spf13/pflag => github.com/major0/optargs/pflag v0.5.0
 )
