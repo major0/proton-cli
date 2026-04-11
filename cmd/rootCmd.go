@@ -66,7 +66,7 @@ var (
 				rootParams.SessionFile = "proton/sessions.db"
 			}
 
-			Timeout = rootParams.Timeout * time.Second
+			Timeout = rootParams.Timeout
 			DebugHTTP = rootParams.Verbose >= 3
 			Account = rootParams.Account
 
