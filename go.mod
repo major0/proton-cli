@@ -5,12 +5,10 @@ go 1.26.1
 require (
 	github.com/ProtonMail/go-proton-api v0.4.0
 	github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton
-	github.com/adrg/xdg v0.5.3
 	github.com/docker/go-units v0.5.0
-	github.com/jedib0t/go-pretty/v6 v6.6.5
-	github.com/miteshbsjat/textfilekv v1.1.1
-	github.com/spf13/cobra v1.8.1
 	github.com/google/uuid v1.6.0
+	github.com/jedib0t/go-pretty/v6 v6.6.5
+	github.com/spf13/cobra v1.8.1
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/term v0.41.0
 )
@@ -52,6 +50,5 @@ replace (
 	github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.0.5-proton-cli
 	github.com/ProtonMail/gopenpgp/v2 => github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton
 	github.com/go-resty/resty/v2 => github.com/LBeernaertProton/resty/v2 v2.0.0-20231129100320-dddf8030d93a
-	github.com/miteshbsjat/textfilekv => github.com/major0/textfilekv v1.1.1-list-keys
 	github.com/spf13/pflag => github.com/major0/optargs/pflag v0.5.0
 )

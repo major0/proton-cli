@@ -17,8 +17,6 @@ github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton h1:d9EdXObucN2CNY1XGONJQH0+5q0q
 github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton/go.mod h1:B6khh1WJnEJyjXk6b2FR7RfNoPGqPqvvnD3EqBMs5LI=
 github.com/PuerkitoBio/goquery v1.12.0 h1:pAcL4g3WRXekcB9AU/y1mbKez2dbY2AajVhtkO8RIBo=
 github.com/PuerkitoBio/goquery v1.12.0/go.mod h1:802ej+gV2y7bbIhOIoPY5sT183ZW0YFofScC4q/hIpQ=
-github.com/adrg/xdg v0.5.3 h1:xRnxJXne7+oWDatRhR1JLnvuccuIeCoBu2rtuLqQB78=
-github.com/adrg/xdg v0.5.3/go.mod h1:nlTsY+NNiCBGCK2tpm09vRqfVzrc2fLmXGpBLF0zlTQ=
 github.com/andybalholm/cascadia v1.3.3 h1:AG2YHrzJIm4BZ19iwJ/DAua6Btl3IwJX+VI4kktS1LM=
 github.com/andybalholm/cascadia v1.3.3/go.mod h1:xNd9bqTn98Ln4DwST8/nG+H0yuB8Hmgu1YHNnWw0GeA=
 github.com/bradenaw/juniper v0.15.3 h1:RHIAMEDTpvmzV1wg1jMAHGOoI2oJUSPx3lxRldXnFGo=
@@ -85,8 +83,6 @@ github.com/major0/optargs v0.4.2 h1:+oDmQfrqilO6rMnqBODqh7xUfOpdLowdQm08a/r1MLM=
 github.com/major0/optargs v0.4.2/go.mod h1:umQbh05Y+3FKzyeJMORwEXRATO3cvSS8lZdCQJwBFJY=
 github.com/major0/optargs/pflag v0.5.0 h1:8BLWBx0dZIARc56AtfNzbZPSN+S4E55sJ3M4xx1WQng=
 github.com/major0/optargs/pflag v0.5.0/go.mod h1:2L7pF6jCYSWzEzzA0CIW+It5rOa70hgTTbvIQHXhXME=
-github.com/major0/textfilekv v1.1.1-list-keys h1:0mmMGN2YoiQXNpy5sQCUvah8b6nMvDn+6rEOVHYkDvs=
-github.com/major0/textfilekv v1.1.1-list-keys/go.mod h1:1UnyP8127ohnKlvpKawjMx/vECvSHtCz8MQVttbtv0k=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6TULQc=
