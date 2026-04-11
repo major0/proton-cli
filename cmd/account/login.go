@@ -2,6 +2,8 @@ package accountCmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/ProtonMail/go-proton-api"
 	cli "github.com/major0/proton-cli/cmd"
@@ -11,11 +13,22 @@ import (
 )
 
 var authLoginParams = struct {
-	username string
-	password string
-	mboxpass string
-	twoFA    string
+	username  string
+	password  string
+	mboxpass  string
+	twoFA     string
+	noBrowser bool
 }{}
+
+// hasCaptchaMethod reports whether "captcha" is among the HV methods.
+func hasCaptchaMethod(methods []string) bool {
+	for _, m := range methods {
+		if m == "captcha" {
+			return true
+		}
+	}
+	return false
+}
 
 var authLoginCmd = &cobra.Command{
 	Use:   "login [options]",
@@ -45,9 +58,43 @@ var authLoginCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 
-		session, err := common.SessionFromLogin(ctx, cli.ProtonOpts, username, password, nil)
+		// Build manager hook. Task 7 will export cli.InstallDebugHooks;
+		// for now, always nil.
+		var managerHook func(*proton.Manager)
+
+		session, err := common.SessionFromLogin(ctx, cli.ProtonOpts, username, password, managerHook)
 		if err != nil {
-			return err
+			// Check for HV error (code 9001).
+			apiErr := new(proton.APIError)
+			if !errors.As(err, &apiErr) || !apiErr.IsHVError() {
+				return err
+			}
+
+			hv, hvErr := apiErr.GetHVDetails()
+			if hvErr != nil {
+				return fmt.Errorf("extracting HV details: %w", hvErr)
+			}
+
+			if !hasCaptchaMethod(hv.Methods) {
+				return fmt.Errorf("unsupported HV methods: %v", hv.Methods)
+			}
+
+			var solvedToken string
+			if authLoginParams.noBrowser {
+				solvedToken, err = SolveCaptchaNoBrowser(ctx, cli.ProtonOpts, hv)
+			} else {
+				solvedToken, err = SolveCaptcha(ctx, cli.ProtonOpts, hv)
+			}
+			if err != nil {
+				return err
+			}
+
+			hv.Token = solvedToken
+
+			session, err = common.SessionFromLoginWithHV(ctx, cli.ProtonOpts, username, password, hv, managerHook)
+			if err != nil {
+				return err
+			}
 		}
 
 		session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
@@ -95,4 +142,5 @@ func init() {
 	authLoginCmd.Flags().StringVarP(&authLoginParams.password, "password", "p", "", "Proton password")
 	authLoginCmd.Flags().StringVarP(&authLoginParams.mboxpass, "mboxpass", "m", "", "Required of 2 password mode is enabled.")
 	authLoginCmd.Flags().StringVarP(&authLoginParams.twoFA, "2fa", "2", "", "2FA code")
+	authLoginCmd.Flags().BoolVar(&authLoginParams.noBrowser, "no-browser", false, "Do not open browser for CAPTCHA; print URL and prompt for token")
 }
