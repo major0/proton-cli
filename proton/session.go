@@ -6,12 +6,65 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 )
+
+// serialCookie holds the minimal fields needed to reconstruct an http.Cookie
+// for jar injection. Expiry is not persisted — the API server manages cookie
+// lifetime.
+type serialCookie struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Domain string `json:"domain"`
+	Path   string `json:"path"`
+}
+
+// apiCookieURL returns the parsed Proton API base URL used for cookie scoping.
+func apiCookieURL() *url.URL {
+	u, _ := url.Parse(proton.DefaultHostURL)
+	return u
+}
+
+// serializeCookies extracts cookies from the jar for the given API URL.
+func serializeCookies(jar http.CookieJar, apiURL *url.URL) []serialCookie {
+	cookies := jar.Cookies(apiURL)
+	if len(cookies) == 0 {
+		return nil
+	}
+	out := make([]serialCookie, len(cookies))
+	for i, c := range cookies {
+		out[i] = serialCookie{
+			Name:   c.Name,
+			Value:  c.Value,
+			Domain: c.Domain,
+			Path:   c.Path,
+		}
+	}
+	return out
+}
+
+// loadCookies injects persisted cookies into the jar for the given API URL.
+func loadCookies(jar http.CookieJar, cookies []serialCookie, apiURL *url.URL) {
+	if len(cookies) == 0 {
+		return
+	}
+	httpCookies := make([]*http.Cookie, len(cookies))
+	for i, c := range cookies {
+		httpCookies[i] = &http.Cookie{
+			Name:   c.Name,
+			Value:  c.Value,
+			Domain: c.Domain,
+			Path:   c.Path,
+		}
+	}
+	jar.SetCookies(apiURL, httpCookies)
+}
 
 type SessionOptions struct {
 	MaxWorkers int
@@ -33,13 +86,13 @@ type Session struct {
 	UserKeyRing *crypto.KeyRing
 }
 
-/* Initialize a new session frmo the provided credentials. The session is
+/* Initialize a new session from the provided credentials. The session is
  * not fully usable until it has been Unlock()'ed using the user-provided
  * keypass */
 func SessionFromCredentials(ctx context.Context, options []proton.Option, creds *SessionCredentials, managerHook func(*proton.Manager)) (*Session, error) {
 	var err error
 
-	// Initialize the client from our cahced credentials
+	// Initialize the client from our cached credentials
 	if creds.UID == "" {
 		return nil, ErrorMissingUID
 	}
@@ -180,7 +233,7 @@ func (s *Session) ListVolumes(ctx context.Context) ([]Volume, error) {
 		return nil, err
 	}
 
-	volumes := make([]Volume, 0, len(pVolumes))
+	volumes := make([]Volume, len(pVolumes))
 	for i := range pVolumes {
 		volumes[i] = Volume{pVolume: pVolumes[i], session: s}
 	}
@@ -298,16 +351,7 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 	}()
 
 	var shares []Share
-	for {
-		share, ok := <-shareQueue
-		if !ok {
-			for s := range shareQueue {
-				//slog.Debug("session.ListShares", "share", s.protonShare.ShareID)
-				shares = append(shares, *s)
-			}
-			break
-		}
-		//slog.Debug("session.ListShares", "share", share.protonShare.ShareID)
+	for share := range shareQueue {
 		shares = append(shares, *share)
 	}
 
@@ -429,7 +473,7 @@ func (s *Session) newLink(ctx context.Context, share *Share, parent *Link, pLink
 				return nil, err
 			} /**/
 	} else {
-		slog.Debug("share.session", "linkType", "file")
+		slog.Debug("session.newLink", "linkType", "folder")
 	}
 
 	return &link, nil
@@ -459,6 +503,9 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 		return nil, err
 	}
 
+	// Restore persisted cookies into the session's jar.
+	loadCookies(session.cookieJar, config.Cookies, apiCookieURL())
+
 	keypass, err := Base64Decode(config.SaltedKeyPass)
 	if err != nil {
 		return nil, err
@@ -471,13 +518,17 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 	return session, nil
 }
 
-// SessionSave persists session credentials and the salted keypass to the store.
+// SessionSave persists session credentials, cookie jar state, and a refresh
+// timestamp to the store.
 func SessionSave(store SessionStore, session *Session, keypass []byte) error {
+	apiURL := apiCookieURL()
 	config := &SessionConfig{
 		UID:           session.Auth.UID,
 		AccessToken:   session.Auth.AccessToken,
 		RefreshToken:  session.Auth.RefreshToken,
 		SaltedKeyPass: Base64Encode(keypass),
+		Cookies:       serializeCookies(session.cookieJar, apiURL),
+		LastRefresh:   time.Now(),
 	}
 	return store.Save(config)
 }

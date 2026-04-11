@@ -2,14 +2,14 @@ package proton
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 )
 
 // NewAuthHandler returns a proton.AuthHandler that persists updated tokens
-// to the session store. The session parameter is reserved for future cookie
-// persistence support.
-func NewAuthHandler(store SessionStore, _ *Session) proton.AuthHandler {
+// and cookies to the session store. Uses the session's own cookie jar.
+func NewAuthHandler(store SessionStore, session *Session) proton.AuthHandler {
 	return func(auth proton.Auth) {
 		slog.Debug("auth", "uid", auth.UID, "access_token", auth.AccessToken, "refresh_token", auth.RefreshToken)
 
@@ -22,6 +22,8 @@ func NewAuthHandler(store SessionStore, _ *Session) proton.AuthHandler {
 		sessionConfig.UID = auth.UID
 		sessionConfig.AccessToken = auth.AccessToken
 		sessionConfig.RefreshToken = auth.RefreshToken
+		sessionConfig.Cookies = serializeCookies(session.cookieJar, apiCookieURL())
+		sessionConfig.LastRefresh = time.Now()
 
 		if err := store.Save(sessionConfig); err != nil {
 			slog.Error("auth handler: saving session config", "error", err)

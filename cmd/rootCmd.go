@@ -94,7 +94,7 @@ func AddCommand(cmd *cobra.Command) {
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		slog.Any("error", err)
+		slog.Error("execute failed", "error", err)
 		os.Exit(1)
 	}
 }
