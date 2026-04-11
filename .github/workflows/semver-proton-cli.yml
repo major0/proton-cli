@@ -1,0 +1,24 @@
+name: Semver Proton CLI
+
+on:
+  create:
+  push:
+    branches:
+      - 'v[0-9]+.[0-9]+'
+    paths-ignore:
+      - '.github/**'
+
+jobs:
+  semver:
+    uses: ./.github/workflows/semver.yml
+    permissions:
+      contents: write
+
+  release:
+    needs: semver
+    if: needs.semver.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: write
+    with:
+      tag: ${{ needs.semver.outputs.tag }}

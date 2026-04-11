@@ -1,0 +1,32 @@
+name: Semver
+
+on:
+  workflow_call:
+    outputs:
+      tag:
+        description: 'The tag that was created (empty if no tag was created)'
+        value: ${{ jobs.semver.outputs.tag }}
+
+permissions:
+  contents: write
+
+jobs:
+  semver:
+    name: Auto-tag
+    if: github.event_name == 'push' || (github.event_name == 'create' && startsWith(github.ref, 'refs/heads/v'))
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.semver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Semantic Versioning
+        id: semver
+        uses: major0/semver-release-action@v1
+        with:
+          release-prefix: 'v'
+          tag-prefix: 'v'
+      - name: Summary
+        if: steps.semver.outputs.tag != ''
+        run: .github/scripts/semver-summary.sh "${{ steps.semver.outputs.tag }}" "${{ steps.semver.outputs.tag-type }}"
