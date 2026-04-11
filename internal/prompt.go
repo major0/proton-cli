@@ -10,8 +10,8 @@ import (
 	"golang.org/x/term"
 )
 
-/* Prompt user for inputs. If `password` is true then the method will
- * disable echo'ing the password to the terminal. */
+// UserPrompt prompts the user for input. If password is true, echo is
+// disabled while reading.
 func UserPrompt(prompt string, password bool) (string, error) {
 	var err error
 	var input string
@@ -21,7 +21,7 @@ func UserPrompt(prompt string, password bool) (string, error) {
 	for input == "" {
 		fmt.Print(prompt + ": ")
 		if password {
-			bytePasswd, err = term.ReadPassword(int(syscall.Stdin))
+			bytePasswd, err = term.ReadPassword(syscall.Stdin)
 			input = string(bytePasswd)
 			fmt.Println("")
 		} else {

@@ -100,13 +100,13 @@ func Execute() {
 }
 
 func init() {
-	//cobra.OnInitialize(initConfig) // TODO
+	// cobra.OnInitialize(initConfig) // TODO
 	logopts := &slog.HandlerOptions{
 		Level: logLevel,
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, logopts))
 	slog.SetDefault(logger)
-	//proton.WithLogger(common.Logger)
+	// proton.WithLogger(common.Logger)
 
 	ProtonOpts = []proton.Option{
 		proton.WithAppVersion(AppVersion),

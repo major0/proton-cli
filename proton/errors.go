@@ -6,8 +6,8 @@ import (
 
 var (
 	ErrorMissingUID          = errors.New("missing UID")
-	ErrorMissingAccessToken  = errors.New("missing access token")
-	ErrorMissingRefreshToken = errors.New("missing refresh token")
+	ErrMissingAccessToken    = errors.New("missing access token")
+	ErrMissingRefreshToken   = errors.New("missing refresh token")
 	ErrKeyNotFound           = errors.New("key not found")
 	ErrNotLoggedIn           = errors.New("not logged in")
 	ErrFileNotFound          = errors.New("file not found")

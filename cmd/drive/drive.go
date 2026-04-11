@@ -1,3 +1,4 @@
+// Package driveCmd implements the drive subcommands for proton-cli.
 package driveCmd
 
 import (

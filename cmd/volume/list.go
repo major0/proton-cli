@@ -61,7 +61,7 @@ func getVolSpace(bytes *int64) string {
 }
 
 func getVolState(state proton.VolumeState) string {
-	switch proton.VolumeState(state) {
+	switch state {
 	case proton.VolumeStateActive:
 		return "Active"
 	case proton.VolumeStateLocked:

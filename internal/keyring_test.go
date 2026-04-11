@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -146,7 +147,7 @@ func TestMockKeyring_ErrorInjection(t *testing.T) {
 		var kr Keyring = mk
 
 		_, err := kr.Get("svc", "acct")
-		if err != injected {
+		if !errors.Is(err, injected) {
 			t.Errorf("Get error = %v, want %v", err, injected)
 		}
 	})
@@ -157,7 +158,7 @@ func TestMockKeyring_ErrorInjection(t *testing.T) {
 		var kr Keyring = mk
 
 		err := kr.Set("svc", "acct", "pw")
-		if err != injected {
+		if !errors.Is(err, injected) {
 			t.Errorf("Set error = %v, want %v", err, injected)
 		}
 	})
@@ -168,7 +169,7 @@ func TestMockKeyring_ErrorInjection(t *testing.T) {
 		var kr Keyring = mk
 
 		err := kr.Delete("svc", "acct")
-		if err != injected {
+		if !errors.Is(err, injected) {
 			t.Errorf("Delete error = %v, want %v", err, injected)
 		}
 	})

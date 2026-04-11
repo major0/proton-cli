@@ -1,3 +1,4 @@
+// Package internal provides shared utilities for the proton-cli application.
 package internal
 
 import (
@@ -5,11 +6,9 @@ import (
 	"log/slog"
 )
 
-/* CopyStruct copies a subset of the source structure into the target
- * structure. The rules for this copy are pretty straight forward. All
- * fields found in the target MUST be also found in the source, and they
- * must also be of the same type as those fields found in the source. This
- * presents a behavior found in C/C++, Nim and other languages. */
+// CopySubStruct copies a subset of the source structure into the target
+// structure. All fields found in the target must also be found in the source,
+// and they must be of the same type.
 func CopySubStruct(source any, destination any) error {
 	slog.Debug("CopySubStruct")
 

@@ -52,7 +52,7 @@ var shareListCmd = &cobra.Command{
 }
 
 func getShareType(shareType proton.ShareType) string {
-	switch proton.ShareType(shareType) {
+	switch shareType {
 	case proton.ShareTypeMain:
 		return "main"
 	case proton.ShareTypeStandard:
@@ -65,7 +65,7 @@ func getShareType(shareType proton.ShareType) string {
 }
 
 func getShareState(state proton.ShareState) string {
-	switch proton.ShareState(state) {
+	switch state {
 	case proton.ShareStateActive:
 		return "active"
 	case proton.ShareStateDeleted:
@@ -76,7 +76,7 @@ func getShareState(state proton.ShareState) string {
 }
 
 func getShareFlags(flags proton.ShareFlags) string {
-	switch proton.ShareFlags(flags) {
+	switch flags {
 	case proton.NoFlags:
 		return "none"
 	case proton.PrimaryShare:

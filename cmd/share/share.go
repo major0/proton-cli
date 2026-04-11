@@ -1,3 +1,4 @@
+// Package shareCmd implements the share subcommands for proton-cli.
 package shareCmd
 
 import (

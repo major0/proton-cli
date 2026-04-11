@@ -9,7 +9,6 @@ import (
 type Volume struct {
 	session *Session
 	pVolume proton.Volume
-	//shares  []Share
 }
 
 /* ListShareMetadata returns the metadata for all shares in the volume.

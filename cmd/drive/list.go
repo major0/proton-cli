@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	//"github.com/jedib0t/go-pretty/v6/table"
+	// "github.com/jedib0t/go-pretty/v6/table"
 	cli "github.com/major0/proton-cli/cmd"
 	common "github.com/major0/proton-cli/proton"
 	"github.com/spf13/cobra"
@@ -103,7 +103,7 @@ var driveListCmd = &cobra.Command{
 
 		// FIXME pass to a function that handles different formatting options
 		for _, link := range links {
-			if proton.LinkState(*link.State) == proton.LinkStateDeleted {
+			if *link.State == proton.LinkStateDeleted {
 				// FIXME add a flag for selecting this?
 				continue
 			}
@@ -111,7 +111,7 @@ var driveListCmd = &cobra.Command{
 			name := link.Name
 
 			ctime := time.Unix(link.CreateTime, 0)
-			//xtime := time.Unix(link.ExpirationTime, 0)
+			// xtime := time.Unix(link.ExpirationTime, 0)
 
 			var linkType byte
 			if link.Type == proton.LinkTypeFolder {

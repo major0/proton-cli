@@ -5,7 +5,7 @@ package proton
  * data is returned by the Client.Login() call, w/ the SaltedKeyPass
  * being a salt of the password+UID.
  *
- * After a succesful login there is a small time window in which the
+ * After a successful login there is a small time window in which the
  * application must call proton.Unlock() to unlock the account.
  * Failure to do so will timeout the authentication process and a new
  * login session will need to be established.

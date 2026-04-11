@@ -39,7 +39,7 @@ func (l *Link) newLink(ctx context.Context, pLink *proton.Link) (*Link, error) {
 
 func (l *Link) ListChildren(ctx context.Context, all bool) ([]Link, error) {
 	slog.Debug("link.ListChildren", "all", all)
-	//fmt.Println("link.ListChildren: pLink = %#v", l.protonLink)
+	// fmt.Println("link.ListChildren: pLink = %#v", l.protonLink)
 	//fmt.Println("link.ListChildren: share = %#v", l.share)
 	//fmt.Println("link.ListChildren: session = %#v", l.session)
 
@@ -72,7 +72,7 @@ func (l *Link) resolveParts(ctx context.Context, parts []string, all bool) (*Lin
 		return l, nil
 	}
 
-	if proton.LinkType(l.Type) != proton.LinkTypeFolder {
+	if l.Type != proton.LinkTypeFolder {
 		return nil, ErrNotAFolder
 	}
 
@@ -106,13 +106,12 @@ func (l *Link) getParentKeyRing() (*crypto.KeyRing, error) {
 	if l.parentLink == nil {
 		slog.Debug("link.getParentKeyRing", "share", true)
 		return l.share.getKeyRing()
-	} else {
-		slog.Debug("link.getParentKeyRing", "share", false)
-		return l.parentLink.nameKeyRing, nil
 	}
+	slog.Debug("link.getParentKeyRing", "share", false)
+	return l.parentLink.nameKeyRing, nil
 }
 
-func (l *Link) getKeyRing(address string) (*crypto.KeyRing, error) {
+func (l *Link) getKeyRing(_ string) (*crypto.KeyRing, error) {
 	slog.Debug("link.getKeyRing", "address", l.protonLink.SignatureEmail)
 
 	parentKR, err := l.getParentKeyRing()

@@ -29,7 +29,7 @@ func randomString(r *rand.Rand, maxLen int) string {
 // sessionConfigGenerator produces random SessionConfig values for property tests.
 type sessionConfigGenerator struct{}
 
-func (sessionConfigGenerator) Generate(r *rand.Rand, size int) reflect.Value {
+func (sessionConfigGenerator) Generate(r *rand.Rand, _ int) reflect.Value {
 	cfg := proton.SessionConfig{
 		UID:           randomString(r, 32),
 		AccessToken:   randomString(r, 64),
@@ -42,7 +42,7 @@ func (sessionConfigGenerator) Generate(r *rand.Rand, size int) reflect.Value {
 // nonEmptyStringGenerator produces non-empty alphanumeric strings.
 type nonEmptyStringGenerator struct{}
 
-func (nonEmptyStringGenerator) Generate(r *rand.Rand, size int) reflect.Value {
+func (nonEmptyStringGenerator) Generate(r *rand.Rand, _ int) reflect.Value {
 	return reflect.ValueOf(randomString(r, 32))
 }
 
@@ -89,7 +89,7 @@ func TestPropertySaveLoadRoundTrip(t *testing.T) {
 // nonStarStringGenerator produces non-empty alphanumeric strings that are never "*".
 type nonStarStringGenerator struct{}
 
-func (nonStarStringGenerator) Generate(r *rand.Rand, size int) reflect.Value {
+func (nonStarStringGenerator) Generate(r *rand.Rand, _ int) reflect.Value {
 	s := randomString(r, 32)
 	// Ensure the generated string is never "*".
 	if s == "*" {

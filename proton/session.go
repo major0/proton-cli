@@ -98,11 +98,11 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 	}
 
 	if creds.AccessToken == "" {
-		return nil, ErrorMissingAccessToken
+		return nil, ErrMissingAccessToken
 	}
 
 	if creds.RefreshToken == "" {
-		return nil, ErrorMissingRefreshToken
+		return nil, ErrMissingRefreshToken
 	}
 
 	var session Session
@@ -297,65 +297,43 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 	for i := 0; i < min(s.MaxWorkers, len(pshares)); i++ {
 		wg.Add(1)
 		go func() {
-			//slog.Debug("starting worker", "id", i)
 			defer wg.Done()
-			for {
-				id, ok := <-idQueue
-				if !ok {
-					//slog.Debug("ending worker", "id", i)
-					return
-				}
-
-				//slog.Debug("worker", "operation", "get", "ShareID", id)
+			for id := range idQueue {
 				share, err := s.GetShare(ctx, id)
 				if err != nil {
 					slog.Error("worker", "shareID", id, "error", err)
 					continue
 				}
 				shareQueue <- share
-				//slog.Debug("worker", "operation", "got", "id", id)
 			}
 		}()
 	}
 
-	/* Spawn a producer to feed the idQueue as fast as the workers can
-	 * consume it. */
+	// Spawn a producer to feed the idQueue as fast as the workers
+	// can consume it.
 	wg.Add(1)
 	go func() {
-		//slog.Debug("starting producer")
 		defer wg.Done()
 		for _, s := range pshares {
 			if volumeID != "" && volumeID != s.VolumeID {
-				//slog.Debug("producer", "operation", "skip", "id", s.ShareID)
 				continue
 			}
-			//slog.Debug("producer", "operation", "put", "id", s.ShareID)
 			idQueue <- s.ShareID
 		}
-		/* Let the workers know there is nothing more to be written to the
-		 * queue */
 		close(idQueue)
-		//slog.Debug("ending producer")
 	}()
 
-	/* Spawn a go routine that waits for all the workers to be
-	 * finished and then closes the shareQueue. This acts to signal
-	 * the main thread that all the workers are done. Until then the
-	 * main thread can `select` the shareQueue appending shares to an
-	 * array. */
+	// Wait for all workers to finish, then close the shareQueue to
+	// signal the main goroutine.
 	go func() {
-		//slog.Debug("session.ListShares", "sync", "wait")
 		wg.Wait()
 		close(shareQueue)
-		//slog.Debug("session.ListShares", "sync", "done")
 	}()
 
 	var shares []Share
 	for share := range shareQueue {
 		shares = append(shares, *share)
 	}
-
-	//slog.Debug("session.ListShares", "workers", "done")
 
 	return shares, nil
 }

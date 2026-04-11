@@ -1,3 +1,4 @@
+// Package accountCmd implements the account subcommands for proton-cli.
 package accountCmd
 
 import (
