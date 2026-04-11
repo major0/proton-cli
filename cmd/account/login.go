@@ -21,7 +21,7 @@ var authLoginCmd = &cobra.Command{
 	Use:   "login [options]",
 	Short: "login to Proton",
 	Long:  `login to Proton`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		username := authLoginParams.username
 		password := authLoginParams.password
 		mboxpass := authLoginParams.mboxpass

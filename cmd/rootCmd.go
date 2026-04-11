@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	// Timeout holds the global request timeout duration.
 	Timeout time.Duration
 
 	// DebugHTTP is true when verbosity >= 3, enabling HTTP debug logging.
@@ -45,7 +46,7 @@ var (
 		Use:   "protondrive [options] <command>",
 		Short: "protondrive is a command line interface for ProtonDrive",
 		Long:  `protondrive is a command line interface for managing and manipulating the ProtonDrive storage solution`,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			switch {
 			case rootParams.Verbose == 1:
 				logLevel.Set(slog.LevelInfo)
@@ -79,18 +80,18 @@ var (
 
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			_ = cmd.Help()
 		},
 	}
 )
 
-// A AddCommand() wrapper to make it a little easier for subcmds
+// AddCommand registers a subcommand with the root command.
 func AddCommand(cmd *cobra.Command) {
 	rootCmd.AddCommand(cmd)
 }
 
-// Needed for the main() entrypoint
+// Execute runs the root command and exits on error.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {

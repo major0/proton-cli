@@ -1,3 +1,4 @@
+// Package volumeCmd implements the volume subcommands for proton-cli.
 package volumeCmd
 
 import (
@@ -10,7 +11,7 @@ var volumeCmd = &cobra.Command{
 	Aliases: []string{"vol", "vols"},
 	Short:   "Manage ProtonDrive volumes",
 	Long:    "Manage ProtonDrive volumes",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
 	},
 }

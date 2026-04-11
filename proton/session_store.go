@@ -1,5 +1,7 @@
+// Package proton provides the core API client library for proton-cli.
 package proton
 
+// SessionStore defines the interface for persisting and retrieving session data.
 type SessionStore interface {
 	Load() (*SessionConfig, error)
 	Save(session *SessionConfig) error

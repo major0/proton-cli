@@ -162,6 +162,7 @@ func (si *SessionIndex) Save(session *proton.SessionConfig) error {
 	}
 
 	// Marshal session config and store in keyring.
+	//nolint:gosec // G117: marshaling SessionConfig is intentional, tokens are the payload.
 	data, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("session save %q/%q: %w", si.account, si.service, err)

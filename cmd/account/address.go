@@ -16,7 +16,7 @@ var accountAddressCmd = &cobra.Command{
 	Aliases: []string{"address", "addr"},
 	Short:   "report all email addresses associated with the account",
 	Long:    `report all email addresses associated with the account`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 

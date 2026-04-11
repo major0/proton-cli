@@ -6,6 +6,7 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 )
 
+// AddressType represents the type of a Proton email address.
 type AddressType proton.AddressType
 
 func (a AddressType) String() string {
@@ -19,6 +20,7 @@ func (a AddressType) String() string {
 	return statusStrings[a-1]
 }
 
+// AddressStatus represents the status of a Proton email address.
 type AddressStatus proton.AddressStatus
 
 func (s AddressStatus) String() string {

@@ -66,10 +66,12 @@ func loadCookies(jar http.CookieJar, cookies []serialCookie, apiURL *url.URL) {
 	jar.SetCookies(apiURL, httpCookies)
 }
 
+// SessionOptions holds configuration for session creation.
 type SessionOptions struct {
 	MaxWorkers int
 }
 
+// Session holds an authenticated Proton API session with decrypted keyrings.
 type Session struct {
 	Client  *proton.Client
 	Auth    proton.Auth
@@ -86,15 +88,15 @@ type Session struct {
 	UserKeyRing *crypto.KeyRing
 }
 
-/* Initialize a new session from the provided credentials. The session is
- * not fully usable until it has been Unlock()'ed using the user-provided
- * keypass */
+// SessionFromCredentials initializes a new session from the provided credentials.
+// The session is not fully usable until it has been Unlock'ed using the
+// user-provided keypass.
 func SessionFromCredentials(ctx context.Context, options []proton.Option, creds *SessionCredentials, managerHook func(*proton.Manager)) (*Session, error) {
 	var err error
 
 	// Initialize the client from our cached credentials
 	if creds.UID == "" {
-		return nil, ErrorMissingUID
+		return nil, ErrMissingUID
 	}
 
 	if creds.AccessToken == "" {
@@ -215,18 +217,22 @@ func (s *Session) Unlock(keypass string) error {
 	return nil
 }
 
+// AddAuthHandler registers a handler for authentication events.
 func (s *Session) AddAuthHandler(handler proton.AuthHandler) {
 	s.Client.AddAuthHandler(handler)
 }
 
+// AddDeauthHandler registers a handler for deauthentication events.
 func (s *Session) AddDeauthHandler(handler proton.Handler) {
 	s.Client.AddDeauthHandler(handler)
 }
 
+// Stop closes the underlying API manager.
 func (s *Session) Stop() {
 	s.manager.Close()
 }
 
+// ListVolumes returns all volumes accessible by this session.
 func (s *Session) ListVolumes(ctx context.Context) ([]Volume, error) {
 	pVolumes, err := s.Client.ListVolumes(ctx)
 	if err != nil {
@@ -241,6 +247,7 @@ func (s *Session) ListVolumes(ctx context.Context) ([]Volume, error) {
 	return volumes, nil
 }
 
+// GetVolume returns the volume with the given ID.
 func (s *Session) GetVolume(ctx context.Context, id string) (Volume, error) {
 	pVolume, err := s.Client.GetVolume(ctx, id)
 	if err != nil {
@@ -250,6 +257,7 @@ func (s *Session) GetVolume(ctx context.Context, id string) (Volume, error) {
 	return Volume{pVolume: pVolume, session: s}, nil
 }
 
+// ListSharesMetadata returns metadata for all shares visible to this session.
 func (s *Session) ListSharesMetadata(ctx context.Context, all bool) ([]ShareMetadata, error) {
 	pShares, err := s.Client.ListShares(ctx, all)
 	if err != nil {
@@ -263,6 +271,7 @@ func (s *Session) ListSharesMetadata(ctx context.Context, all bool) ([]ShareMeta
 	return shares, nil
 }
 
+// GetShareMetadata returns the metadata for the share with the given ID.
 func (s *Session) GetShareMetadata(ctx context.Context, id string) (ShareMetadata, error) {
 	shares, err := s.Client.ListShares(ctx, true)
 	if err != nil {
@@ -278,6 +287,7 @@ func (s *Session) GetShareMetadata(ctx context.Context, id string) (ShareMetadat
 	return ShareMetadata{}, nil
 }
 
+// ListShares returns all fully-resolved shares visible to this session.
 func (s *Session) ListShares(ctx context.Context, all bool) ([]Share, error) {
 	return s.listShares(ctx, "", all)
 }
@@ -338,6 +348,7 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 	return shares, nil
 }
 
+// GetShare returns the fully-resolved share with the given ID.
 func (s *Session) GetShare(ctx context.Context, id string) (*Share, error) {
 	pShare, err := s.Client.GetShare(ctx, id)
 	if err != nil {
@@ -371,6 +382,7 @@ func (s *Session) GetShare(ctx context.Context, id string) (*Share, error) {
 	return &share, nil
 }
 
+// ResolveShare finds a share by its root link name.
 func (s *Session) ResolveShare(ctx context.Context, name string, all bool) (*Share, error) {
 	shares, err := s.ListShares(ctx, all)
 	if err != nil {
@@ -386,6 +398,7 @@ func (s *Session) ResolveShare(ctx context.Context, name string, all bool) (*Sha
 	return nil, ErrFileNotFound
 }
 
+// ResolvePath resolves a slash-separated path to a link across all shares.
 func (s *Session) ResolvePath(ctx context.Context, path string, all bool) (*Link, error) {
 	parts := strings.Split(path, "/")
 
@@ -406,7 +419,7 @@ func (s *Session) ResolvePath(ctx context.Context, path string, all bool) (*Link
 	return link, nil
 }
 
-func (s *Session) newLink(ctx context.Context, share *Share, parent *Link, pLink *proton.Link) (*Link, error) {
+func (s *Session) newLink(_ context.Context, share *Share, parent *Link, pLink *proton.Link) (*Link, error) {
 	slog.Debug("session.newLink", "linkID", pLink.LinkID)
 	var err error
 

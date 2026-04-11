@@ -18,7 +18,7 @@ var volumeListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List volumes",
 	Long:    "List volumes",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 

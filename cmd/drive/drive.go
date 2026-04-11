@@ -10,7 +10,7 @@ var driveCmd = &cobra.Command{
 	Use:   "drive",
 	Short: "Manage files/directories stored in ProtonDrive",
 	Long:  "Manage files/directories stored in ProtonDrive",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
 	},
 }

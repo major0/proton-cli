@@ -19,7 +19,7 @@ var driveListCmd = &cobra.Command{
 	Use:   "list [options] [<path> ...]",
 	Short: "List drive information",
 	Long:  "List Proton Drive information",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		// Parse/Validate the path.
 		var path string
 

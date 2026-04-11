@@ -242,6 +242,7 @@ func TestSessionIndex_StaleEntryCleanup(t *testing.T) {
 
 	// Delete the keyring entry directly, simulating external removal.
 	// Read the index to find the UUID, then delete it from the mock keyring.
+	//nolint:gosec // G304: test code reading test fixture by constructed path.
 	idxData, err := os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("read index: %v", err)
@@ -265,6 +266,7 @@ func TestSessionIndex_StaleEntryCleanup(t *testing.T) {
 	}
 
 	// Verify the stale entry was cleaned up from the index file.
+	//nolint:gosec // G304: test code reading test fixture by constructed path.
 	idxData, err = os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("read index after cleanup: %v", err)

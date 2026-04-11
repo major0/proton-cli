@@ -6,6 +6,7 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 )
 
+// Volume represents a Proton Drive volume.
 type Volume struct {
 	session *Session
 	pVolume proton.Volume

@@ -55,6 +55,7 @@ func TestPropertySessionConfigCookieRoundTrip(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		original := genSessionConfig(t)
 
+		//nolint:gosec // G117: property test intentionally marshals SessionConfig with tokens.
 		data, err := json.Marshal(original)
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
@@ -255,6 +256,7 @@ func TestSessionConfigLastRefreshPreserved(t *testing.T) {
 		LastRefresh:   ts,
 	}
 
+	//nolint:gosec // G117: unit test intentionally marshals SessionConfig with tokens.
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

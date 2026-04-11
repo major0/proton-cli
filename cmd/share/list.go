@@ -16,7 +16,7 @@ var shareListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List shares",
 	Long:  "List shares",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 

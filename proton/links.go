@@ -9,6 +9,7 @@ import (
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 )
 
+// Link represents a file or folder in a Proton Drive share.
 type Link struct {
 	Name string
 
@@ -37,11 +38,12 @@ func (l *Link) newLink(ctx context.Context, pLink *proton.Link) (*Link, error) {
 	return l.session.newLink(ctx, l.share, l, pLink)
 }
 
+// ListChildren returns the child links of this folder.
 func (l *Link) ListChildren(ctx context.Context, all bool) ([]Link, error) {
 	slog.Debug("link.ListChildren", "all", all)
 	// fmt.Println("link.ListChildren: pLink = %#v", l.protonLink)
-	//fmt.Println("link.ListChildren: share = %#v", l.share)
-	//fmt.Println("link.ListChildren: session = %#v", l.session)
+	// fmt.Println("link.ListChildren: share = %#v", l.share)
+	// fmt.Println("link.ListChildren: session = %#v", l.session)
 
 	pChildren, err := l.session.Client.ListChildren(ctx, l.share.protonShare.ShareID, l.protonLink.LinkID, all)
 	if err != nil {
@@ -93,6 +95,7 @@ func (l *Link) resolveParts(ctx context.Context, parts []string, all bool) (*Lin
 	return nil, ErrFileNotFound
 }
 
+// ResolvePath resolves a slash-separated path relative to this link.
 func (l *Link) ResolvePath(ctx context.Context, path string, all bool) (*Link, error) {
 	slog.Debug("link.ResolvePath", "path", path, "all", all)
 	path = strings.Trim(path, "/")
