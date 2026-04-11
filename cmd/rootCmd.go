@@ -91,6 +91,15 @@ func AddCommand(cmd *cobra.Command) {
 	rootCmd.AddCommand(cmd)
 }
 
+// ManagerHook returns the debug hook callback when DebugHTTP is enabled,
+// or nil otherwise. Pass the result to SessionFromLogin, SessionRestore, etc.
+func ManagerHook() func(*proton.Manager) {
+	if DebugHTTP {
+		return InstallDebugHooks
+	}
+	return nil
+}
+
 // Execute runs the root command and exits on error.
 func Execute() {
 	err := rootCmd.Execute()

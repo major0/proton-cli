@@ -58,9 +58,8 @@ var authLoginCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 
-		// Build manager hook. Task 7 will export cli.InstallDebugHooks;
-		// for now, always nil.
-		var managerHook func(*proton.Manager)
+		// Build manager hook for debug logging at verbosity >= 3.
+		managerHook := cli.ManagerHook()
 
 		session, err := common.SessionFromLogin(ctx, cli.ProtonOpts, username, password, managerHook)
 		if err != nil {

@@ -22,7 +22,7 @@ var volumeListCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 
-		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, nil)
+		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
 		if err != nil {
 			return err
 		}

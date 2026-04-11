@@ -54,9 +54,9 @@ func redactBody(body string) string {
 	return body
 }
 
-// installDebugHooks adds pre-request and post-response logging hooks to the
+// InstallDebugHooks adds pre-request and post-response logging hooks to the
 // proton manager. Called when verbosity >= 3.
-func installDebugHooks(m *proton.Manager) {
+func InstallDebugHooks(m *proton.Manager) {
 	m.AddPreRequestHook(func(_ *resty.Client, req *resty.Request) error {
 		attrs := []any{
 			"method", req.Method,
