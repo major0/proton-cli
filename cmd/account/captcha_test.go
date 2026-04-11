@@ -2,40 +2,33 @@ package accountCmd
 
 import (
 	"testing"
+
+	proton "github.com/ProtonMail/go-proton-api"
 )
 
-func TestExtractTokenPrefix(t *testing.T) {
+func TestFormatHvURL(t *testing.T) {
 	tests := []struct {
-		name  string
-		html  string
-		token string
-		want  string
+		name    string
+		details *proton.APIHVDetails
+		want    string
 	}{
 		{
-			"standard prefix",
-			`function tokenCallback(response) { return sendToken('LYxTbWWYSZK3JrTMrBkLWaVK'+'7HHmCTeFmwb/DnN7OpMdW6qL'+response); }`,
-			"test-token",
-			"LYxTbWWYSZK3JrTMrBkLWaVK7HHmCTeFmwb/DnN7OpMdW6qL",
+			"single method",
+			&proton.APIHVDetails{Methods: []string{"captcha"}, Token: "abc123"},
+			"https://verify.proton.me/?methods=captcha&token=abc123",
 		},
 		{
-			"single string prefix",
-			`function tokenCallback(response) { return sendToken('ABCDEF'+response); }`,
-			"test-token",
-			"ABCDEF",
-		},
-		{
-			"no match",
-			`<html><body>no tokenCallback here</body></html>`,
-			"test-token",
-			"",
+			"multiple methods",
+			&proton.APIHVDetails{Methods: []string{"captcha", "sms"}, Token: "xyz"},
+			"https://verify.proton.me/?methods=captcha,sms&token=xyz",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractTokenPrefix(tt.html, tt.token)
+			got := formatHvURL(tt.details)
 			if got != tt.want {
-				t.Errorf("extractTokenPrefix() = %q, want %q", got, tt.want)
+				t.Errorf("formatHvURL() = %q, want %q", got, tt.want)
 			}
 		})
 	}

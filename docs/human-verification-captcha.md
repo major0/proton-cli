@@ -7,17 +7,25 @@ challenge before retrying the request.
 
 ## How It Works
 
-1. The API responds with HTTP 422 and a `HumanVerification` JSON body containing
-   supported verification methods (e.g. `captcha`, `sms`, `email`).
-2. For the `captcha` method the client must open a browser-based flow hosted at
-   `verify.proton.me` (or the equivalent for the API entry point).
-3. The user solves the challenge; the page returns a verification token.
-4. The client retries the original request with the token in the
-   `x-pm-human-verification-token` header and the method in
-   `x-pm-human-verification-token-type`.
+1. The API responds with HTTP 422 and a JSON body containing error code 9001 and
+   `HumanVerificationMethods` / `HumanVerificationToken` in the `Details` field.
+2. The response also includes a `WebUrl` field:
+   `https://verify.proton.me/?methods=captcha&token=<HumanVerificationToken>`.
+3. The client opens this URL in a browser. The user solves the CAPTCHA challenge
+   on Proton's servers.
+4. Proton's backend records that the challenge token has been solved server-side.
+5. The client retries the original request, passing the **same** `APIHVDetails`
+   (challenge token + methods) via `NewClientWithLoginWithHVToken`. The backend
+   recognizes the token as solved and allows the request through.
 
-The official Go reference implementation lives in the **proton-bridge** `internal/hv`
-package.
+The client does **not** need to capture or intercept the solved CAPTCHA response.
+The `HumanVerificationToken` is a challenge identifier, not a one-time credential.
+Solving the CAPTCHA on `verify.proton.me` marks the token as verified server-side.
+The retry succeeds because the backend checks the token's verification status.
+
+This is confirmed by the proton-bridge CLI implementation (`internal/hv/hv.go` and
+`internal/frontend/cli/accounts.go`), which simply prints the `verify.proton.me` URL,
+waits for the user to press ENTER, and retries with the original `hvDetails` unchanged.
 
 ## Key Observations
 

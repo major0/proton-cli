@@ -78,18 +78,17 @@ var authLoginCmd = &cobra.Command{
 				return fmt.Errorf("unsupported HV methods: %v", hv.Methods)
 			}
 
-			var solvedToken string
+			// Prompt the user to solve the CAPTCHA on verify.proton.me.
+			// The backend marks the challenge token as solved server-side.
 			if authLoginParams.noBrowser {
-				solvedToken, err = SolveCaptchaNoBrowser(ctx, cli.ProtonOpts, hv)
+				SolveCaptchaNoBrowser(hv)
 			} else {
-				solvedToken, err = SolveCaptcha(ctx, cli.ProtonOpts, hv)
-			}
-			if err != nil {
-				return err
+				SolveCaptcha(hv)
 			}
 
-			hv.Token = solvedToken
+			fmt.Println("Authenticating ...")
 
+			// Retry with the same HV details — the token is now verified.
 			session, err = common.SessionFromLoginWithHV(ctx, cli.ProtonOpts, username, password, hv, managerHook)
 			if err != nil {
 				return err
