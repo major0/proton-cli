@@ -4,7 +4,6 @@ import (
 	"log/slog"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/internal"
 )
 
 /* The authHandler is periodically called by the underyling Proton Client
@@ -16,8 +15,6 @@ import (
 func authHandler(auth proton.Auth) {
 	// Save the login credentials into our app cache
 	slog.Debug("auth", "uid", auth.UID, "access_token", auth.AccessToken, "refresh_token", auth.RefreshToken)
-
-	sessionStore := internal.NewFileStore(rootParams.SessionFile, rootParams.Account)
 
 	// Read the previous session store so we don't lose the SaltedKeyPass
 	sessionConfig, err := sessionStore.Load()

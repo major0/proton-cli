@@ -131,8 +131,6 @@ func SessionLogin(username string, password string, mboxpass string, twoFA strin
 		SaltedKeyPass: common.Base64Encode(keypass),
 	}
 
-	sessionStore := internal.NewFileStore(rootParams.SessionFile, rootParams.Account)
-
 	if err := sessionStore.Save(config); err != nil {
 		return session, err
 	}
@@ -158,7 +156,6 @@ func SessionRevoke(session *common.Session, force bool) error {
 		}
 	}
 
-	sessionStore := internal.NewFileStore(rootParams.SessionFile, rootParams.Account)
 	return sessionStore.Delete()
 }
 

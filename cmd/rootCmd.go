@@ -63,7 +63,7 @@ var (
 
 			Timeout = rootParams.Timeout * time.Second
 
-			sessionStore = internal.NewFileStore(rootParams.SessionFile, rootParams.Account)
+			sessionStore = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", internal.SystemKeyring{})
 
 			return nil
 		},
