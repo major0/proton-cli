@@ -10,6 +10,7 @@ require (
 	github.com/jedib0t/go-pretty/v6 v6.6.5
 	github.com/miteshbsjat/textfilekv v1.1.1
 	github.com/spf13/cobra v1.8.1
+	github.com/google/uuid v1.6.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/term v0.41.0
 )
@@ -30,7 +31,6 @@ require (
 	github.com/emersion/go-vcard v0.0.0-20241024213814-c9703dde27ff // indirect
 	github.com/go-resty/resty/v2 v2.17.2 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/major0/optargs v0.4.2 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
