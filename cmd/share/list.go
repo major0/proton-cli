@@ -8,6 +8,7 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/jedib0t/go-pretty/v6/table"
 	cli "github.com/major0/proton-cli/cmd"
+	common "github.com/major0/proton-cli/proton"
 	"github.com/spf13/cobra"
 )
 
@@ -16,13 +17,16 @@ var shareListCmd = &cobra.Command{
 	Short: "List shares",
 	Long:  "List shares",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		session, err := cli.SessionRestore()
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+
+		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, nil)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
-		defer cancel()
+		session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+		session.AddDeauthHandler(common.NewDeauthHandler())
 
 		shares, err := session.Client.ListShares(ctx, true)
 		if err != nil {

@@ -9,6 +9,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/jedib0t/go-pretty/v6/table"
 	cli "github.com/major0/proton-cli/cmd"
+	common "github.com/major0/proton-cli/proton"
 	"github.com/spf13/cobra"
 )
 
@@ -18,13 +19,16 @@ var volumeListCmd = &cobra.Command{
 	Short:   "List volumes",
 	Long:    "List volumes",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		session, err := cli.SessionRestore()
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+
+		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, nil)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
-		defer cancel()
+		session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+		session.AddDeauthHandler(common.NewDeauthHandler())
 
 		volumes, err := session.Client.ListVolumes(ctx)
 		if err != nil {

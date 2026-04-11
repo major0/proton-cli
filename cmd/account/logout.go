@@ -1,7 +1,10 @@
 package accountCmd
 
 import (
+	"context"
+
 	cli "github.com/major0/proton-cli/cmd"
+	common "github.com/major0/proton-cli/proton"
 	"github.com/spf13/cobra"
 )
 
@@ -11,12 +14,20 @@ var authLogoutCmd = &cobra.Command{
 	Short: "logout of ProtonDrive",
 	Long:  `logout of ProtonDrive`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		session, err := cli.SessionRestore()
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+
+		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, nil)
 		if err != nil && !authLogoutForce {
 			return err
 		}
 
-		return cli.SessionRevoke(session, authLogoutForce)
+		if session != nil {
+			session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+			session.AddDeauthHandler(common.NewDeauthHandler())
+		}
+
+		return common.SessionRevoke(ctx, session, cli.SessionStoreVar, authLogoutForce)
 	},
 }
 

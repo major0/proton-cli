@@ -10,7 +10,6 @@ import (
 	"time"
 
 	cli "github.com/major0/proton-cli/cmd"
-	"github.com/major0/proton-cli/proton"
 	"github.com/spf13/cobra"
 )
 
@@ -19,18 +18,6 @@ var _ func() = cli.Execute
 
 // AddCommand(*cobra.Command) — single arg, no return.
 var _ func(*cobra.Command) = cli.AddCommand
-
-// SessionRestore() (*Session, error)
-var _ func() (*proton.Session, error) = cli.SessionRestore
-
-// SessionLogin(username, password, mboxpass, twoFA string) (*Session, error)
-var _ func(string, string, string, string) (*proton.Session, error) = cli.SessionLogin
-
-// SessionRevoke(*Session, bool) error
-var _ func(*proton.Session, bool) error = cli.SessionRevoke
-
-// SessionList() ([]string, error)
-var _ func() ([]string, error) = cli.SessionList
 
 // Timeout is an exported time.Duration variable.
 var _ time.Duration = cli.Timeout

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	cli "github.com/major0/proton-cli/cmd"
+	common "github.com/major0/proton-cli/proton"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +14,10 @@ var accountInfoCmd = &cobra.Command{
 	Short: "report account information",
 	Long:  `report information about currently logged in user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		session, err := cli.SessionRestore()
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+
+		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, nil)
 		if err != nil {
 			return err
 		}
@@ -23,7 +27,10 @@ var accountInfoCmd = &cobra.Command{
 			return nil
 		}
 
-		user, err := session.Client.GetUser(context.Background())
+		session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+		session.AddDeauthHandler(common.NewDeauthHandler())
+
+		user, err := session.Client.GetUser(ctx)
 		if err != nil {
 			return err
 		}

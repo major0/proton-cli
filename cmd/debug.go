@@ -10,11 +10,11 @@ import (
 
 // sensitiveHeaders lists HTTP headers whose values must be redacted in debug output.
 var sensitiveHeaders = map[string]bool{
-	"authorization":                    true,
-	"x-pm-uid":                         true,
-	"x-pm-human-verification-token":    true,
-	"set-cookie":                       true,
-	"cookie":                           true,
+	"authorization":                 true,
+	"x-pm-uid":                      true,
+	"x-pm-human-verification-token": true,
+	"set-cookie":                    true,
+	"cookie":                        true,
 }
 
 // sensitiveBodyFields lists JSON field names whose values must be redacted.

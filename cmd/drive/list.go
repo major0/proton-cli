@@ -55,14 +55,16 @@ var driveListCmd = &cobra.Command{
 			path = strings.Join(newParts, "/") + trailingSlash
 		}
 
-		session, err := cli.SessionRestore()
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+
+		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, nil)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
-		defer cancel()
-
+		session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+		session.AddDeauthHandler(common.NewDeauthHandler())
 
 		// If no path is specified then simply list all shares.
 		// If a path is specified then reolve it to the last link.

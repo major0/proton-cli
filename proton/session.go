@@ -2,7 +2,10 @@ package proton
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/cookiejar"
 	"strings"
 	"sync"
 
@@ -19,6 +22,8 @@ type Session struct {
 	Auth    proton.Auth
 	manager *proton.Manager
 
+	cookieJar http.CookieJar
+
 	MaxWorkers int
 
 	addresses      map[string]proton.Address
@@ -31,7 +36,7 @@ type Session struct {
 /* Initialize a new session frmo the provided credentials. The session is
  * not fully usable until it has been Unlock()'ed using the user-provided
  * keypass */
-func SessionFromCredentials(ctx context.Context, options []proton.Option, creds *SessionCredentials) (*Session, error) {
+func SessionFromCredentials(ctx context.Context, options []proton.Option, creds *SessionCredentials, managerHook func(*proton.Manager)) (*Session, error) {
 	var err error
 
 	// Initialize the client from our cahced credentials
@@ -50,9 +55,16 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 	var session Session
 	session.MaxWorkers = 10
 
+	jar, _ := cookiejar.New(nil)
+	session.cookieJar = jar
+
 	slog.Debug("session.refresh client")
 
-	session.manager = proton.New(options...)
+	session.manager = proton.New(append(options, proton.WithCookieJar(jar))...)
+
+	if managerHook != nil {
+		managerHook(session.manager)
+	}
 
 	slog.Debug("session.config", "uid", creds.UID, "access_token", creds.AccessToken, "refresh_token", creds.RefreshToken)
 	session.Client = session.manager.NewClient(creds.UID, creds.AccessToken, creds.RefreshToken)
@@ -78,18 +90,53 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 	return &session, nil
 }
 
-/* Initialize a new session from the provided login/password. The returned
- * session may have extra authentication requirements, such as 2FA.
- * Once all authentication challenges have been met, the session will still
- * need to be Unlock()'ed to gain access to the User and Address
- * keyrings. */
-func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string) (*Session, error) {
-	var err error
+// sessionFromLogin creates a session with common setup shared by
+// SessionFromLogin and SessionFromLoginWithHV. It returns the prepared
+// session and manager; the caller performs the actual login call.
+func sessionFromLogin(options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
 	session := &Session{}
 	session.MaxWorkers = 10
-	session.manager = proton.New(options...)
+
+	jar, _ := cookiejar.New(nil)
+	session.cookieJar = jar
+
+	session.manager = proton.New(append(options, proton.WithCookieJar(jar))...)
+
+	if managerHook != nil {
+		managerHook(session.manager)
+	}
+
+	return session, session.manager
+}
+
+// SessionFromLogin initializes a new session from the provided login/password.
+// The returned session may have extra authentication requirements, such as 2FA.
+// Once all authentication challenges have been met, the session will still
+// need to be Unlock()'ed to gain access to the User and Address keyrings.
+func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string, managerHook func(*proton.Manager)) (*Session, error) {
+	session, manager := sessionFromLogin(options, managerHook)
+
 	slog.Debug("session.login", "username", username, "password", "<hidden>")
-	session.Client, session.Auth, err = session.manager.NewClientWithLogin(ctx, username, []byte(password))
+
+	var err error
+	session.Client, session.Auth, err = manager.NewClientWithLogin(ctx, username, []byte(password))
+	if err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+// SessionFromLoginWithHV performs SRP login with a pre-solved HV token.
+// It shares common setup with SessionFromLogin but calls
+// NewClientWithLoginWithHVToken instead of NewClientWithLogin.
+func SessionFromLoginWithHV(ctx context.Context, options []proton.Option, username, password string, hv *proton.APIHVDetails, managerHook func(*proton.Manager)) (*Session, error) {
+	session, manager := sessionFromLogin(options, managerHook)
+
+	slog.Debug("session.login.hv", "username", username, "password", "<hidden>")
+
+	var err error
+	session.Client, session.Auth, err = manager.NewClientWithLoginWithHVToken(ctx, username, []byte(password), hv)
 	if err != nil {
 		return nil, err
 	}
@@ -386,4 +433,71 @@ func (s *Session) newLink(ctx context.Context, share *Share, parent *Link, pLink
 	}
 
 	return &link, nil
+}
+
+// SessionRestore loads credentials from the store and creates an unlocked
+// session. Returns ErrNotLoggedIn if no session is stored.
+func SessionRestore(ctx context.Context, options []proton.Option, store SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
+	config, err := store.Load()
+	if err != nil {
+		if errors.Is(err, ErrKeyNotFound) {
+			return nil, ErrNotLoggedIn
+		}
+		return nil, err
+	}
+
+	slog.Debug("SessionRestore", "uid", config.UID, "access_token", config.AccessToken, "refresh_token", config.RefreshToken)
+
+	creds := &SessionCredentials{
+		UID:          config.UID,
+		AccessToken:  config.AccessToken,
+		RefreshToken: config.RefreshToken,
+	}
+
+	session, err := SessionFromCredentials(ctx, options, creds, managerHook)
+	if err != nil {
+		return nil, err
+	}
+
+	keypass, err := Base64Decode(config.SaltedKeyPass)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := session.Unlock(string(keypass)); err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+// SessionSave persists session credentials and the salted keypass to the store.
+func SessionSave(store SessionStore, session *Session, keypass []byte) error {
+	config := &SessionConfig{
+		UID:           session.Auth.UID,
+		AccessToken:   session.Auth.AccessToken,
+		RefreshToken:  session.Auth.RefreshToken,
+		SaltedKeyPass: Base64Encode(keypass),
+	}
+	return store.Save(config)
+}
+
+// SessionRevoke revokes the API session and deletes it from the store.
+// If force is true, store deletion proceeds even when the API revoke fails.
+func SessionRevoke(ctx context.Context, session *Session, store SessionStore, force bool) error {
+	if session != nil {
+		slog.Debug("SessionRevoke", "uid", session.Auth.UID)
+		if err := session.Client.AuthRevoke(ctx, session.Auth.UID); err != nil {
+			if !force {
+				return err
+			}
+			slog.Error("SessionRevoke", "error", err)
+		}
+	}
+	return store.Delete()
+}
+
+// SessionList returns account names from the session store.
+func SessionList(store SessionStore) ([]string, error) {
+	return store.List()
 }
