@@ -76,6 +76,10 @@ var (
 				proton.WithUserAgent(UserAgent),
 			}
 
+			if DebugHTTP {
+				ProtonOpts = append(ProtonOpts, proton.WithDebug(true))
+			}
+
 			SessionStoreVar = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", internal.SystemKeyring{})
 
 			return nil
