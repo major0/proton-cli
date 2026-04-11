@@ -2,6 +2,7 @@ package cli
 
 import (
 	"log/slog"
+	"net/http/cookiejar"
 	"os"
 	"time"
 
@@ -21,9 +22,13 @@ var (
 	// Handles loading/saving session data
 	sessionStore common.SessionStore
 
+	// cookieJar persists session cookies across API requests.
+	cookieJar, _ = cookiejar.New(nil)
+
 	protonOptions = []proton.Option{
 		proton.WithAppVersion(AppVersion),
 		proton.WithUserAgent(UserAgent),
+		proton.WithCookieJar(cookieJar),
 	}
 
 	// rootCmd parameter store. Only the results of Flags and our preRun
@@ -63,6 +68,13 @@ var (
 
 			Timeout = rootParams.Timeout * time.Second
 
+			// Rebuild proton options based on verbosity.
+			protonOptions = []proton.Option{
+				proton.WithAppVersion(AppVersion),
+				proton.WithUserAgent(UserAgent),
+				proton.WithCookieJar(cookieJar),
+			}
+
 			sessionStore = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", internal.SystemKeyring{})
 
 			return nil
@@ -99,6 +111,7 @@ func init() {
 	protonOptions = []proton.Option{
 		proton.WithAppVersion(AppVersion),
 		proton.WithUserAgent(UserAgent),
+		proton.WithCookieJar(cookieJar),
 	}
 
 	rootCmd.PersistentFlags().CountVarP(&rootParams.Verbose, "verbose", "v", "Enable verbose output. Can be specified multiple times to increase verbosity.")
