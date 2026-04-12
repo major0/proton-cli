@@ -33,9 +33,9 @@ func (m *mockStore) Save(cfg *SessionConfig) error {
 	return nil
 }
 
-func (m *mockStore) Delete() error            { return nil }
-func (m *mockStore) List() ([]string, error)   { return nil, nil }
-func (m *mockStore) Switch(string) error       { return nil }
+func (m *mockStore) Delete() error           { return nil }
+func (m *mockStore) List() ([]string, error) { return nil, nil }
+func (m *mockStore) Switch(string) error     { return nil }
 
 // TestAuthHandlerConcurrency verifies no data race when multiple goroutines
 // invoke the auth handler simultaneously. Run with: go test -race ./api/...

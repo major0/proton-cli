@@ -291,10 +291,10 @@ type errStore struct {
 }
 
 func (s *errStore) Load() (*SessionConfig, error) { return nil, s.err }
-func (s *errStore) Save(*SessionConfig) error      { return nil }
-func (s *errStore) Delete() error                   { return nil }
-func (s *errStore) List() ([]string, error)         { return nil, nil }
-func (s *errStore) Switch(string) error             { return nil }
+func (s *errStore) Save(*SessionConfig) error     { return nil }
+func (s *errStore) Delete() error                 { return nil }
+func (s *errStore) List() ([]string, error)       { return nil, nil }
+func (s *errStore) Switch(string) error           { return nil }
 
 // TestReadySessionStoreError verifies that ReadySession propagates store.Load
 // errors. An empty mockStore returns a SessionConfig with no UID, which
