@@ -62,6 +62,12 @@ func runDf(_ *cobra.Command, _ []string) error {
 		nameIndex[v.VolumeID] = name
 	}
 
+	// Account-level quota from the user object.
+	user, err := session.Client.GetUser(ctx)
+	if err != nil {
+		return err
+	}
+
 	fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
 		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State")
 
@@ -104,6 +110,19 @@ func runDf(_ *cobra.Command, _ []string) error {
 			dfVolState(v.State),
 		)
 	}
+
+	// Account total line.
+	acctSize := units.BytesSize(float64(user.MaxSpace))
+	acctUsed := units.BytesSize(float64(user.UsedSpace))
+	acctAvail := "-"
+	acctPct := "-"
+	if user.MaxSpace > 0 {
+		free := user.MaxSpace - user.UsedSpace
+		acctAvail = units.BytesSize(float64(free))
+		acctPct = fmt.Sprintf("%.0f%%", float64(user.UsedSpace)/float64(user.MaxSpace)*100)
+	}
+	fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
+		"total", acctSize, acctUsed, acctAvail, acctPct, "-", "-", "-")
 
 	return nil
 }
