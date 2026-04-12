@@ -2,11 +2,11 @@ package accountCmd
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -20,20 +20,13 @@ var accountAddressCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 
-		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+		session, err := cli.RestoreSession(ctx)
 		if err != nil {
 			return err
 		}
 
-		if session == nil {
-			fmt.Println("Not logged in")
-			return nil
-		}
-
-		session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-		session.AddDeauthHandler(common.NewDeauthHandler())
-
-		addresses, err := session.Client.GetAddresses(ctx)
+		acct := account.NewClient(session)
+		addresses, err := acct.GetAddresses(ctx)
 		if err != nil {
 			return err
 		}

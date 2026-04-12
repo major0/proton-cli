@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	common "github.com/major0/proton-cli/api"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -41,15 +41,17 @@ func runShareList(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	session, err := cli.RestoreSession(ctx)
 	if err != nil {
 		return err
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return err
+	}
 
-	shares, err := session.ListShares(ctx, true)
+	shares, err := dc.ListShares(ctx, true)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package accountCmd
 
 import (
 	"context"
+	"errors"
 
 	common "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/cmd"
@@ -17,14 +18,9 @@ var authLogoutCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 
-		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
-		if err != nil && !authLogoutForce {
+		session, err := cli.RestoreSession(ctx)
+		if err != nil && !errors.Is(err, common.ErrNotLoggedIn) && !authLogoutForce {
 			return err
-		}
-
-		if session != nil {
-			session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-			session.AddDeauthHandler(common.NewDeauthHandler())
 		}
 
 		return common.SessionRevoke(ctx, session, cli.SessionStoreVar, authLogoutForce)
