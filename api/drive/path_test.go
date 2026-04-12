@@ -1,6 +1,7 @@
 package drive
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -33,14 +34,14 @@ func TestNormalizePath_Property(t *testing.T) {
 			raw = "/" + raw
 		}
 		if trailingSlash {
-			raw = raw + "/"
+			raw += "/"
 		}
 
 		result, err := NormalizePath(raw)
 
 		if err != nil {
 			// If error, it must be ErrInvalidPath.
-			if err != ErrInvalidPath {
+			if !errors.Is(err, ErrInvalidPath) {
 				t.Fatalf("expected ErrInvalidPath, got %v", err)
 			}
 			return
@@ -81,7 +82,7 @@ func TestNormalizePath_Property(t *testing.T) {
 // TestNormalizePath_EmptyInput verifies empty input returns ErrInvalidPath.
 func TestNormalizePath_EmptyInput(t *testing.T) {
 	_, err := NormalizePath("")
-	if err != ErrInvalidPath {
+	if !errors.Is(err, ErrInvalidPath) {
 		t.Fatalf("expected ErrInvalidPath for empty input, got %v", err)
 	}
 }
@@ -89,7 +90,7 @@ func TestNormalizePath_EmptyInput(t *testing.T) {
 // TestNormalizePath_SlashOnly verifies "/" returns ErrInvalidPath.
 func TestNormalizePath_SlashOnly(t *testing.T) {
 	_, err := NormalizePath("/")
-	if err != ErrInvalidPath {
+	if !errors.Is(err, ErrInvalidPath) {
 		t.Fatalf("expected ErrInvalidPath for /, got %v", err)
 	}
 }
@@ -97,7 +98,7 @@ func TestNormalizePath_SlashOnly(t *testing.T) {
 // TestNormalizePath_DotOnly verifies "." returns ErrInvalidPath.
 func TestNormalizePath_DotOnly(t *testing.T) {
 	_, err := NormalizePath(".")
-	if err != ErrInvalidPath {
+	if !errors.Is(err, ErrInvalidPath) {
 		t.Fatalf("expected ErrInvalidPath for ., got %v", err)
 	}
 }

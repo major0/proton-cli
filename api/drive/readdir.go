@@ -136,7 +136,7 @@ func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 // ListChildren returns all child links of this folder as a slice.
 // Built on Readdir — prefer Readdir for streaming or early termination.
 func (l *Link) ListChildren(ctx context.Context, _ bool) ([]*Link, error) {
-	var links []*Link
+	links := make([]*Link, 0, 16)
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
 			return nil, entry.Err

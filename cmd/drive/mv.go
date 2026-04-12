@@ -133,5 +133,3 @@ func doMove(ctx context.Context, dc *driveClient.Client, srcShare *drive.Share, 
 
 	return nil
 }
-
-

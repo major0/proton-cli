@@ -33,7 +33,7 @@ func (m *mockResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 }
 
 func (m *mockResolver) Throttle() *api.Throttle { return nil }
-func (m *mockResolver) MaxWorkers() int          { return 1 }
+func (m *mockResolver) MaxWorkers() int         { return 1 }
 
 // TestRemove_ShareRoot_Property verifies that Remove rejects share root
 // links for any RemoveOpts combination.

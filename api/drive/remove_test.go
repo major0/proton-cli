@@ -51,12 +51,12 @@ func (m *mockRemoveResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 }
 
 func (m *mockRemoveResolver) Throttle() *api.Throttle { return nil }
-func (m *mockRemoveResolver) MaxWorkers() int          { return 1 }
+func (m *mockRemoveResolver) MaxWorkers() int         { return 1 }
 
 // makeTestFolder creates a folder Link with a parent, backed by the
 // given resolver. The folder's decrypted state is pre-set so
 // ListChildren works without real crypto.
-func makeTestFolder(resolver LinkResolver, name string) (*Link, *Share) {
+func makeTestFolder(resolver LinkResolver, name string) *Link {
 	pShare := &proton.Share{
 		ShareMetadata: proton.ShareMetadata{ShareID: "test-share"},
 	}
@@ -79,7 +79,7 @@ func makeTestFolder(resolver LinkResolver, name string) (*Link, *Share) {
 	}
 	folder.once.Do(func() { folder.name = name })
 
-	return folder, share
+	return folder
 }
 
 // makeTestShareRoot creates a share root Link (ParentLink() == nil).
@@ -156,7 +156,7 @@ func TestRemoveChecks_NonEmptyFolder_Property(t *testing.T) {
 		childCount := rapid.IntRange(1, 50).Draw(t, "childCount")
 
 		resolver := &mockRemoveResolver{childCount: childCount}
-		folder, _ := makeTestFolder(resolver, "test-folder")
+		folder := makeTestFolder(resolver, "test-folder")
 
 		err := simulateRemoveChecks(context.Background(), folder, RemoveOpts{
 			Recursive: false,
@@ -176,7 +176,7 @@ func TestRemoveChecks_NonEmptyFolder_Property(t *testing.T) {
 // the non-empty check.
 func TestRemoveChecks_EmptyFolder(t *testing.T) {
 	resolver := &mockRemoveResolver{childCount: 0}
-	folder, _ := makeTestFolder(resolver, "empty-folder")
+	folder := makeTestFolder(resolver, "empty-folder")
 
 	err := simulateRemoveChecks(context.Background(), folder, RemoveOpts{
 		Recursive: false,

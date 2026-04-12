@@ -100,8 +100,6 @@ func formatName(name string, lt proton.LinkType, useColor, classify bool) string
 	return name + suffix
 }
 
-
-
 func fmtShareState(state proton.ShareState) string {
 	switch state {
 	case proton.ShareStateActive:

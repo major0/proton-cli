@@ -25,15 +25,19 @@ func (c *Client) ListSharesMetadata(ctx context.Context, all bool) ([]drive.Shar
 }
 
 // GetShareMetadata returns the metadata for the share with the given ID.
-func (c *Client) GetShareMetadata(ctx context.Context, id string) (drive.ShareMetadata, error) {
-	shares, err := c.Session.Client.ListShares(ctx, true)
-	if err != nil {
-		return drive.ShareMetadata{}, err
+// If metas is non-nil, searches the provided list instead of calling the API.
+func (c *Client) GetShareMetadata(ctx context.Context, id string, metas []drive.ShareMetadata) (drive.ShareMetadata, error) {
+	if metas == nil {
+		var err error
+		metas, err = c.ListSharesMetadata(ctx, true)
+		if err != nil {
+			return drive.ShareMetadata{}, err
+		}
 	}
 
-	for _, share := range shares {
-		if share.ShareID == id {
-			return drive.ShareMetadata(share), nil
+	for _, meta := range metas {
+		if meta.ShareID == id {
+			return meta, nil
 		}
 	}
 
@@ -96,7 +100,7 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 		close(shareQueue)
 	}()
 
-	var shares []drive.Share
+	shares := make([]drive.Share, 0, len(pshares))
 	for share := range shareQueue {
 		shares = append(shares, *share)
 	}
@@ -135,19 +139,26 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 }
 
 // ResolveShare finds a share by its root link name.
+// Fetches metadata first, then decrypts shares one at a time until a
+// match is found — avoids decrypting all shares upfront.
 func (c *Client) ResolveShare(ctx context.Context, name string, all bool) (*drive.Share, error) {
-	shares, err := c.ListShares(ctx, all)
+	metas, err := c.ListSharesMetadata(ctx, all)
 	if err != nil {
 		return nil, err
 	}
 
-	for i := range shares {
-		shareName, err := shares[i].Link.Name()
+	for _, meta := range metas {
+		share, err := c.GetShare(ctx, meta.ShareID)
+		if err != nil {
+			slog.Debug("ResolveShare: skip", "shareID", meta.ShareID, "error", err)
+			continue
+		}
+		shareName, err := share.Link.Name()
 		if err != nil {
 			continue
 		}
 		if shareName == name {
-			return &shares[i], nil
+			return share, nil
 		}
 	}
 

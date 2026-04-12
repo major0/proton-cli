@@ -142,5 +142,3 @@ func dfVolState(state proton.VolumeState) string {
 		return fmt.Sprintf("unknown(%d)", state)
 	}
 }
-
-

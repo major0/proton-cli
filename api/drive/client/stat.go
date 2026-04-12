@@ -34,7 +34,7 @@ func (c *Client) StatLinks(ctx context.Context, share *drive.Share, parentLink *
 	var (
 		wg      sync.WaitGroup
 		mu      sync.Mutex
-		links   []*drive.Link
+		links   = make([]*drive.Link, 0, len(linkIDs))
 		idQueue = make(chan string)
 	)
 
