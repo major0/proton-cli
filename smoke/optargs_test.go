@@ -11,15 +11,15 @@ import (
 
 // flagDef describes a flag registered on a test command.
 type flagDef struct {
-	Name     string
-	IsBool   bool
-	Default  string
+	Name    string
+	IsBool  bool
+	Default string
 }
 
 // testFlags is the set of long flags we register, chosen to have
 // distinct prefixes at various lengths for abbreviation testing.
 var testFlags = []flagDef{
-	{Name: "verbose", IsBool: false},   // count flag, but string for prefix test
+	{Name: "verbose", IsBool: false}, // count flag, but string for prefix test
 	{Name: "account", IsBool: false},
 	{Name: "config-file", IsBool: false},
 	{Name: "session-file", IsBool: false},
