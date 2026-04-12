@@ -26,8 +26,12 @@ go.work.sum
 .env
 
 # Session data (should live in XDG_CONFIG_HOME, not the repo)
-proton/
-*.db
+proton/sessions.db
+proton/config.yaml
+proton/cache.yaml
+
+# Test failure data
+proton/testdata/
 
 # WIP files
 *.wip
