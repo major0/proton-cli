@@ -293,18 +293,21 @@ func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]
 		}()
 	}
 
-	// Spawn a producer to feed the idQueue as fast as the workers
-	// can consume it.
+	// Spawn a producer to feed the idQueue, respecting cancellation.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer close(idQueue)
 		for _, s := range pshares {
 			if volumeID != "" && volumeID != s.VolumeID {
 				continue
 			}
-			idQueue <- s.ShareID
+			select {
+			case idQueue <- s.ShareID:
+			case <-ctx.Done():
+				return
+			}
 		}
-		close(idQueue)
 	}()
 
 	// Wait for all workers to finish, then close the shareQueue to
@@ -346,11 +349,7 @@ func (s *Session) GetShare(ctx context.Context, id string) (*Share, error) {
 		return nil, err
 	}
 
-	link, err := s.newLink(ctx, &share, nil, &pLink)
-	if err != nil {
-		return nil, err
-	}
-
+	link := s.newLink(ctx, &share, nil, &pLink)
 	share.Link = link
 
 	return &share, nil
@@ -363,9 +362,13 @@ func (s *Session) ResolveShare(ctx context.Context, name string, all bool) (*Sha
 		return nil, err
 	}
 
-	for _, share := range shares {
-		if share.Link.Name == name {
-			return &share, nil
+	for i := range shares {
+		shareName, err := shares[i].Link.Name()
+		if err != nil {
+			continue
+		}
+		if shareName == name {
+			return &shares[i], nil
 		}
 	}
 
@@ -385,63 +388,11 @@ func (s *Session) ResolvePath(ctx context.Context, path string, all bool) (*Link
 		return nil, err
 	}
 
-	link, err := share.Link.resolveParts(ctx, parts[1:], all)
-	if err != nil {
-		return nil, err
-	}
-
-	return link, nil
+	return share.Link.resolveParts(ctx, parts[1:])
 }
 
-func (s *Session) newLink(_ context.Context, share *Share, parent *Link, pLink *proton.Link) (*Link, error) {
-	slog.Debug("session.newLink", "linkID", pLink.LinkID)
-	var err error
-
-	link := Link{
-		Type:           pLink.Type,
-		Size:           0,
-		State:          &pLink.State,
-		CreateTime:     pLink.CreateTime,
-		ModifyTime:     pLink.ModifyTime,
-		ExpirationTime: pLink.ExpirationTime,
-
-		parentLink: parent,
-		protonLink: pLink,
-		share:      share,
-		session:    s,
-	}
-
-	link.keyRing, err = link.getKeyRing(pLink.SignatureEmail)
-	if err != nil {
-		return nil, err
-	}
-
-	link.nameKeyRing, err = link.getKeyRing(pLink.NameSignatureEmail)
-	if err != nil {
-		return nil, err
-	}
-
-	link.Name, err = link.getName()
-	if err != nil {
-		return nil, err
-	}
-
-	slog.Debug("session.newLink", "name", link.Name)
-
-	if pLink.Type == proton.LinkTypeFile {
-		slog.Debug("session.newLink", "linkType", "file")
-		link.Size = pLink.FileProperties.ActiveRevision.Size
-		link.ModifyTime = pLink.FileProperties.ActiveRevision.CreateTime
-		/*
-			link.XAttr, err = pLink.FileProperties.ActiveRevision.GetDecXAttrString(link.parentLink.keyRing, link.keyRing)
-			if err != nil {
-				return nil, err
-			} /**/
-	} else {
-		slog.Debug("session.newLink", "linkType", "folder")
-	}
-
-	return &link, nil
+func (s *Session) newLink(_ context.Context, share *Share, parent *Link, pLink *proton.Link) *Link {
+	return newLink(pLink, parent, share, s)
 }
 
 // SessionRestore loads credentials from the store and creates an unlocked

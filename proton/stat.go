@@ -7,21 +7,22 @@ import (
 	"sync"
 )
 
-// StatLink resolves a single link ID within a share into a fully-populated
-// Link with decrypted name, size, and timestamps.
+// StatLink resolves a single link ID within a share into a Link.
+// The returned Link is lazily decrypted — call Name(), KeyRing(), etc.
+// to trigger decryption on demand.
 func (s *Session) StatLink(ctx context.Context, share *Share, parentLink *Link, linkID string) (*Link, error) {
 	pLink, err := s.Client.GetLink(ctx, share.protonShare.ShareID, linkID)
 	if err != nil {
 		return nil, fmt.Errorf("stat %s: %w", linkID, err)
 	}
 
-	return s.newLink(ctx, share, parentLink, &pLink)
+	return s.newLink(ctx, share, parentLink, &pLink), nil
 }
 
 // StatLinks resolves a batch of link IDs concurrently. Up to MaxWorkers
 // goroutines run in parallel. Links that fail to resolve are logged and
 // skipped. Respects context cancellation.
-func (s *Session) StatLinks(ctx context.Context, share *Share, parentLink *Link, linkIDs []string) ([]Link, error) {
+func (s *Session) StatLinks(ctx context.Context, share *Share, parentLink *Link, linkIDs []string) ([]*Link, error) {
 	if len(linkIDs) == 0 {
 		return nil, nil
 	}
@@ -31,7 +32,7 @@ func (s *Session) StatLinks(ctx context.Context, share *Share, parentLink *Link,
 	var (
 		wg      sync.WaitGroup
 		mu      sync.Mutex
-		links   []Link
+		links   []*Link
 		idQueue = make(chan string)
 	)
 
@@ -49,13 +50,12 @@ func (s *Session) StatLinks(ctx context.Context, share *Share, parentLink *Link,
 					continue
 				}
 				mu.Lock()
-				links = append(links, *link)
+				links = append(links, link)
 				mu.Unlock()
 			}
 		}()
 	}
 
-	// Feed IDs, respecting cancellation.
 	go func() {
 		defer close(idQueue)
 		for _, id := range linkIDs {
@@ -72,8 +72,7 @@ func (s *Session) StatLinks(ctx context.Context, share *Share, parentLink *Link,
 }
 
 // FindLinkByName resolves link IDs concurrently and returns the first one
-// matching the given name. Returns nil if no match is found. Workers are
-// cancelled as soon as a match is found.
+// whose decrypted name matches. Returns nil if no match is found.
 func (s *Session) FindLinkByName(ctx context.Context, share *Share, parentLink *Link, linkIDs []string, name string) (*Link, error) {
 	if len(linkIDs) == 0 {
 		return nil, nil
@@ -106,7 +105,12 @@ func (s *Session) FindLinkByName(ctx context.Context, share *Share, parentLink *
 					slog.Error("stat", "linkID", id, "error", err)
 					continue
 				}
-				if link.Name == name {
+				linkName, err := link.Name()
+				if err != nil {
+					slog.Error("stat", "linkID", id, "error", err)
+					continue
+				}
+				if linkName == name {
 					select {
 					case resultCh <- result{link: link}:
 						cancel()

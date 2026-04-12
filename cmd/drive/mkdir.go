@@ -61,7 +61,6 @@ func mkdirOne(ctx context.Context, session *common.Session, rawPath string) erro
 		return fmt.Errorf("mkdir: missing directory name")
 	}
 
-	// Split into share root + relative path.
 	parts := strings.SplitN(path, "/", 2)
 	shareName := parts[0]
 	relPath := ""
@@ -79,14 +78,13 @@ func mkdirOne(ctx context.Context, session *common.Session, rawPath string) erro
 	}
 
 	if mkdirFlags.parents {
-		return mkdirAll(ctx, session, share, relPath)
+		return mkdirAllCmd(ctx, session, share, relPath)
 	}
 
 	return mkdirSingle(ctx, session, share, relPath)
 }
 
 func mkdirSingle(ctx context.Context, session *common.Session, share *common.Share, relPath string) error {
-	// Resolve parent directory.
 	relPath = strings.TrimSuffix(relPath, "/")
 	dir := ""
 	name := relPath
@@ -106,7 +104,7 @@ func mkdirSingle(ctx context.Context, session *common.Session, share *common.Sha
 		}
 	}
 
-	if parent.Type != proton.LinkTypeFolder {
+	if parent.Type() != proton.LinkTypeFolder {
 		return fmt.Errorf("mkdir: %s: not a directory", dir)
 	}
 
@@ -116,19 +114,20 @@ func mkdirSingle(ctx context.Context, session *common.Session, share *common.Sha
 	}
 
 	if mkdirFlags.verbose {
-		fmt.Printf("mkdir: created directory '%s/%s'\n", share.Link.Name, relPath)
+		shareName, _ := share.GetName(ctx)
+		fmt.Printf("mkdir: created directory '%s/%s'\n", shareName, relPath)
 	}
 
 	_ = newDir
 	return nil
 }
 
-func mkdirAll(ctx context.Context, session *common.Session, share *common.Share, relPath string) error {
+func mkdirAllCmd(ctx context.Context, session *common.Session, share *common.Share, relPath string) error {
 	relPath = strings.TrimSuffix(relPath, "/")
 	parts := strings.Split(relPath, "/")
 
 	current := share.Link
-	builtPath := share.Link.Name
+	builtPath, _ := share.GetName(ctx)
 
 	for _, name := range parts {
 		if name == "" || name == "." {
@@ -141,7 +140,7 @@ func mkdirAll(ctx context.Context, session *common.Session, share *common.Share,
 		}
 
 		if child != nil {
-			if child.Type != proton.LinkTypeFolder {
+			if child.Type() != proton.LinkTypeFolder {
 				return fmt.Errorf("mkdir: %s/%s: not a directory", builtPath, name)
 			}
 			current = child

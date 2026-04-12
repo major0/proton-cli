@@ -21,33 +21,32 @@ import (
 type outputFormat int
 
 const (
-	formatColumns outputFormat = iota // -C: multi-column (default if tty)
-	formatLong                        // -l: long listing
-	formatSingle                      // -1: one entry per line (default if pipe)
-	formatAcross                      // -x: multi-column, sorted across
+	formatColumns outputFormat = iota
+	formatLong
+	formatSingle
+	formatAcross
 )
 
 // sortMode controls how entries are ordered.
 type sortMode int
 
 const (
-	sortName sortMode = iota // default
-	sortSize                 // -S / --sort=size
-	sortTime                 // -t / --sort=time
-	sortNone                 // -U / --sort=none
+	sortName sortMode = iota
+	sortSize
+	sortTime
+	sortNone
 )
 
 // timeStyle controls time formatting in long mode.
 type timeStyle int
 
 const (
-	timeDefault timeStyle = iota // ls-style: "Jan  2 15:04" or "Jan  2  2006"
-	timeFull                     // --full-time: ISO 8601
-	timeISO                      // --time-style=iso
-	timeLongISO                  // --time-style=long-iso
+	timeDefault timeStyle = iota
+	timeFull
+	timeISO
+	timeLongISO
 )
 
-// listOpts holds all resolved options after flag parsing.
 type listOpts struct {
 	format    outputFormat
 	sortBy    sortMode
@@ -59,24 +58,12 @@ type listOpts struct {
 	reverse   bool
 }
 
-// Raw flag values — resolved into listOpts in runList.
 var listFlags struct {
-	all       bool
-	almostAll bool
-	long      bool
-	single    bool
-	across    bool
-	columns   bool
-	human     bool
-	recursive bool
-	reverse   bool
-	sortSize  bool
-	sortTime  bool
-	unsorted  bool
-	fullTime  bool
-	format    string
-	sortWord  string
-	timeStyle string
+	all, almostAll, long, single, across, columns bool
+	human, recursive, reverse                     bool
+	sortSize, sortTime, unsorted                  bool
+	fullTime                                      bool
+	format, sortWord, timeStyle                   string
 }
 
 var driveListCmd = &cobra.Command{
@@ -90,55 +77,37 @@ var driveListCmd = &cobra.Command{
 func init() {
 	driveCmd.AddCommand(driveListCmd)
 	f := driveListCmd.Flags()
-
-	// Visibility
 	f.BoolVarP(&listFlags.all, "all", "a", false, "Do not ignore entries starting with '.'")
 	f.BoolVarP(&listFlags.almostAll, "almost-all", "A", false, "Do not list implied '.' and '..'")
-
-	// Output format (last one wins)
 	f.BoolVarP(&listFlags.long, "long", "l", false, "Use long listing format")
 	f.BoolVarP(&listFlags.single, "single-column", "1", false, "List one file per line")
 	f.BoolVarP(&listFlags.across, "across", "x", false, "List entries by lines instead of columns")
 	f.BoolVarP(&listFlags.columns, "columns", "C", false, "List entries in columns")
 	f.StringVar(&listFlags.format, "format", "", "Output format: long, single-column, across, columns")
-
-	// Sizes
 	f.BoolVar(&listFlags.human, "human-readable", false, "Print sizes in human-readable format")
-
-	// Sorting
 	f.BoolVarP(&listFlags.sortSize, "sort-size", "S", false, "Sort by file size, largest first")
 	f.BoolVarP(&listFlags.sortTime, "sort-time", "t", false, "Sort by modification time, newest first")
 	f.BoolVarP(&listFlags.unsorted, "unsorted", "U", false, "Do not sort; list in directory order")
 	f.BoolVarP(&listFlags.reverse, "reverse", "r", false, "Reverse sort order")
 	f.StringVar(&listFlags.sortWord, "sort", "", "Sort by: name, size, time, none")
-
-	// Time formatting
 	f.BoolVar(&listFlags.fullTime, "full-time", false, "Like -l --time-style=full-iso")
 	f.StringVar(&listFlags.timeStyle, "time-style", "", "Time format: full-iso, long-iso, iso")
-
-	// Recursion
 	f.BoolVarP(&listFlags.recursive, "recursive", "R", false, "List subdirectories recursively")
 }
 
-// resolveOpts converts raw flag values into a clean listOpts struct.
-// Last-flag-wins semantics for format and sort, matching GNU ls.
 func resolveOpts() (listOpts, error) {
 	opts := listOpts{
-		all:       listFlags.all,
-		almostAll: listFlags.almostAll,
-		human:     listFlags.human,
-		recursive: listFlags.recursive,
-		reverse:   listFlags.reverse,
+		all: listFlags.all, almostAll: listFlags.almostAll,
+		human: listFlags.human, recursive: listFlags.recursive,
+		reverse: listFlags.reverse,
 	}
 
-	// Default format: columns if tty, single-column if pipe.
-	if term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec // fd fits int on all platforms
+	if term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec
 		opts.format = formatColumns
 	} else {
 		opts.format = formatSingle
 	}
 
-	// Short flags override in order (last wins).
 	if listFlags.columns {
 		opts.format = formatColumns
 	}
@@ -152,10 +121,8 @@ func resolveOpts() (listOpts, error) {
 		opts.format = formatLong
 	}
 
-	// --format=WORD overrides short flags.
 	switch listFlags.format {
 	case "":
-		// no override
 	case "long", "verbose":
 		opts.format = formatLong
 	case "single-column":
@@ -168,7 +135,6 @@ func resolveOpts() (listOpts, error) {
 		return opts, fmt.Errorf("invalid --format value: %q", listFlags.format)
 	}
 
-	// Sort mode.
 	opts.sortBy = sortName
 	if listFlags.sortSize {
 		opts.sortBy = sortSize
@@ -182,7 +148,6 @@ func resolveOpts() (listOpts, error) {
 
 	switch listFlags.sortWord {
 	case "":
-		// no override
 	case "name":
 		opts.sortBy = sortName
 	case "size":
@@ -195,11 +160,9 @@ func resolveOpts() (listOpts, error) {
 		return opts, fmt.Errorf("invalid --sort value: %q", listFlags.sortWord)
 	}
 
-	// Time style.
 	opts.timeStyle = timeDefault
 	switch listFlags.timeStyle {
 	case "":
-		// no override
 	case "full-iso":
 		opts.timeStyle = timeFull
 	case "long-iso":
@@ -210,7 +173,6 @@ func resolveOpts() (listOpts, error) {
 		return opts, fmt.Errorf("invalid --time-style value: %q", listFlags.timeStyle)
 	}
 
-	// --full-time implies -l with full-iso timestamps.
 	if listFlags.fullTime {
 		opts.format = formatLong
 		opts.timeStyle = timeFull
@@ -219,16 +181,13 @@ func resolveOpts() (listOpts, error) {
 	return opts, nil
 }
 
-// parsePath normalizes a proton:// path, resolving . and .. components.
 func parsePath(raw string) string {
 	path := strings.TrimPrefix(raw, "proton://")
 	path = strings.TrimPrefix(path, "/")
-
 	trailingSlash := ""
 	if strings.HasSuffix(path, "/") {
 		trailingSlash = "/"
 	}
-
 	var parts []string
 	for _, p := range strings.Split(path, "/") {
 		switch p {
@@ -242,17 +201,15 @@ func parsePath(raw string) string {
 			parts = append(parts, p)
 		}
 	}
-
 	return strings.Join(parts, "/") + trailingSlash
 }
 
-// resolveLinks resolves the given path arguments to a list of links.
-func resolveLinks(ctx context.Context, session *common.Session, args []string) ([]common.Link, error) {
+func resolveLinks(ctx context.Context, session *common.Session, args []string) ([]*common.Link, error) {
 	if len(args) == 0 {
 		return rootLinks(ctx, session)
 	}
 
-	var links []common.Link
+	var links []*common.Link
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "proton://") {
 			return nil, fmt.Errorf("invalid path: %s (must start with proton://)", arg)
@@ -274,7 +231,7 @@ func resolveLinks(ctx context.Context, session *common.Session, args []string) (
 		}
 
 		if strings.HasSuffix(path, "/") {
-			if link.Type != proton.LinkTypeFolder {
+			if link.Type() != proton.LinkTypeFolder {
 				return nil, fmt.Errorf("%s: not a directory", arg)
 			}
 			children, err := link.ListChildren(ctx, true)
@@ -283,44 +240,44 @@ func resolveLinks(ctx context.Context, session *common.Session, args []string) (
 			}
 			links = append(links, children...)
 		} else {
-			links = append(links, *link)
+			links = append(links, link)
 		}
 	}
 
 	return links, nil
 }
 
-// rootLinks returns the root links from all shares.
-func rootLinks(ctx context.Context, session *common.Session) ([]common.Link, error) {
+func rootLinks(ctx context.Context, session *common.Session) ([]*common.Link, error) {
 	shares, err := session.ListShares(ctx, true)
 	if err != nil {
 		return nil, err
 	}
 
-	links := make([]common.Link, len(shares))
-	for i, share := range shares {
-		links[i] = *share.Link
+	links := make([]*common.Link, len(shares))
+	for i := range shares {
+		links[i] = shares[i].Link
 	}
 	return links, nil
 }
 
-// filterLinks removes hidden files unless -a or -A is set, and skips deleted links.
-func filterLinks(links []common.Link, opts listOpts) []common.Link {
-	var out []common.Link
+func filterLinks(links []*common.Link, opts listOpts) []*common.Link {
+	var out []*common.Link
 	for _, l := range links {
-		if l.State != nil && *l.State == proton.LinkStateDeleted {
+		if l.State() == proton.LinkStateDeleted {
 			continue
 		}
-		if !opts.all && !opts.almostAll && strings.HasPrefix(l.Name, ".") {
-			continue
+		if !opts.all && !opts.almostAll {
+			name, err := l.Name()
+			if err == nil && strings.HasPrefix(name, ".") {
+				continue
+			}
 		}
 		out = append(out, l)
 	}
 	return out
 }
 
-// doSort sorts links according to the active sort mode.
-func doSort(links []common.Link, opts listOpts) {
+func doSort(links []*common.Link, opts listOpts) {
 	if opts.sortBy == sortNone {
 		if opts.reverse {
 			for i, j := 0, len(links)-1; i < j; i, j = i+1, j-1 {
@@ -334,11 +291,13 @@ func doSort(links []common.Link, opts listOpts) {
 		var less bool
 		switch opts.sortBy {
 		case sortSize:
-			less = links[i].Size > links[j].Size
+			less = links[i].Size() > links[j].Size()
 		case sortTime:
-			less = links[i].ModifyTime > links[j].ModifyTime
+			less = links[i].ModifyTime() > links[j].ModifyTime()
 		default:
-			less = strings.ToLower(links[i].Name) < strings.ToLower(links[j].Name)
+			ni, _ := links[i].Name()
+			nj, _ := links[j].Name()
+			less = strings.ToLower(ni) < strings.ToLower(nj)
 		}
 		if opts.reverse {
 			return !less
@@ -347,7 +306,6 @@ func doSort(links []common.Link, opts listOpts) {
 	})
 }
 
-// formatSize returns the size as a string, optionally human-readable.
 func formatSize(size int64, opts listOpts) string {
 	if opts.human {
 		return units.HumanSize(float64(size))
@@ -355,7 +313,6 @@ func formatSize(size int64, opts listOpts) string {
 	return fmt.Sprintf("%d", size)
 }
 
-// formatTimestamp formats an epoch timestamp according to the time style.
 func formatTimestamp(epoch int64, style timeStyle) string {
 	t := time.Unix(epoch, 0)
 	switch style {
@@ -374,7 +331,6 @@ func formatTimestamp(epoch int64, style timeStyle) string {
 	}
 }
 
-// typeChar returns 'd' for folders, '-' for files.
 func typeChar(lt proton.LinkType) byte {
 	if lt == proton.LinkTypeFolder {
 		return 'd'
@@ -382,42 +338,36 @@ func typeChar(lt proton.LinkType) byte {
 	return '-'
 }
 
-// printLong prints a single link in long format.
-func printLong(l common.Link, opts listOpts) {
+func printLong(l *common.Link, opts listOpts) {
+	name, _ := l.Name()
 	fmt.Printf("%c%-9s %8s %s %s\n",
-		typeChar(l.Type),
+		typeChar(l.Type()),
 		"rwxr-xr-x",
-		formatSize(l.Size, opts),
-		formatTimestamp(l.ModifyTime, opts.timeStyle),
-		l.Name,
+		formatSize(l.Size(), opts),
+		formatTimestamp(l.ModifyTime(), opts.timeStyle),
+		name,
 	)
 }
 
-// printLinks prints the link list in the selected format.
-func printLinks(links []common.Link, opts listOpts) {
+func printLinks(links []*common.Link, opts listOpts) {
 	switch opts.format {
 	case formatLong:
 		for _, l := range links {
 			printLong(l, opts)
 		}
-
 	case formatSingle:
 		for _, l := range links {
-			fmt.Println(l.Name)
+			name, _ := l.Name()
+			fmt.Println(name)
 		}
-
 	case formatColumns:
 		printColumns(links, false)
-
 	case formatAcross:
 		printColumns(links, true)
 	}
 }
 
-// printColumns prints names in multi-column format. If across is true,
-// entries fill rows left-to-right (-x); otherwise they fill columns
-// top-to-bottom (-C).
-func printColumns(links []common.Link, across bool) {
+func printColumns(links []*common.Link, across bool) {
 	if len(links) == 0 {
 		return
 	}
@@ -425,18 +375,16 @@ func printColumns(links []common.Link, across bool) {
 	names := make([]string, len(links))
 	maxLen := 0
 	for i, l := range links {
-		names[i] = l.Name
-		if len(l.Name) > maxLen {
-			maxLen = len(l.Name)
+		n, _ := l.Name()
+		names[i] = n
+		if len(n) > maxLen {
+			maxLen = len(n)
 		}
 	}
 
-	// Column width: longest name + 2 spaces padding.
 	colWidth := maxLen + 2
-
-	// Terminal width, default 80.
 	termWidth := 80
-	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 { //nolint:gosec // fd fits int
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 { //nolint:gosec
 		termWidth = w
 	}
 
@@ -444,7 +392,6 @@ func printColumns(links []common.Link, across bool) {
 	if numCols < 1 {
 		numCols = 1
 	}
-
 	numRows := (len(names) + numCols - 1) / numCols
 
 	for row := 0; row < numRows; row++ {
@@ -455,11 +402,9 @@ func printColumns(links []common.Link, across bool) {
 			} else {
 				idx = col*numRows + row
 			}
-
 			if idx >= len(names) {
 				continue
 			}
-
 			if col < numCols-1 {
 				fmt.Printf("%-*s", colWidth, names[idx])
 			} else {
@@ -470,14 +415,14 @@ func printColumns(links []common.Link, across bool) {
 	}
 }
 
-// listRecursive prints a directory tree recursively.
-func listRecursive(ctx context.Context, prefix string, links []common.Link, opts listOpts) error {
+func listRecursive(ctx context.Context, prefix string, links []*common.Link, opts listOpts) error {
 	for _, l := range links {
-		if l.Type != proton.LinkTypeFolder {
+		if l.Type() != proton.LinkTypeFolder {
 			continue
 		}
 
-		path := prefix + l.Name + "/"
+		name, _ := l.Name()
+		path := prefix + name + "/"
 		children, err := l.ListChildren(ctx, true)
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
@@ -486,7 +431,7 @@ func listRecursive(ctx context.Context, prefix string, links []common.Link, opts
 		children = filterLinks(children, opts)
 		doSort(children, opts)
 
-		fmt.Printf("\n%s:\n", prefix+l.Name)
+		fmt.Printf("\n%s:\n", prefix+name)
 		printLinks(children, opts)
 
 		if err := listRecursive(ctx, path, children, opts); err != nil {

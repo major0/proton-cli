@@ -2,159 +2,187 @@ package proton
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 )
 
-// Link represents a file or folder in a Proton Drive share.
+// Link represents a file or folder in a Proton Drive share. Fields are
+// decrypted lazily — the raw encrypted proton.Link is retained and
+// decryption happens on first access. This keeps encrypted data in memory
+// as long as possible and avoids decrypting nodes that are never read.
 type Link struct {
-	Name string
+	// Raw encrypted link from the API. Always populated.
+	protonLink *proton.Link
 
-	Type proton.LinkType
+	// Relationships — always set at construction time.
+	parentLink *Link
+	session    *Session
+	share      *Share
 
-	XAttr *proton.RevisionXAttrCommon
-
-	Size int64
-
-	State *proton.LinkState
-
-	ModifyTime     int64
-	CreateTime     int64
-	ExpirationTime int64
-
+	// Lazy-decrypted fields, protected by once.
+	once        sync.Once
+	decryptErr  error
+	name        string
 	keyRing     *crypto.KeyRing
 	nameKeyRing *crypto.KeyRing
-	parentLink  *Link
-	protonLink  *proton.Link
-	session     *Session
-	share       *Share
 }
 
-func (l *Link) newLink(ctx context.Context, pLink *proton.Link) (*Link, error) {
-	slog.Debug("link.newLink", "linkID", pLink.LinkID)
-	return l.session.newLink(ctx, l.share, l, pLink)
-}
+// Type returns the link type (file or folder) without decryption.
+func (l *Link) Type() proton.LinkType { return l.protonLink.Type }
 
-// ListChildren returns the child links of this folder.
-func (l *Link) ListChildren(ctx context.Context, all bool) ([]Link, error) {
-	slog.Debug("link.ListChildren", "all", all)
-	// fmt.Println("link.ListChildren: pLink = %#v", l.protonLink)
-	// fmt.Println("link.ListChildren: share = %#v", l.share)
-	// fmt.Println("link.ListChildren: session = %#v", l.session)
+// State returns the link state without decryption.
+func (l *Link) State() proton.LinkState { return l.protonLink.State }
 
-	pChildren, err := l.session.Client.ListChildren(ctx, l.share.protonShare.ShareID, l.protonLink.LinkID, all)
-	if err != nil {
-		return nil, err
+// CreateTime returns the creation timestamp without decryption.
+func (l *Link) CreateTime() int64 { return l.protonLink.CreateTime }
+
+// ModifyTime returns the modification timestamp. For files with an active
+// revision, returns the revision's create time (which is the upload time).
+func (l *Link) ModifyTime() int64 {
+	if l.protonLink.Type == proton.LinkTypeFile && l.protonLink.FileProperties != nil {
+		return l.protonLink.FileProperties.ActiveRevision.CreateTime
 	}
+	return l.protonLink.ModifyTime
+}
 
-	children := make([]Link, len(pChildren))
-	for i := range pChildren {
-		link, err := l.newLink(ctx, &pChildren[i])
+// ExpirationTime returns the expiration timestamp without decryption.
+func (l *Link) ExpirationTime() int64 { return l.protonLink.ExpirationTime }
+
+// Size returns the file size. Folders return 0.
+func (l *Link) Size() int64 {
+	if l.protonLink.Type == proton.LinkTypeFile && l.protonLink.FileProperties != nil {
+		return l.protonLink.FileProperties.ActiveRevision.Size
+	}
+	return 0
+}
+
+// MIMEType returns the MIME type without decryption.
+func (l *Link) MIMEType() string { return l.protonLink.MIMEType }
+
+// LinkID returns the encrypted link ID without decryption.
+func (l *Link) LinkID() string { return l.protonLink.LinkID }
+
+// decrypt performs lazy one-time decryption of the link's name and keyrings.
+// Safe to call from multiple goroutines.
+func (l *Link) decrypt() error {
+	l.once.Do(func() {
+		parentKR, err := l.getParentKeyRing()
 		if err != nil {
-			return nil, err
+			l.decryptErr = fmt.Errorf("decrypt %s: parent keyring: %w", l.protonLink.LinkID, err)
+			return
 		}
-		children[i] = *link
-	}
 
-	return children, nil
+		l.keyRing, err = l.deriveKeyRing(parentKR)
+		if err != nil {
+			l.decryptErr = fmt.Errorf("decrypt %s: keyring: %w", l.protonLink.LinkID, err)
+			return
+		}
+
+		l.nameKeyRing = l.keyRing
+
+		l.name, err = l.decryptName(parentKR)
+		if err != nil {
+			l.decryptErr = fmt.Errorf("decrypt %s: name: %w", l.protonLink.LinkID, err)
+			return
+		}
+	})
+	return l.decryptErr
 }
 
-// We try to handle a specific set of circumstances here:
-// - `path/to/file` - Return the file link.
-// - `path/to/directory` - Return the folder link.
-// - `path/to-directory/` - Return a list of child links of the folder.
-func (l *Link) resolveParts(ctx context.Context, parts []string, all bool) (*Link, error) {
-	slog.Debug("link.resolveParts", "parts", parts)
-	slog.Debug("link.resolveParts", "len(parts)", len(parts))
-	if len(parts) == 0 || (len(parts) == 1 && parts[0] == "") {
-		slog.Debug("link.resolveParts", "returning", true)
-		return l, nil
+// Name returns the decrypted name. Triggers lazy decryption on first call.
+func (l *Link) Name() (string, error) {
+	if err := l.decrypt(); err != nil {
+		return "", err
 	}
+	return l.name, nil
+}
 
-	if l.Type != proton.LinkTypeFolder {
-		return nil, ErrNotAFolder
-	}
-
-	children, err := l.ListChildren(ctx, all)
-	if err != nil {
+// KeyRing returns the link's decrypted keyring. Triggers lazy decryption.
+func (l *Link) KeyRing() (*crypto.KeyRing, error) {
+	if err := l.decrypt(); err != nil {
 		return nil, err
 	}
-
-	slog.Debug("link.resolveParts", "children", len(children))
-
-	for _, child := range children {
-		slog.Debug("link.resolveParts", "child.Name", child.Name)
-		if child.Name == parts[0] {
-			return child.resolveParts(ctx, parts[1:], all)
-		}
-	}
-
-	return nil, ErrFileNotFound
+	return l.keyRing, nil
 }
 
-// ResolvePath resolves a slash-separated path relative to this link.
-func (l *Link) ResolvePath(ctx context.Context, path string, all bool) (*Link, error) {
-	slog.Debug("link.ResolvePath", "path", path, "all", all)
-	path = strings.Trim(path, "/")
-	parts := strings.Split(path, "/")
-
-	return l.resolveParts(ctx, parts, all)
-}
-
+// getParentKeyRing returns the parent's keyring for decryption.
 func (l *Link) getParentKeyRing() (*crypto.KeyRing, error) {
-	slog.Debug("link.getParentKeyRing", "address", l.protonLink.NameSignatureEmail)
 	if l.parentLink == nil {
-		slog.Debug("link.getParentKeyRing", "share", true)
 		return l.share.getKeyRing()
 	}
-	slog.Debug("link.getParentKeyRing", "share", false)
-	return l.parentLink.nameKeyRing, nil
+	return l.parentLink.KeyRing()
 }
 
-func (l *Link) getKeyRing(_ string) (*crypto.KeyRing, error) {
-	slog.Debug("link.getKeyRing", "address", l.protonLink.SignatureEmail)
-
-	parentKR, err := l.getParentKeyRing()
-	if err != nil {
-		return nil, err
-	}
-
+// deriveKeyRing derives this link's keyring from the parent keyring.
+func (l *Link) deriveKeyRing(parentKR *crypto.KeyRing) (*crypto.KeyRing, error) {
 	if addr, ok := l.session.addresses[l.protonLink.SignatureEmail]; ok {
 		if linkKR, ok := l.session.AddressKeyRing[addr.ID]; ok {
 			return l.protonLink.GetKeyRing(parentKR, linkKR)
 		}
 	}
-
 	return nil, ErrKeyNotFound
 }
 
-func (l *Link) getAddrKeyRing(address string) (*crypto.KeyRing, error) {
-	slog.Debug("link.getAddrKeyRing", "address", address)
+// decryptName decrypts the link name using the parent keyring.
+func (l *Link) decryptName(parentKR *crypto.KeyRing) (string, error) {
 	if addr, ok := l.session.addresses[l.protonLink.NameSignatureEmail]; ok {
 		if addrKR, ok := l.session.AddressKeyRing[addr.ID]; ok {
-			return addrKR, nil
+			return l.protonLink.GetName(parentKR, addrKR)
 		}
 	}
-
-	return nil, ErrKeyNotFound
+	return "", ErrKeyNotFound
 }
 
-func (l *Link) getName() (string, error) {
-	slog.Debug("link.getName")
+// newLink creates a Link wrapper without decrypting anything.
+func newLink(pLink *proton.Link, parent *Link, share *Share, session *Session) *Link {
+	return &Link{
+		protonLink: pLink,
+		parentLink: parent,
+		share:      share,
+		session:    session,
+	}
+}
 
-	parentKR, err := l.getParentKeyRing()
-	if err != nil {
-		return "", err
+// newChildLink creates a child Link from a raw proton.Link.
+func (l *Link) newChildLink(_ context.Context, pLink *proton.Link) *Link {
+	return newLink(pLink, l, l.share, l.session)
+}
+
+// ResolvePath resolves a slash-separated path relative to this link.
+// Only decrypts names along the path — siblings are not decrypted.
+func (l *Link) ResolvePath(ctx context.Context, path string, _ bool) (*Link, error) {
+	slog.Debug("link.ResolvePath", "path", path)
+	path = strings.Trim(path, "/")
+	if path == "" {
+		return l, nil
+	}
+	parts := strings.Split(path, "/")
+	return l.resolveParts(ctx, parts)
+}
+
+// resolveParts walks path components using Lookup (concurrent, cancellable).
+// Only the matching child at each level is decrypted.
+func (l *Link) resolveParts(ctx context.Context, parts []string) (*Link, error) {
+	if len(parts) == 0 || (len(parts) == 1 && parts[0] == "") {
+		return l, nil
 	}
 
-	addrKR, err := l.getAddrKeyRing(l.protonLink.NameSignatureEmail)
-	if err != nil {
-		return "", err
+	if l.Type() != proton.LinkTypeFolder {
+		return nil, ErrNotAFolder
 	}
 
-	name, err := l.protonLink.GetName(parentKR, addrKR)
-	return name, err
+	child, err := l.Lookup(ctx, parts[0])
+	if err != nil {
+		return nil, err
+	}
+	if child == nil {
+		return nil, ErrFileNotFound
+	}
+
+	return child.resolveParts(ctx, parts[1:])
 }

@@ -8,26 +8,22 @@ import (
 	goProton "github.com/ProtonMail/go-proton-api"
 )
 
-// WalkEntry is a single entry yielded by Walk.
-type WalkEntry struct {
-	Path string
-	Link Link
-	Err  error
-}
-
 // WalkFunc is called for each entry during a Walk. Return a non-nil error
 // to stop the walk. Return SkipDir to skip descending into a directory.
 type WalkFunc func(path string, link *Link, err error) error
 
 // SkipDir can be returned by WalkFunc to skip a directory subtree.
-// It is an alias for ErrSkipDir.
 var SkipDir = ErrSkipDir //nolint:errname // matches fs.SkipDir convention
 
 // Walk traverses the directory tree rooted at this link, calling fn for
 // each file or directory. Directories are visited before their contents.
 // If fn returns SkipDir for a directory, its children are not visited.
 func (l *Link) Walk(ctx context.Context, fn WalkFunc) error {
-	return walkLink(ctx, l.Name, l, fn)
+	name, err := l.Name()
+	if err != nil {
+		return fn("?", l, err)
+	}
+	return walkLink(ctx, name, l, fn)
 }
 
 func walkLink(ctx context.Context, p string, l *Link, fn WalkFunc) error {
@@ -42,7 +38,7 @@ func walkLink(ctx context.Context, p string, l *Link, fn WalkFunc) error {
 		return err
 	}
 
-	if l.Type != goProton.LinkTypeFolder {
+	if l.Type() != goProton.LinkTypeFolder {
 		return nil
 	}
 
@@ -55,7 +51,15 @@ func walkLink(ctx context.Context, p string, l *Link, fn WalkFunc) error {
 		}
 
 		child := entry.Link
-		if err := walkLink(ctx, path.Join(p, child.Name), &child, fn); err != nil {
+		childName, err := child.Name()
+		if err != nil {
+			if err := fn(path.Join(p, "?"), child, err); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := walkLink(ctx, path.Join(p, childName), child, fn); err != nil {
 			return err
 		}
 	}

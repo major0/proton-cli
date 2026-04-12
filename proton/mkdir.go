@@ -10,10 +10,15 @@ import (
 )
 
 // MkDir creates a new folder under the given parent link. Returns the
-// newly created Link. The parent must be a resolved folder.
+// newly created Link (lazily decrypted). The parent must be a folder.
 func (s *Session) MkDir(ctx context.Context, share *Share, parent *Link, name string) (*Link, error) {
-	if parent.Type != proton.LinkTypeFolder {
+	if parent.Type() != proton.LinkTypeFolder {
 		return nil, ErrNotAFolder
+	}
+
+	parentKR, err := parent.KeyRing()
+	if err != nil {
+		return nil, fmt.Errorf("mkdir %s: parent keyring: %w", name, err)
 	}
 
 	addrKR := s.addrKRForLink(parent)
@@ -21,9 +26,7 @@ func (s *Session) MkDir(ctx context.Context, share *Share, parent *Link, name st
 		return nil, fmt.Errorf("mkdir %s: %w", name, ErrKeyNotFound)
 	}
 
-	parentNodeKR := parent.keyRing
-
-	nodeKey, nodePassphraseEnc, nodePassphraseSig, err := generateNodeKeys(parentNodeKR, addrKR)
+	nodeKey, nodePassphraseEnc, nodePassphraseSig, err := generateNodeKeys(parentKR, addrKR)
 	if err != nil {
 		return nil, fmt.Errorf("mkdir %s: generating keys: %w", name, err)
 	}
@@ -36,11 +39,11 @@ func (s *Session) MkDir(ctx context.Context, share *Share, parent *Link, name st
 		SignatureAddress:        s.signatureAddress(parent),
 	}
 
-	if err := req.SetName(name, addrKR, parentNodeKR); err != nil {
+	if err := req.SetName(name, addrKR, parentKR); err != nil {
 		return nil, fmt.Errorf("mkdir %s: encrypting name: %w", name, err)
 	}
 
-	hashKey, err := parent.protonLink.GetHashKey(parentNodeKR)
+	hashKey, err := parent.protonLink.GetHashKey(parentKR)
 	if err != nil {
 		return nil, fmt.Errorf("mkdir %s: hash key: %w", name, err)
 	}
@@ -48,7 +51,7 @@ func (s *Session) MkDir(ctx context.Context, share *Share, parent *Link, name st
 		return nil, fmt.Errorf("mkdir %s: hash: %w", name, err)
 	}
 
-	newNodeKR, err := unlockKeyRing(parentNodeKR, addrKR, nodeKey, nodePassphraseEnc, nodePassphraseSig)
+	newNodeKR, err := unlockKeyRing(parentKR, addrKR, nodeKey, nodePassphraseEnc, nodePassphraseSig)
 	if err != nil {
 		return nil, fmt.Errorf("mkdir %s: unlock keyring: %w", name, err)
 	}
@@ -61,7 +64,6 @@ func (s *Session) MkDir(ctx context.Context, share *Share, parent *Link, name st
 		return nil, fmt.Errorf("mkdir %s: %w", name, err)
 	}
 
-	// Stat the newly created link to return a fully-populated Link.
 	return s.StatLink(ctx, share, parent, res.ID)
 }
 
@@ -81,24 +83,21 @@ func (s *Session) MkDirAll(ctx context.Context, share *Share, root *Link, path s
 			continue
 		}
 
-		// Try to find existing child.
 		child, err := current.Lookup(ctx, name)
 		if err != nil {
 			return nil, err
 		}
 
 		if child != nil {
-			if child.Type != proton.LinkTypeFolder {
+			if child.Type() != proton.LinkTypeFolder {
 				return nil, fmt.Errorf("mkdir -p: %s: %w", name, ErrNotAFolder)
 			}
 			current = child
 			continue
 		}
 
-		// Create the missing directory.
 		newDir, err := s.MkDir(ctx, share, current, name)
 		if err != nil {
-			// Race: another client may have created it.
 			if errors.Is(err, proton.ErrFolderNameExist) {
 				child, findErr := current.Lookup(ctx, name)
 				if findErr != nil {

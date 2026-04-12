@@ -23,7 +23,9 @@ func generateNodeKeys(parentKR, addrKR *crypto.KeyRing) (string, string, string,
 		return "", "", "", err
 	}
 
-	enc, err := parentKR.Encrypt(crypto.NewPlainMessage([]byte(passphraseB64)), nil)
+	plainPassphrase := crypto.NewPlainMessage([]byte(passphraseB64))
+
+	enc, err := parentKR.Encrypt(plainPassphrase, nil)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -33,7 +35,7 @@ func generateNodeKeys(parentKR, addrKR *crypto.KeyRing) (string, string, string,
 		return "", "", "", err
 	}
 
-	sig, err := addrKR.SignDetached(crypto.NewPlainMessage([]byte(passphraseB64)))
+	sig, err := addrKR.SignDetached(plainPassphrase)
 	if err != nil {
 		return "", "", "", err
 	}
