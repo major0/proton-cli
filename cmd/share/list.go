@@ -3,13 +3,25 @@ package shareCmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
+
+const (
+	colorReset    = "\033[0m"
+	colorBoldBlue = "\033[1;34m"
+)
+
+var shareListFlags struct {
+	color    string
+	classify bool
+}
 
 var shareListCmd = &cobra.Command{
 	Use:     "list",
@@ -21,6 +33,8 @@ var shareListCmd = &cobra.Command{
 
 func init() {
 	shareCmd.AddCommand(shareListCmd)
+	shareListCmd.Flags().StringVar(&shareListFlags.color, "color", "auto", "Colorize output: auto, always, never")
+	shareListCmd.Flags().BoolVarP(&shareListFlags.classify, "classify", "F", false, "Append indicator (/ for directories) to entries")
 }
 
 func runShareList(_ *cobra.Command, _ []string) error {
@@ -40,19 +54,50 @@ func runShareList(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
+	useColor := resolveColor(shareListFlags.color)
+
 	for i := range shares {
 		name, _ := shares[i].GetName(ctx)
 		meta := shares[i].Metadata()
+		linkType := shares[i].Link.Type()
+
+		display := formatName(name, linkType, useColor, shareListFlags.classify)
 
 		fmt.Printf("%-8s %-30s %-12s %s\n",
 			fmtShareType(meta.Type),
 			meta.Creator,
 			fmtTime(meta.CreationTime),
-			name,
+			display,
 		)
 	}
 
 	return nil
+}
+
+func resolveColor(flag string) bool {
+	switch flag {
+	case "always":
+		return true
+	case "never":
+		return false
+	default:
+		return term.IsTerminal(int(os.Stdout.Fd())) //nolint:gosec
+	}
+}
+
+func formatName(name string, lt proton.LinkType, useColor, classify bool) string {
+	suffix := ""
+	if classify && lt == proton.LinkTypeFolder {
+		suffix = "/"
+	}
+
+	if !useColor {
+		return name + suffix
+	}
+	if lt == proton.LinkTypeFolder {
+		return colorBoldBlue + name + suffix + colorReset
+	}
+	return name + suffix
 }
 
 func fmtShareType(st proton.ShareType) string {
