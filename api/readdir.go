@@ -28,15 +28,34 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 
 		slog.Debug("link.Readdir", "linkID", l.protonLink.LinkID)
 
+		// Respect throttle before making the API call.
+		if l.session.Throttle != nil {
+			if err := l.session.Throttle.Wait(ctx); err != nil {
+				select {
+				case ch <- DirEntry{Err: err}:
+				case <-ctx.Done():
+				}
+				return
+			}
+		}
+
 		pChildren, err := l.session.Client.ListChildren(
 			ctx, l.share.protonShare.ShareID, l.protonLink.LinkID, true,
 		)
 		if err != nil {
+			// Signal throttle on 429-like errors.
+			if l.session.Throttle != nil {
+				l.session.Throttle.Signal(0)
+			}
 			select {
 			case ch <- DirEntry{Err: err}:
 			case <-ctx.Done():
 			}
 			return
+		}
+
+		if l.session.Throttle != nil {
+			l.session.Throttle.Reset()
 		}
 
 		if len(pChildren) == 0 {

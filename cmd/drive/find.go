@@ -270,7 +270,7 @@ func findChildren(ctx context.Context, prefix string, l *common.Link, depth int,
 
 	// Fan out: process children concurrently.
 	errCh := make(chan error, len(children))
-	sem := make(chan struct{}, 8) // limit concurrent directory walks
+	sem := make(chan struct{}, 3) // limit concurrent directory walks to avoid 429
 
 	var wg sync.WaitGroup
 	for _, child := range children {

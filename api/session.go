@@ -84,6 +84,7 @@ type Session struct {
 	cachedAuthInfo *proton.AuthInfo
 
 	MaxWorkers int
+	Throttle   *Throttle
 
 	addresses      map[string]proton.Address
 	AddressKeyRing map[string]*crypto.KeyRing
@@ -113,6 +114,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 
 	var session Session
 	session.MaxWorkers = 10
+	session.Throttle = NewThrottle(time.Second, 30*time.Second)
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
@@ -160,6 +162,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 func sessionFromLogin(options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
 	session := &Session{}
 	session.MaxWorkers = 10
+	session.Throttle = NewThrottle(time.Second, 30*time.Second)
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
