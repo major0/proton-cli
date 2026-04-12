@@ -56,6 +56,7 @@ type listOpts struct {
 	almostAll bool
 	recursive bool
 	reverse   bool
+	color     bool
 }
 
 var listFlags struct {
@@ -63,7 +64,7 @@ var listFlags struct {
 	human, recursive, reverse                     bool
 	sortSize, sortTime, unsorted                  bool
 	fullTime                                      bool
-	format, sortWord, timeStyle                   string
+	format, sortWord, timeStyle, color            string
 }
 
 var driveListCmd = &cobra.Command{
@@ -93,6 +94,7 @@ func init() {
 	f.BoolVar(&listFlags.fullTime, "full-time", false, "Like -l --time-style=full-iso")
 	f.StringVar(&listFlags.timeStyle, "time-style", "", "Time format: full-iso, long-iso, iso")
 	f.BoolVarP(&listFlags.recursive, "recursive", "R", false, "List subdirectories recursively")
+	f.StringVar(&listFlags.color, "color", "auto", "Colorize output: auto, always, never")
 }
 
 func resolveOpts() (listOpts, error) {
@@ -176,6 +178,17 @@ func resolveOpts() (listOpts, error) {
 	if listFlags.fullTime {
 		opts.format = formatLong
 		opts.timeStyle = timeFull
+	}
+
+	switch listFlags.color {
+	case "always":
+		opts.color = true
+	case "never":
+		opts.color = false
+	case "auto", "":
+		opts.color = term.IsTerminal(int(os.Stdout.Fd())) //nolint:gosec
+	default:
+		return opts, fmt.Errorf("invalid --color value: %q (use auto, always, or never)", listFlags.color)
 	}
 
 	return opts, nil
@@ -338,6 +351,23 @@ func typeChar(lt proton.LinkType) byte {
 	return '-'
 }
 
+// ANSI color codes for ls-style output.
+const (
+	colorReset    = "\033[0m"
+	colorBoldBlue = "\033[1;34m" // directories
+)
+
+// colorName returns the name with ANSI color codes if color is enabled.
+func colorName(name string, lt proton.LinkType, useColor bool) string {
+	if !useColor {
+		return name
+	}
+	if lt == proton.LinkTypeFolder {
+		return colorBoldBlue + name + colorReset
+	}
+	return name
+}
+
 func printLong(l *common.Link, opts listOpts) {
 	name, _ := l.Name()
 	fmt.Printf("%c%-9s %8s %s %s\n",
@@ -345,7 +375,7 @@ func printLong(l *common.Link, opts listOpts) {
 		"rwxr-xr-x",
 		formatSize(l.Size(), opts),
 		formatTimestamp(l.ModifyTime(), opts.timeStyle),
-		name,
+		colorName(name, l.Type(), opts.color),
 	)
 }
 
@@ -358,25 +388,33 @@ func printLinks(links []*common.Link, opts listOpts) {
 	case formatSingle:
 		for _, l := range links {
 			name, _ := l.Name()
-			fmt.Println(name)
+			fmt.Println(colorName(name, l.Type(), opts.color))
 		}
 	case formatColumns:
-		printColumns(links, false)
+		printColumns(links, false, opts.color)
 	case formatAcross:
-		printColumns(links, true)
+		printColumns(links, true, opts.color)
 	}
 }
 
-func printColumns(links []*common.Link, across bool) {
+func printColumns(links []*common.Link, across bool, useColor bool) {
 	if len(links) == 0 {
 		return
 	}
 
-	names := make([]string, len(links))
+	type entry struct {
+		name    string
+		display string
+	}
+
+	entries := make([]entry, len(links))
 	maxLen := 0
 	for i, l := range links {
 		n, _ := l.Name()
-		names[i] = n
+		entries[i] = entry{
+			name:    n,
+			display: colorName(n, l.Type(), useColor),
+		}
 		if len(n) > maxLen {
 			maxLen = len(n)
 		}
@@ -392,7 +430,7 @@ func printColumns(links []*common.Link, across bool) {
 	if numCols < 1 {
 		numCols = 1
 	}
-	numRows := (len(names) + numCols - 1) / numCols
+	numRows := (len(entries) + numCols - 1) / numCols
 
 	for row := 0; row < numRows; row++ {
 		for col := 0; col < numCols; col++ {
@@ -402,13 +440,22 @@ func printColumns(links []*common.Link, across bool) {
 			} else {
 				idx = col*numRows + row
 			}
-			if idx >= len(names) {
+			if idx >= len(entries) {
 				continue
 			}
+			e := entries[idx]
 			if col < numCols-1 {
-				fmt.Printf("%-*s", colWidth, names[idx])
+				// Pad based on raw name length, not display length (ANSI codes).
+				padding := colWidth - len(e.name)
+				if padding < 0 {
+					padding = 0
+				}
+				fmt.Print(e.display)
+				for i := 0; i < padding; i++ {
+					fmt.Print(" ")
+				}
 			} else {
-				fmt.Print(names[idx])
+				fmt.Print(e.display)
 			}
 		}
 		fmt.Println()
