@@ -43,7 +43,7 @@ func (s *Session) MkDir(ctx context.Context, share *Share, parent *Link, name st
 		return nil, fmt.Errorf("mkdir %s: encrypting name: %w", name, err)
 	}
 
-	hashKey, err := parent.protonLink.GetHashKey(parentKR)
+	hashKey, err := parent.protonLink.GetHashKeyFromParent(parentKR, addrKR)
 	if err != nil {
 		return nil, fmt.Errorf("mkdir %s: hash key: %w", name, err)
 	}

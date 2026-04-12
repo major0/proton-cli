@@ -106,9 +106,7 @@ func ManagerHook() func(*proton.Manager) {
 
 // Execute runs the root command and exits on error.
 func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
-		slog.Error("execute failed", "error", err)
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
