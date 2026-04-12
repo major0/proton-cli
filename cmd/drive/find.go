@@ -123,12 +123,6 @@ func buildPredicates() []findPredicate {
 		}
 	}
 
-	if findFlags.maxDepth >= 0 {
-		preds = append(preds, func(_ string, _ *common.Link, depth int) bool {
-			return depth <= findFlags.maxDepth
-		})
-	}
-
 	return preds
 }
 
@@ -153,11 +147,20 @@ func runFind(_ *cobra.Command, args []string) error {
 	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
 	session.AddDeauthHandler(common.NewDeauthHandler())
 
-	// Default to all shares if no path given.
+	// Default to all shares if no path given, or if proton:// alone.
 	var roots []*common.Link
 	var rootPaths []string
 
-	if len(args) == 0 {
+	// Normalize: no args or bare "proton://" both mean "all shares".
+	searchAll := len(args) == 0
+	if len(args) == 1 {
+		p := parsePath(args[0])
+		if p == "" {
+			searchAll = true
+		}
+	}
+
+	if searchAll {
 		shares, err := session.ListShares(ctx, true)
 		if err != nil {
 			return err
@@ -165,7 +168,7 @@ func runFind(_ *cobra.Command, args []string) error {
 		for i := range shares {
 			name, _ := shares[i].GetName(ctx)
 			roots = append(roots, shares[i].Link)
-			rootPaths = append(rootPaths, name)
+			rootPaths = append(rootPaths, "proton://"+name+"/")
 		}
 	} else {
 		for _, arg := range args {
@@ -173,9 +176,12 @@ func runFind(_ *cobra.Command, args []string) error {
 			if err != nil {
 				return fmt.Errorf("find: %s: %w", arg, err)
 			}
-			name, _ := link.Name()
+			p := strings.TrimSuffix(arg, "/")
+			if link.Type() == proton.LinkTypeFolder {
+				p += "/"
+			}
 			roots = append(roots, link)
-			rootPaths = append(rootPaths, name)
+			rootPaths = append(rootPaths, p)
 		}
 	}
 
@@ -212,6 +218,11 @@ func findWalk(ctx context.Context, prefix string, l *common.Link, depth int, pre
 		return nil
 	}
 
+	// Don't descend if we're at maxdepth.
+	if findFlags.maxDepth >= 0 && depth >= findFlags.maxDepth {
+		return nil
+	}
+
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
 			fmt.Fprintf(os.Stderr, "find: %s: %v\n", prefix, entry.Err)
@@ -224,6 +235,9 @@ func findWalk(ctx context.Context, prefix string, l *common.Link, depth int, pre
 		}
 
 		childPath := prefix + "/" + childName
+		if entry.Link.Type() == proton.LinkTypeFolder {
+			childPath += "/"
+		}
 		if err := findWalk(ctx, childPath, entry.Link, depth+1, preds, sep); err != nil {
 			return err
 		}
