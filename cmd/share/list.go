@@ -35,21 +35,25 @@ func runShareList(_ *cobra.Command, _ []string) error {
 	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
 	session.AddDeauthHandler(common.NewDeauthHandler())
 
-	shares, err := session.Client.ListShares(ctx, true)
+	shares, err := session.ListShares(ctx, true)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("%-8s %-8s %-8s %-12s %s\n",
-		"Type", "State", "Flags", "Created", "Creator")
+	fmt.Printf("%-20s %-8s %-8s %-8s %-12s %s\n",
+		"Name", "Type", "State", "Flags", "Created", "Creator")
 
-	for _, s := range shares {
-		fmt.Printf("%-8s %-8s %-8s %-12s %s\n",
-			fmtShareType(s.Type),
-			fmtShareState(s.State),
-			fmtShareFlags(s.Flags),
-			fmtTime(s.CreationTime),
-			s.Creator,
+	for i := range shares {
+		name, _ := shares[i].GetName(ctx)
+		meta := shares[i].Metadata()
+
+		fmt.Printf("%-20s %-8s %-8s %-8s %-12s %s\n",
+			name,
+			fmtShareType(meta.Type),
+			fmtShareState(meta.State),
+			fmtShareFlags(meta.Flags),
+			fmtTime(meta.CreationTime),
+			meta.Creator,
 		)
 	}
 

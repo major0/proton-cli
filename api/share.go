@@ -24,6 +24,11 @@ func (s *Share) GetName(_ context.Context) (string, error) {
 	return s.Link.Name()
 }
 
+// Metadata returns the share's metadata (type, state, flags, creator, etc.).
+func (s *Share) Metadata() proton.ShareMetadata {
+	return s.protonShare.ShareMetadata
+}
+
 // ListChildren returns the child links of the share's root folder.
 func (s *Share) ListChildren(ctx context.Context, all bool) ([]*Link, error) {
 	slog.Debug("share.ListChildren", "all", all)
