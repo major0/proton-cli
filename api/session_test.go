@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/cookiejar"
 	"testing"
@@ -278,5 +280,42 @@ func TestSessionConfigLastRefreshPreserved(t *testing.T) {
 
 	if !restored.LastRefresh.Equal(ts) {
 		t.Fatalf("LastRefresh: got %v, want %v", restored.LastRefresh, ts)
+	}
+}
+
+// --- ReadySession unit tests ---
+
+// errStore is a SessionStore that always returns a fixed error from Load.
+type errStore struct {
+	err error
+}
+
+func (s *errStore) Load() (*SessionConfig, error) { return nil, s.err }
+func (s *errStore) Save(*SessionConfig) error      { return nil }
+func (s *errStore) Delete() error                   { return nil }
+func (s *errStore) List() ([]string, error)         { return nil, nil }
+func (s *errStore) Switch(string) error             { return nil }
+
+// TestReadySessionStoreError verifies that ReadySession propagates store.Load
+// errors. An empty mockStore returns a SessionConfig with no UID, which
+// SessionFromCredentials rejects with ErrMissingUID.
+func TestReadySessionStoreError(t *testing.T) {
+	store := &mockStore{}
+	// Don't save anything — Load will return an empty config which
+	// SessionFromCredentials will reject with ErrMissingUID.
+
+	_, err := ReadySession(context.Background(), nil, store, nil)
+	if err == nil {
+		t.Fatal("expected error from ReadySession with empty store")
+	}
+}
+
+// TestReadySessionNotLoggedIn verifies that when the store returns
+// ErrKeyNotFound, ReadySession returns ErrNotLoggedIn.
+func TestReadySessionNotLoggedIn(t *testing.T) {
+	store := &errStore{err: ErrKeyNotFound}
+	_, err := ReadySession(context.Background(), nil, store, nil)
+	if !errors.Is(err, ErrNotLoggedIn) {
+		t.Fatalf("expected ErrNotLoggedIn, got %v", err)
 	}
 }

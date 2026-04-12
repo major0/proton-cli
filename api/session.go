@@ -280,6 +280,20 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 	return session, nil
 }
 
+// ReadySession restores a session from the store, registers auth/deauth
+// handlers, and returns a fully initialized Session ready for use.
+// This is the recommended entry point for consumers that need an
+// authenticated session.
+func ReadySession(ctx context.Context, options []proton.Option, store SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
+	session, err := SessionRestore(ctx, options, store, managerHook)
+	if err != nil {
+		return nil, err
+	}
+	session.AddAuthHandler(NewAuthHandler(store, session))
+	session.AddDeauthHandler(NewDeauthHandler())
+	return session, nil
+}
+
 // SessionSave persists session credentials, cookie jar state, and a refresh
 // timestamp to the store.
 func SessionSave(store SessionStore, session *Session, keypass []byte) error {

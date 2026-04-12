@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"time"
@@ -102,6 +103,12 @@ func ManagerHook() func(*proton.Manager) {
 	// Temporarily disabled — WithDebug(true) provides resty-level logging.
 	// Our custom hooks may conflict with resty's debug mode.
 	return nil
+}
+
+// RestoreSession returns a fully initialized, ready-to-use session using
+// the package-level ProtonOpts, SessionStoreVar, and ManagerHook.
+func RestoreSession(ctx context.Context) (*common.Session, error) {
+	return common.ReadySession(ctx, ProtonOpts, SessionStoreVar, ManagerHook())
 }
 
 // Execute runs the root command and exits on error.
