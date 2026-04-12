@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/go-proton-api"
+	common "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/cmd"
-	common "github.com/major0/proton-cli/proton"
 	"github.com/spf13/cobra"
 )
 

@@ -8,8 +8,8 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
 	"github.com/jedib0t/go-pretty/v6/table"
+	common "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/cmd"
-	common "github.com/major0/proton-cli/proton"
 	"github.com/spf13/cobra"
 )
 

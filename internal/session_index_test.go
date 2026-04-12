@@ -12,7 +12,7 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/major0/proton-cli/proton"
+	"github.com/major0/proton-cli/api"
 )
 
 // randomString generates a non-empty alphanumeric string for use in quick.Check generators.
@@ -30,7 +30,7 @@ func randomString(r *rand.Rand, maxLen int) string {
 type sessionConfigGenerator struct{}
 
 func (sessionConfigGenerator) Generate(r *rand.Rand, _ int) reflect.Value {
-	cfg := proton.SessionConfig{
+	cfg := api.SessionConfig{
 		UID:           randomString(r, 32),
 		AccessToken:   randomString(r, 64),
 		RefreshToken:  randomString(r, 64),
@@ -61,7 +61,7 @@ func TestPropertySaveLoadRoundTrip(t *testing.T) {
 		},
 	}
 
-	prop := func(session proton.SessionConfig, account string, service string) bool {
+	prop := func(session api.SessionConfig, account string, service string) bool {
 		dir := t.TempDir()
 		indexPath := filepath.Join(dir, "sessions.json")
 		kr := NewMockKeyring()
@@ -113,7 +113,7 @@ func TestPropertyServiceFallbackToWildcard(t *testing.T) {
 		},
 	}
 
-	prop := func(session proton.SessionConfig, account string, service string) bool {
+	prop := func(session api.SessionConfig, account string, service string) bool {
 		dir := t.TempDir()
 		indexPath := filepath.Join(dir, "sessions.json")
 		kr := NewMockKeyring()
@@ -155,8 +155,8 @@ func TestSessionIndex_MissingIndexFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load on missing index file: expected error, got nil")
 	}
-	if !errors.Is(err, proton.ErrKeyNotFound) {
-		t.Errorf("Load error = %v, want wrapped proton.ErrKeyNotFound", err)
+	if !errors.Is(err, api.ErrKeyNotFound) {
+		t.Errorf("Load error = %v, want wrapped api.ErrKeyNotFound", err)
 	}
 }
 
@@ -195,7 +195,7 @@ func TestSessionIndex_KeyringUnavailable(t *testing.T) {
 	kr := NewMockKeyring()
 
 	store := NewSessionStore(indexPath, "alice", "drive", kr)
-	session := &proton.SessionConfig{
+	session := &api.SessionConfig{
 		UID:           "uid-1",
 		AccessToken:   "at-1",
 		RefreshToken:  "rt-1",
@@ -213,8 +213,8 @@ func TestSessionIndex_KeyringUnavailable(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load with unavailable keyring: expected error, got nil")
 	}
-	if !errors.Is(err, proton.ErrKeyNotFound) {
-		t.Errorf("Load error = %v, want wrapped proton.ErrKeyNotFound", err)
+	if !errors.Is(err, api.ErrKeyNotFound) {
+		t.Errorf("Load error = %v, want wrapped api.ErrKeyNotFound", err)
 	}
 }
 
@@ -229,7 +229,7 @@ func TestSessionIndex_StaleEntryCleanup(t *testing.T) {
 	kr := NewMockKeyring()
 
 	store := NewSessionStore(indexPath, "alice", "drive", kr)
-	session := &proton.SessionConfig{
+	session := &api.SessionConfig{
 		UID:           "uid-1",
 		AccessToken:   "at-1",
 		RefreshToken:  "rt-1",
@@ -261,8 +261,8 @@ func TestSessionIndex_StaleEntryCleanup(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load after keyring entry deleted: expected error, got nil")
 	}
-	if !errors.Is(err, proton.ErrKeyNotFound) {
-		t.Errorf("Load error = %v, want wrapped proton.ErrKeyNotFound", err)
+	if !errors.Is(err, api.ErrKeyNotFound) {
+		t.Errorf("Load error = %v, want wrapped api.ErrKeyNotFound", err)
 	}
 
 	// Verify the stale entry was cleaned up from the index file.

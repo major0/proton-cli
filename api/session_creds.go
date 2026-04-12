@@ -1,4 +1,4 @@
-package proton
+package api
 
 /* The SessionCredentials is the minimum data required for restarting a
  * session later. With the exception of the SaltedKeyPass, all of this

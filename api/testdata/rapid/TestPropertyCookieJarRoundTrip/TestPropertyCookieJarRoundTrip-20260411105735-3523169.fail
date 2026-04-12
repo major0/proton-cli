@@ -1,0 +1,19 @@
+# 2026/04/11 10:57:35.990069 [TestPropertyCookieJarRoundTrip] [rapid] draw numCookies: 1
+# 2026/04/11 10:57:35.990081 [TestPropertyCookieJarRoundTrip] [rapid] draw name0Len: 1
+# 2026/04/11 10:57:35.990083 [TestPropertyCookieJarRoundTrip] [rapid] draw name0Char: 0
+# 2026/04/11 10:57:35.990086 [TestPropertyCookieJarRoundTrip] [rapid] draw value0Len: 0
+# 2026/04/11 10:57:35.990091 [TestPropertyCookieJarRoundTrip] unexpected cookie: {Name:a Value: Domain: Path:}
+#
+v0.4.8#2702201940179258599
+0x0
+0x0
+0x1
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0

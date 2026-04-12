@@ -1,4 +1,4 @@
-package proton
+package api
 
 import (
 	p "github.com/ProtonMail/go-proton-api"

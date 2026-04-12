@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
-	"github.com/major0/proton-cli/proton"
+	"github.com/major0/proton-cli/api"
 )
 
 // SessionIndexData is the on-disk JSON structure for the session index file.
@@ -89,7 +89,7 @@ func (si *SessionIndex) writeIndex(idx *SessionIndexData) error {
 // retrieves the SessionConfig from the keyring. It tries the exact service
 // first, then falls back to the "*" wildcard. Stale index entries (UUID
 // present in index but missing from keyring) are cleaned up automatically.
-func (si *SessionIndex) Load() (*proton.SessionConfig, error) {
+func (si *SessionIndex) Load() (*api.SessionConfig, error) {
 	idx, err := si.readIndex()
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (si *SessionIndex) Load() (*proton.SessionConfig, error) {
 
 	acct, ok := idx.Accounts[si.account]
 	if !ok {
-		return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, proton.ErrKeyNotFound)
+		return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, api.ErrKeyNotFound)
 	}
 
 	// Resolve UUID: try exact service, fall back to wildcard.
@@ -105,7 +105,7 @@ func (si *SessionIndex) Load() (*proton.SessionConfig, error) {
 	if !ok {
 		uuid, ok = acct.Sessions["*"]
 		if !ok {
-			return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, proton.ErrKeyNotFound)
+			return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, api.ErrKeyNotFound)
 		}
 	}
 
@@ -125,10 +125,10 @@ func (si *SessionIndex) Load() (*proton.SessionConfig, error) {
 		}
 		// Best-effort write; the primary error is the missing key.
 		_ = si.writeIndex(idx)
-		return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, proton.ErrKeyNotFound)
+		return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, api.ErrKeyNotFound)
 	}
 
-	var cfg proton.SessionConfig
+	var cfg api.SessionConfig
 	if err := json.Unmarshal([]byte(secret), &cfg); err != nil {
 		return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, err)
 	}
@@ -140,7 +140,7 @@ func (si *SessionIndex) Load() (*proton.SessionConfig, error) {
 // index file. If no entry exists for (account, service), a new v4 UUID is
 // generated as the keyring key. Parent directories for the index file are
 // created if they don't exist.
-func (si *SessionIndex) Save(session *proton.SessionConfig) error {
+func (si *SessionIndex) Save(session *api.SessionConfig) error {
 	idx, err := si.readIndex()
 	if err != nil {
 		return err
