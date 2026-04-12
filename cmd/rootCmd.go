@@ -59,11 +59,11 @@ var (
 			}
 
 			if rootParams.ConfigFile == "" {
-				rootParams.ConfigFile = "proton/config.yaml"
+				rootParams.ConfigFile = xdgConfigPath("config.yaml")
 			}
 
 			if rootParams.SessionFile == "" {
-				rootParams.SessionFile = "proton/sessions.db"
+				rootParams.SessionFile = xdgConfigPath("sessions.db")
 			}
 
 			Timeout = rootParams.Timeout
