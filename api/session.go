@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -31,6 +33,12 @@ const DefaultThrottleBackoff = time.Second
 
 // DefaultThrottleMaxDelay is the maximum backoff duration for rate limiting.
 const DefaultThrottleMaxDelay = 30 * time.Second
+
+// TokenWarnAge is the age at which session tokens are considered near expiry.
+const TokenWarnAge = 20 * time.Hour
+
+// TokenExpireAge is the age at which session tokens are considered expired.
+const TokenExpireAge = 24 * time.Hour
 
 // apiCookieURL returns the parsed Proton API base URL used for cookie scoping.
 func apiCookieURL() *url.URL {
@@ -85,6 +93,7 @@ type Session struct {
 	manager *proton.Manager
 
 	cookieJar http.CookieJar
+	authMu    sync.Mutex // serializes auth handler updates
 
 	// cachedAuthInfo holds the AuthInfo from the initial login attempt.
 	// It is reused on HV retry so the SRP session matches the solved CAPTCHA.
@@ -228,6 +237,16 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 
 	slog.Debug("SessionRestore", "uid", config.UID, "access_token", "<redacted>", "refresh_token", "<redacted>")
 
+	// Staleness check.
+	if !config.LastRefresh.IsZero() {
+		age := time.Since(config.LastRefresh)
+		if age > TokenExpireAge {
+			slog.Warn("session tokens likely expired", "age", age)
+		} else if age > TokenWarnAge {
+			slog.Warn("session tokens near expiry", "age", age)
+		}
+	}
+
 	session, err := SessionFromCredentials(ctx, options, config, managerHook)
 	if err != nil {
 		return nil, err
@@ -248,6 +267,14 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 
 	if err := session.Unlock(keypass, addrs); err != nil {
 		return nil, err
+	}
+
+	// Proactive refresh: make a lightweight API call to trigger
+	// go-proton-api's auto-refresh if the access token is expired.
+	if !config.LastRefresh.IsZero() && time.Since(config.LastRefresh) > TokenExpireAge {
+		if _, err := session.Client.GetUser(ctx); err != nil {
+			return nil, fmt.Errorf("proactive refresh: %w", err)
+		}
 	}
 
 	return session, nil
