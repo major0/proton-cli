@@ -1,4 +1,4 @@
-package volumeCmd
+package driveCmd
 
 import (
 	"context"
@@ -11,19 +11,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var volumeListCmd = &cobra.Command{
-	Use:     "list",
-	Aliases: []string{"ls"},
-	Short:   "List volumes",
-	Long:    "List volumes with usage stats",
-	RunE:    runVolumeList,
+var driveDfCmd = &cobra.Command{
+	Use:   "df",
+	Short: "Show volume disk usage",
+	Long:  "Show Proton Drive volume usage in df-style output",
+	RunE:  runDf,
 }
 
 func init() {
-	volumeCmd.AddCommand(volumeListCmd)
+	driveCmd.AddCommand(driveDfCmd)
 }
 
-func runVolumeList(_ *cobra.Command, _ []string) error {
+func runDf(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
@@ -40,7 +39,6 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Build share index for type lookup.
 	shares, err := session.Client.ListShares(ctx, true)
 	if err != nil {
 		return err
@@ -51,8 +49,7 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 		shareIndex[s.ShareID] = s
 	}
 
-	// Resolve root link names by getting the share + decrypting the root link.
-	nameIndex := make(map[string]string) // volumeID → decrypted root name
+	nameIndex := make(map[string]string)
 	for _, v := range volumes {
 		share, err := session.GetShare(ctx, v.Share.ShareID)
 		if err != nil {
@@ -65,7 +62,6 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 		nameIndex[v.VolumeID] = name
 	}
 
-	// Print df-style output.
 	fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
 		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State")
 
@@ -73,7 +69,7 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 		label := nameIndex[v.VolumeID]
 		if label == "" {
 			if s, ok := shareIndex[v.Share.ShareID]; ok {
-				label = fmtShareType(s.Type)
+				label = dfShareType(s.Type)
 			} else {
 				label = v.VolumeID[:12] + "..."
 			}
@@ -105,14 +101,14 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 			usePct,
 			units.BytesSize(float64(v.DownloadedBytes)),
 			units.BytesSize(float64(v.UploadedBytes)),
-			fmtVolState(v.State),
+			dfVolState(v.State),
 		)
 	}
 
 	return nil
 }
 
-func fmtVolState(state proton.VolumeState) string {
+func dfVolState(state proton.VolumeState) string {
 	switch state {
 	case proton.VolumeStateActive:
 		return "active"
@@ -123,7 +119,7 @@ func fmtVolState(state proton.VolumeState) string {
 	}
 }
 
-func fmtShareType(st proton.ShareType) string {
+func dfShareType(st proton.ShareType) string {
 	switch st {
 	case proton.ShareTypeMain:
 		return "main"
