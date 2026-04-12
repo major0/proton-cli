@@ -91,11 +91,8 @@ func formatName(name string, lt proton.LinkType, useColor, classify bool) string
 		suffix = "/"
 	}
 
-	if !useColor {
-		return name + suffix
-	}
-	if lt == proton.LinkTypeFolder {
-		return colorBoldBlue + name + suffix + colorReset
+	if useColor && lt == proton.LinkTypeFolder {
+		return colorBoldBlue + name + colorReset + suffix
 	}
 	return name + suffix
 }

@@ -399,10 +399,10 @@ func colorName(l *common.Link, useColor bool, classify bool) string {
 		return name + suffix
 	}
 	if l.State() == proton.LinkStateTrashed {
-		return colorBoldRed + name + suffix + colorReset
+		return colorBoldRed + name + colorReset + suffix
 	}
 	if l.Type() == proton.LinkTypeFolder {
-		return colorBoldBlue + name + suffix + colorReset
+		return colorBoldBlue + name + colorReset + suffix
 	}
 	return name + suffix
 }
