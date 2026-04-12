@@ -10,7 +10,8 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/drive"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -55,13 +56,13 @@ func init() {
 	cli.BoolFlag(f, &findFlags.trashed, "trashed", false, "Include trashed items in results")
 }
 
-type findPredicate func(p string, l *common.Link, depth int) bool
+type findPredicate func(p string, l *drive.Link, depth int) bool
 
 func buildPredicates() []findPredicate {
 	var preds []findPredicate
 
 	if findFlags.findType != "" {
-		preds = append(preds, func(_ string, l *common.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
 			switch findFlags.findType {
 			case "f":
 				return l.Type() == proton.LinkTypeFile
@@ -74,7 +75,7 @@ func buildPredicates() []findPredicate {
 	}
 
 	if findFlags.name != "" {
-		preds = append(preds, func(_ string, l *common.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
 			name, err := l.Name()
 			if err != nil {
 				return false
@@ -86,7 +87,7 @@ func buildPredicates() []findPredicate {
 
 	if findFlags.iname != "" {
 		pattern := strings.ToLower(findFlags.iname)
-		preds = append(preds, func(_ string, l *common.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
 			name, err := l.Name()
 			if err != nil {
 				return false
@@ -97,19 +98,19 @@ func buildPredicates() []findPredicate {
 	}
 
 	if findFlags.minSize > 0 {
-		preds = append(preds, func(_ string, l *common.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
 			return l.Size() >= findFlags.minSize
 		})
 	}
 
 	if findFlags.maxSize > 0 {
-		preds = append(preds, func(_ string, l *common.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
 			return l.Size() <= findFlags.maxSize
 		})
 	}
 
 	if findFlags.mtime != 0 {
-		preds = append(preds, func(_ string, l *common.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
 			mt := time.Unix(l.ModifyTime(), 0)
 			days := time.Since(mt).Hours() / 24
 			if findFlags.mtime < 0 {
@@ -122,7 +123,7 @@ func buildPredicates() []findPredicate {
 	if findFlags.newer != "" {
 		t, err := time.Parse("2006-01-02", findFlags.newer)
 		if err == nil {
-			preds = append(preds, func(_ string, l *common.Link, _ int) bool {
+			preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
 				return time.Unix(l.ModifyTime(), 0).After(t)
 			})
 		}
@@ -131,7 +132,7 @@ func buildPredicates() []findPredicate {
 	return preds
 }
 
-func matchAll(preds []findPredicate, p string, l *common.Link, depth int) bool {
+func matchAll(preds []findPredicate, p string, l *drive.Link, depth int) bool {
 	for _, pred := range preds {
 		if !pred(p, l, depth) {
 			return false
@@ -144,16 +145,18 @@ func runFind(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	session, err := cli.RestoreSession(ctx)
 	if err != nil {
 		return err
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return err
+	}
 
 	// Default to all shares if no path given, or if proton:// alone.
-	var roots []*common.Link
+	var roots []*drive.Link
 	var rootPaths []string
 
 	// Normalize: no args or bare "proton://" both mean "all shares".
@@ -166,7 +169,7 @@ func runFind(_ *cobra.Command, args []string) error {
 	}
 
 	if searchAll {
-		shares, err := session.ListShares(ctx, true)
+		shares, err := dc.ListShares(ctx, true)
 		if err != nil {
 			return err
 		}
@@ -177,7 +180,7 @@ func runFind(_ *cobra.Command, args []string) error {
 		}
 	} else {
 		for _, arg := range args {
-			link, _, err := resolveProtonPath(ctx, session, arg)
+			link, _, err := resolveProtonPath(ctx, dc, arg)
 			if err != nil {
 				return fmt.Errorf("find: %s: %w", arg, err)
 			}
@@ -205,7 +208,7 @@ func runFind(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func findWalk(ctx context.Context, prefix string, l *common.Link, depth int, preds []findPredicate, sep string) error {
+func findWalk(ctx context.Context, prefix string, l *drive.Link, depth int, preds []findPredicate, sep string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -251,10 +254,10 @@ func findWalk(ctx context.Context, prefix string, l *common.Link, depth int, pre
 // findChildren collects children, prints matches at this level, then
 // descends into child directories. This ensures breadth-first ordering:
 // all entries at depth N are printed before any at depth N+1.
-func findChildren(ctx context.Context, prefix string, l *common.Link, depth int, preds []findPredicate, sep string) error {
+func findChildren(ctx context.Context, prefix string, l *drive.Link, depth int, preds []findPredicate, sep string) error {
 	type childWork struct {
 		path string
-		link *common.Link
+		link *drive.Link
 	}
 
 	// Collect all children from Readdir.
@@ -351,7 +354,7 @@ func findChildren(ctx context.Context, prefix string, l *common.Link, depth int,
 }
 
 // findDescend is the recursive entry point for child directories.
-func findDescend(ctx context.Context, prefix string, l *common.Link, depth int, preds []findPredicate, sep string) error {
+func findDescend(ctx context.Context, prefix string, l *drive.Link, depth int, preds []findPredicate, sep string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

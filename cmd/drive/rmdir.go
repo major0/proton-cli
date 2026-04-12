@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/go-proton-api"
-	common "github.com/major0/proton-cli/api"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -34,16 +34,18 @@ func runRmdir(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	session, err := cli.RestoreSession(ctx)
 	if err != nil {
 		return err
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return err
+	}
 
 	for _, arg := range args {
-		if err := rmdirOne(ctx, session, arg); err != nil {
+		if err := rmdirOne(ctx, dc, arg); err != nil {
 			return err
 		}
 	}
@@ -51,7 +53,7 @@ func runRmdir(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func rmdirOne(ctx context.Context, session *common.Session, rawPath string) error {
+func rmdirOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
 	if !strings.HasPrefix(rawPath, "proton://") {
 		return fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
 	}
@@ -68,7 +70,7 @@ func rmdirOne(ctx context.Context, session *common.Session, rawPath string) erro
 		relPath = parts[1]
 	}
 
-	share, err := session.ResolveShare(ctx, shareName, true)
+	share, err := dc.ResolveShare(ctx, shareName, true)
 	if err != nil {
 		return fmt.Errorf("rmdir: %s: %w", shareName, err)
 	}
@@ -88,9 +90,9 @@ func rmdirOne(ctx context.Context, session *common.Session, rawPath string) erro
 	}
 
 	if rmdirFlags.permanent {
-		err = session.RmDirPermanent(ctx, share, link, false)
+		err = dc.RmDirPermanent(ctx, share, link, false)
 	} else {
-		err = session.RmDir(ctx, share, link, false)
+		err = dc.RmDir(ctx, share, link, false)
 	}
 
 	if err != nil {

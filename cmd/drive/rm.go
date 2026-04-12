@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	common "github.com/major0/proton-cli/api"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -44,16 +44,18 @@ func runRm(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	session, err := cli.RestoreSession(ctx)
 	if err != nil {
 		return err
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return err
+	}
 
 	for _, arg := range args {
-		if err := rmOne(ctx, session, arg); err != nil {
+		if err := rmOne(ctx, dc, arg); err != nil {
 			return err
 		}
 	}
@@ -61,20 +63,20 @@ func runRm(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func rmOne(ctx context.Context, session *common.Session, rawPath string) error {
+func rmOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
 	if !strings.HasPrefix(rawPath, "proton://") {
 		return fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
 	}
 
-	link, share, err := resolveProtonPath(ctx, session, rawPath)
+	link, share, err := resolveProtonPath(ctx, dc, rawPath)
 	if err != nil {
 		return fmt.Errorf("rm: %s: %w", rawPath, err)
 	}
 
 	if rmFlags.permanent {
-		err = session.RmPermanent(ctx, share, link, rmFlags.recursive)
+		err = dc.RmPermanent(ctx, share, link, rmFlags.recursive)
 	} else {
-		err = session.Rm(ctx, share, link, rmFlags.recursive)
+		err = dc.Rm(ctx, share, link, rmFlags.recursive)
 	}
 
 	if err != nil {
@@ -97,21 +99,23 @@ func runEmptyTrash(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	session, err := cli.RestoreSession(ctx)
 	if err != nil {
 		return err
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return err
+	}
 
-	shares, err := session.ListShares(ctx, true)
+	shares, err := dc.ListShares(ctx, true)
 	if err != nil {
 		return err
 	}
 
 	for i := range shares {
-		if err := session.EmptyTrash(ctx, &shares[i]); err != nil {
+		if err := dc.EmptyTrash(ctx, &shares[i]); err != nil {
 			return fmt.Errorf("emptying trash: %w", err)
 		}
 	}

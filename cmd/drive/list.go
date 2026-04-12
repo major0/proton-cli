@@ -11,7 +11,8 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
-	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/drive"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -222,12 +223,12 @@ func parsePath(raw string) string {
 	return strings.Join(parts, "/") + trailingSlash
 }
 
-func resolveLinks(ctx context.Context, session *common.Session, args []string) ([]*common.Link, error) {
+func resolveLinks(ctx context.Context, dc *driveClient.Client, args []string) ([]*drive.Link, error) {
 	if len(args) == 0 {
-		return rootLinks(ctx, session)
+		return rootLinks(ctx, dc)
 	}
 
-	var links []*common.Link
+	var links []*drive.Link
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "proton://") {
 			return nil, fmt.Errorf("invalid path: %s (must start with proton://)", arg)
@@ -235,7 +236,7 @@ func resolveLinks(ctx context.Context, session *common.Session, args []string) (
 
 		path := parsePath(arg)
 		if path == "" {
-			roots, err := rootLinks(ctx, session)
+			roots, err := rootLinks(ctx, dc)
 			if err != nil {
 				return nil, err
 			}
@@ -243,7 +244,7 @@ func resolveLinks(ctx context.Context, session *common.Session, args []string) (
 			continue
 		}
 
-		link, err := session.ResolvePath(ctx, path, true)
+		link, err := dc.ResolvePath(ctx, path, true)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", arg, err)
 		}
@@ -265,21 +266,21 @@ func resolveLinks(ctx context.Context, session *common.Session, args []string) (
 	return links, nil
 }
 
-func rootLinks(ctx context.Context, session *common.Session) ([]*common.Link, error) {
-	shares, err := session.ListShares(ctx, true)
+func rootLinks(ctx context.Context, dc *driveClient.Client) ([]*drive.Link, error) {
+	shares, err := dc.ListShares(ctx, true)
 	if err != nil {
 		return nil, err
 	}
 
-	links := make([]*common.Link, len(shares))
+	links := make([]*drive.Link, len(shares))
 	for i := range shares {
 		links[i] = shares[i].Link
 	}
 	return links, nil
 }
 
-func filterLinks(links []*common.Link, opts listOpts) []*common.Link {
-	var out []*common.Link
+func filterLinks(links []*drive.Link, opts listOpts) []*drive.Link {
+	var out []*drive.Link
 	for _, l := range links {
 		state := l.State()
 
@@ -316,7 +317,7 @@ func filterLinks(links []*common.Link, opts listOpts) []*common.Link {
 	return out
 }
 
-func doSort(links []*common.Link, opts listOpts) {
+func doSort(links []*drive.Link, opts listOpts) {
 	if opts.sortBy == sortNone {
 		if opts.reverse {
 			for i, j := 0, len(links)-1; i < j; i, j = i+1, j-1 {
@@ -387,7 +388,7 @@ const (
 // colorName returns the display name with optional ANSI color and classify suffix.
 // Trashed items are red, directories are bold blue. With classify, directories
 // get a trailing '/'.
-func colorName(l *common.Link, useColor bool, classify bool) string {
+func colorName(l *drive.Link, useColor bool, classify bool) string {
 	name, _ := l.Name()
 
 	suffix := ""
@@ -409,7 +410,7 @@ func colorName(l *common.Link, useColor bool, classify bool) string {
 
 // rawName returns the plain name with optional classify suffix (no color).
 // Used for column width calculation.
-func rawName(l *common.Link, classify bool) string {
+func rawName(l *drive.Link, classify bool) string {
 	name, _ := l.Name()
 	if classify && l.Type() == proton.LinkTypeFolder {
 		return name + "/"
@@ -417,7 +418,7 @@ func rawName(l *common.Link, classify bool) string {
 	return name
 }
 
-func printLong(l *common.Link, opts listOpts) {
+func printLong(l *drive.Link, opts listOpts) {
 	fmt.Printf("%c%-9s %8s %s %s\n",
 		typeChar(l.Type()),
 		"rwxr-xr-x",
@@ -427,7 +428,7 @@ func printLong(l *common.Link, opts listOpts) {
 	)
 }
 
-func printLinks(links []*common.Link, opts listOpts) {
+func printLinks(links []*drive.Link, opts listOpts) {
 	switch opts.format {
 	case formatLong:
 		for _, l := range links {
@@ -444,7 +445,7 @@ func printLinks(links []*common.Link, opts listOpts) {
 	}
 }
 
-func printColumns(links []*common.Link, across bool, opts listOpts) {
+func printColumns(links []*drive.Link, across bool, opts listOpts) {
 	if len(links) == 0 {
 		return
 	}
@@ -509,7 +510,7 @@ func printColumns(links []*common.Link, across bool, opts listOpts) {
 	}
 }
 
-func listRecursive(ctx context.Context, prefix string, links []*common.Link, opts listOpts) error {
+func listRecursive(ctx context.Context, prefix string, links []*drive.Link, opts listOpts) error {
 	for _, l := range links {
 		if l.Type() != proton.LinkTypeFolder {
 			continue
@@ -544,17 +545,19 @@ func runList(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	session, err := cli.RestoreSession(ctx)
 	if err != nil {
 		return err
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return err
+	}
 
 	slog.Debug("drive.list", "args", args)
 
-	links, err := resolveLinks(ctx, session, args)
+	links, err := resolveLinks(ctx, dc, args)
 	if err != nil {
 		return err
 	}

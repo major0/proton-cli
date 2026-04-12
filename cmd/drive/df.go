@@ -6,7 +6,8 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
-	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -26,32 +27,34 @@ func runDf(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	session, err := cli.RestoreSession(ctx)
 	if err != nil {
 		return err
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
-
-	volumes, err := session.Client.ListVolumes(ctx)
+	dc, err := driveClient.NewClient(ctx, session)
 	if err != nil {
 		return err
 	}
 
-	shares, err := session.Client.ListShares(ctx, true)
+	volumes, err := dc.ListVolumes(ctx)
+	if err != nil {
+		return err
+	}
+
+	shares, err := dc.ListSharesMetadata(ctx, true)
 	if err != nil {
 		return err
 	}
 
 	shareIndex := make(map[string]proton.ShareMetadata, len(shares))
 	for _, s := range shares {
-		shareIndex[s.ShareID] = s
+		shareIndex[s.ShareID] = proton.ShareMetadata(s)
 	}
 
 	nameIndex := make(map[string]string)
 	for _, v := range volumes {
-		share, err := session.GetShare(ctx, v.Share.ShareID)
+		share, err := dc.GetShare(ctx, v.ProtonVolume.Share.ShareID)
 		if err != nil {
 			continue
 		}
@@ -59,11 +62,12 @@ func runDf(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			continue
 		}
-		nameIndex[v.VolumeID] = name
+		nameIndex[v.ProtonVolume.VolumeID] = name
 	}
 
 	// Account-level quota from the user object.
-	user, err := session.Client.GetUser(ctx)
+	acct := account.NewClient(session)
+	user, err := acct.GetUser(ctx)
 	if err != nil {
 		return err
 	}
@@ -72,22 +76,22 @@ func runDf(_ *cobra.Command, _ []string) error {
 		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State")
 
 	for _, v := range volumes {
-		label := nameIndex[v.VolumeID]
+		label := nameIndex[v.ProtonVolume.VolumeID]
 		if label == "" {
-			if s, ok := shareIndex[v.Share.ShareID]; ok {
+			if s, ok := shareIndex[v.ProtonVolume.Share.ShareID]; ok {
 				label = dfShareType(s.Type)
 			} else {
-				label = v.VolumeID[:12] + "..."
+				label = v.ProtonVolume.VolumeID[:12] + "..."
 			}
 		}
 
-		used := v.UsedSpace
+		used := v.ProtonVolume.UsedSpace
 		size := "unlimited"
 		avail := "-"
 		usePct := "-"
 
-		if v.MaxSpace != nil {
-			total := *v.MaxSpace
+		if v.ProtonVolume.MaxSpace != nil {
+			total := *v.ProtonVolume.MaxSpace
 			size = units.BytesSize(float64(total))
 			free := total - used
 			if free < 0 {
@@ -105,9 +109,9 @@ func runDf(_ *cobra.Command, _ []string) error {
 			units.BytesSize(float64(used)),
 			avail,
 			usePct,
-			units.BytesSize(float64(v.DownloadedBytes)),
-			units.BytesSize(float64(v.UploadedBytes)),
-			dfVolState(v.State),
+			units.BytesSize(float64(v.ProtonVolume.DownloadedBytes)),
+			units.BytesSize(float64(v.ProtonVolume.UploadedBytes)),
+			dfVolState(v.ProtonVolume.State),
 		)
 	}
 

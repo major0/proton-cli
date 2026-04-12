@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/go-proton-api"
-	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/drive"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -34,16 +35,18 @@ func runMkdir(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	session, err := cli.RestoreSession(ctx)
 	if err != nil {
 		return err
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return err
+	}
 
 	for _, arg := range args {
-		if err := mkdirOne(ctx, session, arg); err != nil {
+		if err := mkdirOne(ctx, dc, arg); err != nil {
 			return err
 		}
 	}
@@ -51,7 +54,7 @@ func runMkdir(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func mkdirOne(ctx context.Context, session *common.Session, rawPath string) error {
+func mkdirOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
 	if !strings.HasPrefix(rawPath, "proton://") {
 		return fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
 	}
@@ -68,7 +71,7 @@ func mkdirOne(ctx context.Context, session *common.Session, rawPath string) erro
 		relPath = parts[1]
 	}
 
-	share, err := session.ResolveShare(ctx, shareName, true)
+	share, err := dc.ResolveShare(ctx, shareName, true)
 	if err != nil {
 		return fmt.Errorf("mkdir: %s: %w", shareName, err)
 	}
@@ -78,13 +81,13 @@ func mkdirOne(ctx context.Context, session *common.Session, rawPath string) erro
 	}
 
 	if mkdirFlags.parents {
-		return mkdirAllCmd(ctx, session, share, relPath)
+		return mkdirAllCmd(ctx, dc, share, relPath)
 	}
 
-	return mkdirSingle(ctx, session, share, relPath)
+	return mkdirSingle(ctx, dc, share, relPath)
 }
 
-func mkdirSingle(ctx context.Context, session *common.Session, share *common.Share, relPath string) error {
+func mkdirSingle(ctx context.Context, dc *driveClient.Client, share *drive.Share, relPath string) error {
 	relPath = strings.TrimSuffix(relPath, "/")
 	dir := ""
 	name := relPath
@@ -93,7 +96,7 @@ func mkdirSingle(ctx context.Context, session *common.Session, share *common.Sha
 		name = relPath[idx+1:]
 	}
 
-	var parent *common.Link
+	var parent *drive.Link
 	var err error
 	if dir == "" {
 		parent = share.Link
@@ -108,7 +111,7 @@ func mkdirSingle(ctx context.Context, session *common.Session, share *common.Sha
 		return fmt.Errorf("mkdir: %s: not a directory", dir)
 	}
 
-	newDir, err := session.MkDir(ctx, share, parent, name)
+	newDir, err := dc.MkDir(ctx, share, parent, name)
 	if err != nil {
 		return err
 	}
@@ -122,7 +125,7 @@ func mkdirSingle(ctx context.Context, session *common.Session, share *common.Sha
 	return nil
 }
 
-func mkdirAllCmd(ctx context.Context, session *common.Session, share *common.Share, relPath string) error {
+func mkdirAllCmd(ctx context.Context, dc *driveClient.Client, share *drive.Share, relPath string) error {
 	relPath = strings.TrimSuffix(relPath, "/")
 	parts := strings.Split(relPath, "/")
 
@@ -148,7 +151,7 @@ func mkdirAllCmd(ctx context.Context, session *common.Session, share *common.Sha
 			continue
 		}
 
-		newDir, err := session.MkDir(ctx, share, current, name)
+		newDir, err := dc.MkDir(ctx, share, current, name)
 		if err != nil {
 			return err
 		}
