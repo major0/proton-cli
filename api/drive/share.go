@@ -42,6 +42,23 @@ func (s *Share) ResolvePath(ctx context.Context, path string, all bool) (*Link, 
 	return s.Link.ResolvePath(ctx, path, all)
 }
 
+// ProtonShare returns the raw proton.Share. Used by the client package
+// for API operations that need raw share fields.
+func (s *Share) ProtonShare() *proton.Share { return s.protonShare }
+
+// KeyRingValue returns the share's keyring.
+func (s *Share) KeyRingValue() *crypto.KeyRing { return s.keyRing }
+
+// NewShare constructs a Share. Used by the client package.
+func NewShare(pShare *proton.Share, keyRing *crypto.KeyRing, link *Link, resolver LinkResolver) *Share {
+	return &Share{
+		protonShare: pShare,
+		keyRing:     keyRing,
+		Link:        link,
+		resolver:    resolver,
+	}
+}
+
 func (s *Share) getKeyRing() (*crypto.KeyRing, error) {
 	linkKR, ok := s.resolver.AddressKeyRing(s.protonShare.AddressID)
 	if !ok {

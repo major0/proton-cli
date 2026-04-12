@@ -139,6 +139,16 @@ func (l *Link) decryptName(parentKR *crypto.KeyRing) (string, error) {
 	return "", api.ErrKeyNotFound
 }
 
+// ProtonLink returns the raw encrypted proton.Link. Used by the client
+// package for API operations that need raw link fields.
+func (l *Link) ProtonLink() *proton.Link { return l.protonLink }
+
+// ParentLink returns the parent Link, or nil for share roots.
+func (l *Link) ParentLink() *Link { return l.parentLink }
+
+// Share returns the Link's associated Share.
+func (l *Link) Share() *Share { return l.share }
+
 // NewLink creates a Link wrapper without decrypting anything.
 func NewLink(pLink *proton.Link, parent *Link, share *Share, resolver LinkResolver) *Link {
 	return &Link{
