@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -25,6 +26,7 @@ var findFlags struct {
 	maxDepth int
 	print0   bool
 	print    bool // -print is default behavior, explicit flag for compatibility
+	depth    bool // -depth: process directory contents before the directory itself
 }
 
 var driveFindCmd = &cobra.Command{
@@ -48,6 +50,7 @@ func init() {
 	f.IntVar(&findFlags.maxDepth, "maxdepth", -1, "Maximum directory depth (-1 for unlimited)")
 	cli.BoolFlag(f, &findFlags.print0, "print0", false, "Separate output with NUL instead of newline")
 	cli.BoolFlag(f, &findFlags.print, "print", false, "Print matching paths (default action)")
+	cli.BoolFlag(f, &findFlags.depth, "depth", false, "Process directory contents before the directory itself")
 }
 
 type findPredicate func(p string, l *common.Link, depth int) bool
@@ -205,24 +208,44 @@ func findWalk(ctx context.Context, prefix string, l *common.Link, depth int, pre
 		return err
 	}
 
-	// Check maxdepth for traversal (not just matching).
 	if findFlags.maxDepth >= 0 && depth > findFlags.maxDepth {
 		return nil
 	}
 
-	if matchAll(preds, prefix, l, depth) {
-		fmt.Print(prefix + sep)
+	// Breadth-first (default): print before descending.
+	if !findFlags.depth {
+		if matchAll(preds, prefix, l, depth) {
+			fmt.Print(prefix + sep)
+		}
 	}
 
-	if l.Type() != proton.LinkTypeFolder {
-		return nil
+	if l.Type() == proton.LinkTypeFolder {
+		if findFlags.maxDepth < 0 || depth < findFlags.maxDepth {
+			if err := findChildren(ctx, prefix, l, depth, preds, sep); err != nil {
+				return err
+			}
+		}
 	}
 
-	// Don't descend if we're at maxdepth.
-	if findFlags.maxDepth >= 0 && depth >= findFlags.maxDepth {
-		return nil
+	// Depth-first: print after descending.
+	if findFlags.depth {
+		if matchAll(preds, prefix, l, depth) {
+			fmt.Print(prefix + sep)
+		}
 	}
 
+	return nil
+}
+
+// findChildren fans out child processing concurrently.
+func findChildren(ctx context.Context, prefix string, l *common.Link, depth int, preds []findPredicate, sep string) error {
+	type childWork struct {
+		path string
+		link *common.Link
+	}
+
+	// Collect children from Readdir.
+	var children []childWork
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
 			fmt.Fprintf(os.Stderr, "find: %s: %v\n", prefix, entry.Err)
@@ -234,14 +257,43 @@ func findWalk(ctx context.Context, prefix string, l *common.Link, depth int, pre
 			continue
 		}
 
-		childPath := prefix + "/" + childName
+		childPath := prefix + childName
 		if entry.Link.Type() == proton.LinkTypeFolder {
 			childPath += "/"
 		}
-		if err := findWalk(ctx, childPath, entry.Link, depth+1, preds, sep); err != nil {
-			return err
-		}
+		children = append(children, childWork{path: childPath, link: entry.Link})
 	}
 
+	if len(children) == 0 {
+		return nil
+	}
+
+	// Fan out: process children concurrently.
+	errCh := make(chan error, len(children))
+	sem := make(chan struct{}, 8) // limit concurrent directory walks
+
+	var wg sync.WaitGroup
+	for _, child := range children {
+		wg.Add(1)
+		go func(c childWork) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			if err := findWalk(ctx, c.path, c.link, depth+1, preds, sep); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+			}
+		}(child)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	if err, ok := <-errCh; ok {
+		return err
+	}
 	return nil
 }
