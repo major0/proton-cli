@@ -8,8 +8,7 @@ import (
 )
 
 // StatLink resolves a single link ID within a share into a fully-populated
-// Link with decrypted name, size, and timestamps. The share must already
-// be resolved (we need its keyring for decryption).
+// Link with decrypted name, size, and timestamps.
 func (s *Session) StatLink(ctx context.Context, share *Share, parentLink *Link, linkID string) (*Link, error) {
 	pLink, err := s.Client.GetLink(ctx, share.protonShare.ShareID, linkID)
 	if err != nil {
@@ -19,9 +18,9 @@ func (s *Session) StatLink(ctx context.Context, share *Share, parentLink *Link, 
 	return s.newLink(ctx, share, parentLink, &pLink)
 }
 
-// StatLinks resolves a batch of link IDs concurrently. Up to maxWorkers
+// StatLinks resolves a batch of link IDs concurrently. Up to MaxWorkers
 // goroutines run in parallel. Links that fail to resolve are logged and
-// skipped. The returned slice preserves no particular order.
+// skipped. Respects context cancellation.
 func (s *Session) StatLinks(ctx context.Context, share *Share, parentLink *Link, linkIDs []string) ([]Link, error) {
 	if len(linkIDs) == 0 {
 		return nil, nil
@@ -36,12 +35,14 @@ func (s *Session) StatLinks(ctx context.Context, share *Share, parentLink *Link,
 		idQueue = make(chan string)
 	)
 
-	// Spawn workers.
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for id := range idQueue {
+				if ctx.Err() != nil {
+					return
+				}
 				link, err := s.StatLink(ctx, share, parentLink, id)
 				if err != nil {
 					slog.Error("stat", "linkID", id, "error", err)
@@ -54,14 +55,20 @@ func (s *Session) StatLinks(ctx context.Context, share *Share, parentLink *Link,
 		}()
 	}
 
-	// Feed IDs.
-	for _, id := range linkIDs {
-		idQueue <- id
-	}
-	close(idQueue)
+	// Feed IDs, respecting cancellation.
+	go func() {
+		defer close(idQueue)
+		for _, id := range linkIDs {
+			select {
+			case idQueue <- id:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	wg.Wait()
-	return links, nil
+	return links, ctx.Err()
 }
 
 // FindLinkByName resolves link IDs concurrently and returns the first one
@@ -93,13 +100,16 @@ func (s *Session) FindLinkByName(ctx context.Context, share *Share, parentLink *
 			for id := range idQueue {
 				link, err := s.StatLink(ctx, share, parentLink, id)
 				if err != nil {
+					if ctx.Err() != nil {
+						return
+					}
 					slog.Error("stat", "linkID", id, "error", err)
 					continue
 				}
 				if link.Name == name {
 					select {
 					case resultCh <- result{link: link}:
-						cancel() // stop other workers
+						cancel()
 					default:
 					}
 					return
@@ -108,7 +118,6 @@ func (s *Session) FindLinkByName(ctx context.Context, share *Share, parentLink *
 		}()
 	}
 
-	// Feed IDs, respecting cancellation.
 	go func() {
 		defer close(idQueue)
 		for _, id := range linkIDs {
@@ -120,7 +129,6 @@ func (s *Session) FindLinkByName(ctx context.Context, share *Share, parentLink *
 		}
 	}()
 
-	// Wait for workers to finish, then close result channel.
 	go func() {
 		wg.Wait()
 		close(resultCh)
