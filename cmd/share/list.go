@@ -3,89 +3,99 @@ package shareCmd
 import (
 	"context"
 	"fmt"
-	"os"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/jedib0t/go-pretty/v6/table"
 	common "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
 var shareListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List shares",
-	Long:  "List shares",
-	RunE: func(_ *cobra.Command, _ []string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
-		defer cancel()
-
-		session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
-		if err != nil {
-			return err
-		}
-
-		session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-		session.AddDeauthHandler(common.NewDeauthHandler())
-
-		shares, err := session.Client.ListShares(ctx, true)
-		if err != nil {
-			return err
-		}
-
-		t := table.NewWriter()
-		t.SetOutputMirror(os.Stdout)
-		t.AppendHeader(table.Row{"Share ID", "Creator", "Type", "State", "Flags"})
-		for _, s := range shares {
-			t.AppendRow(table.Row{
-				s.ShareID,
-				s.Creator,
-				getShareType(s.Type),
-				getShareState(s.State),
-				getShareFlags(s.Flags),
-			})
-		}
-		t.Render()
-
-		return nil
-	},
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List shares",
+	Long:    "List all Proton Drive shares visible to this account",
+	RunE:    runShareList,
 }
 
-func getShareType(shareType proton.ShareType) string {
-	switch shareType {
+func init() {
+	shareCmd.AddCommand(shareListCmd)
+}
+
+func runShareList(_ *cobra.Command, _ []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	defer cancel()
+
+	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	if err != nil {
+		return err
+	}
+
+	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+	session.AddDeauthHandler(common.NewDeauthHandler())
+
+	shares, err := session.Client.ListShares(ctx, true)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%-8s %-8s %-8s %-12s %s\n",
+		"Type", "State", "Flags", "Created", "Creator")
+
+	for _, s := range shares {
+		fmt.Printf("%-8s %-8s %-8s %-12s %s\n",
+			fmtShareType(s.Type),
+			fmtShareState(s.State),
+			fmtShareFlags(s.Flags),
+			fmtTime(s.CreationTime),
+			s.Creator,
+		)
+	}
+
+	return nil
+}
+
+func fmtShareType(st proton.ShareType) string {
+	switch st {
 	case proton.ShareTypeMain:
 		return "main"
 	case proton.ShareTypeStandard:
-		return "standard"
+		return "shared"
 	case proton.ShareTypeDevice:
 		return "device"
+	case 4:
+		return "photos"
 	default:
-		return fmt.Sprintf("Unknown (%d)", shareType)
+		return fmt.Sprintf("?(%d)", st)
 	}
 }
 
-func getShareState(state proton.ShareState) string {
+func fmtShareState(state proton.ShareState) string {
 	switch state {
 	case proton.ShareStateActive:
 		return "active"
 	case proton.ShareStateDeleted:
 		return "deleted"
 	default:
-		return fmt.Sprintf("Unknown (%d)", state)
+		return fmt.Sprintf("?(%d)", state)
 	}
 }
 
-func getShareFlags(flags proton.ShareFlags) string {
+func fmtShareFlags(flags proton.ShareFlags) string {
 	switch flags {
 	case proton.NoFlags:
-		return "none"
+		return "-"
 	case proton.PrimaryShare:
 		return "primary"
 	default:
-		return fmt.Sprintf("Unknown (%d)", flags)
+		return fmt.Sprintf("?(%d)", flags)
 	}
 }
 
-func init() {
-	shareCmd.AddCommand(shareListCmd)
+func fmtTime(epoch int64) string {
+	if epoch == 0 {
+		return "-"
+	}
+	return time.Unix(epoch, 0).Format("2006-01-02")
 }
