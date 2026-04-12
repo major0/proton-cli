@@ -6,7 +6,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
-	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
@@ -23,16 +22,21 @@ func (c *Client) Move(ctx context.Context, share *drive.Share, link *drive.Link,
 		return fmt.Errorf("move: new parent keyring: %w", err)
 	}
 
-	addrKR := c.addrKRForLink(link)
-	if addrKR == nil {
-		return fmt.Errorf("move: %w", api.ErrKeyNotFound)
+	addrKR, err := c.addrKRForLink(link)
+	if err != nil {
+		return fmt.Errorf("move: %w", err)
+	}
+
+	sigAddr, err := c.signatureAddress(link)
+	if err != nil {
+		return fmt.Errorf("move: %w", err)
 	}
 
 	req := proton.MoveLinkReq{
 		ParentLinkID:            newParent.ProtonLink().LinkID,
 		OriginalHash:            link.ProtonLink().Hash,
 		NodePassphraseSignature: link.ProtonLink().NodePassphraseSignature,
-		SignatureAddress:        c.signatureAddress(link),
+		SignatureAddress:        sigAddr,
 	}
 
 	if err := req.SetName(newName, addrKR, newParentKR); err != nil {

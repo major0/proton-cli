@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
@@ -23,9 +22,9 @@ func (c *Client) MkDir(ctx context.Context, share *drive.Share, parent *drive.Li
 		return nil, fmt.Errorf("mkdir %s: parent keyring: %w", name, err)
 	}
 
-	addrKR := c.addrKRForLink(parent)
-	if addrKR == nil {
-		return nil, fmt.Errorf("mkdir %s: %w", name, api.ErrKeyNotFound)
+	addrKR, err := c.addrKRForLink(parent)
+	if err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", name, err)
 	}
 
 	nodeKey, nodePassphraseEnc, nodePassphraseSig, err := generateNodeKeys(parentKR, addrKR)
@@ -33,12 +32,17 @@ func (c *Client) MkDir(ctx context.Context, share *drive.Share, parent *drive.Li
 		return nil, fmt.Errorf("mkdir %s: generating keys: %w", name, err)
 	}
 
+	sigAddr, err := c.signatureAddress(parent)
+	if err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", name, err)
+	}
+
 	req := proton.CreateFolderReq{
 		ParentLinkID:            parent.ProtonLink().LinkID,
 		NodeKey:                 nodeKey,
 		NodePassphrase:          nodePassphraseEnc,
 		NodePassphraseSignature: nodePassphraseSig,
-		SignatureAddress:        c.signatureAddress(parent),
+		SignatureAddress:        sigAddr,
 	}
 
 	if err := req.SetName(name, addrKR, parentKR); err != nil {

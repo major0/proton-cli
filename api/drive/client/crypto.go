@@ -2,9 +2,11 @@ package client
 
 import (
 	"encoding/base64"
+	"fmt"
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/ProtonMail/gopenpgp/v2/helper"
+	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
@@ -85,26 +87,21 @@ func unlockKeyRing(parentKR, addrKR *crypto.KeyRing, key, passphrase, passphrase
 }
 
 // addrKRForLink returns the address keyring for the link's signature email.
-// Falls back to the first available address keyring.
-func (c *Client) addrKRForLink(l *drive.Link) *crypto.KeyRing {
+// Returns an error if no matching keyring is found.
+func (c *Client) addrKRForLink(l *drive.Link) (*crypto.KeyRing, error) {
 	if addr, ok := c.addresses[l.ProtonLink().SignatureEmail]; ok {
 		if kr, ok := c.addressKeyRings[addr.ID]; ok {
-			return kr
+			return kr, nil
 		}
 	}
-	for _, kr := range c.addressKeyRings {
-		return kr
-	}
-	return nil
+	return nil, fmt.Errorf("addrKRForLink %s: %w", l.ProtonLink().SignatureEmail, api.ErrKeyNotFound)
 }
 
 // signatureAddress returns the signature email address for the link.
-func (c *Client) signatureAddress(l *drive.Link) string {
+// Returns an error if no address is available.
+func (c *Client) signatureAddress(l *drive.Link) (string, error) {
 	if l.ProtonLink().SignatureEmail != "" {
-		return l.ProtonLink().SignatureEmail
+		return l.ProtonLink().SignatureEmail, nil
 	}
-	for email := range c.addresses {
-		return email
-	}
-	return ""
+	return "", fmt.Errorf("signatureAddress %s: %w", l.ProtonLink().LinkID, api.ErrKeyNotFound)
 }

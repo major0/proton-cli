@@ -121,22 +121,24 @@ func (l *Link) getParentKeyRing() (*crypto.KeyRing, error) {
 
 // deriveKeyRing derives this link's keyring from the parent keyring.
 func (l *Link) deriveKeyRing(parentKR *crypto.KeyRing) (*crypto.KeyRing, error) {
-	if addr, ok := l.resolver.AddressForEmail(l.protonLink.SignatureEmail); ok {
+	email := l.protonLink.SignatureEmail
+	if addr, ok := l.resolver.AddressForEmail(email); ok {
 		if linkKR, ok := l.resolver.AddressKeyRing(addr.ID); ok {
 			return l.protonLink.GetKeyRing(parentKR, linkKR)
 		}
 	}
-	return nil, api.ErrKeyNotFound
+	return nil, fmt.Errorf("deriveKeyRing: signature email %q: %w", email, api.ErrKeyNotFound)
 }
 
 // decryptName decrypts the link name using the parent keyring.
 func (l *Link) decryptName(parentKR *crypto.KeyRing) (string, error) {
-	if addr, ok := l.resolver.AddressForEmail(l.protonLink.NameSignatureEmail); ok {
+	email := l.protonLink.NameSignatureEmail
+	if addr, ok := l.resolver.AddressForEmail(email); ok {
 		if addrKR, ok := l.resolver.AddressKeyRing(addr.ID); ok {
 			return l.protonLink.GetName(parentKR, addrKR)
 		}
 	}
-	return "", api.ErrKeyNotFound
+	return "", fmt.Errorf("decryptName: name signature email %q: %w", email, api.ErrKeyNotFound)
 }
 
 // ProtonLink returns the raw encrypted proton.Link. Used by the client
