@@ -3,12 +3,9 @@ package volumeCmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
-	"github.com/jedib0t/go-pretty/v6/table"
 	common "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -18,7 +15,7 @@ var volumeListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List volumes",
-	Long:    "List volumes with share type, usage, and traffic stats",
+	Long:    "List volumes with usage stats",
 	RunE:    runVolumeList,
 }
 
@@ -43,7 +40,7 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Build a share type index keyed by ShareID for the volume join.
+	// Build share index for type lookup.
 	shares, err := session.Client.ListShares(ctx, true)
 	if err != nil {
 		return err
@@ -54,22 +51,38 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 		shareIndex[s.ShareID] = s
 	}
 
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	t.AppendHeader(table.Row{
-		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State",
-	})
+	// Resolve root link names by getting the share + decrypting the root link.
+	nameIndex := make(map[string]string) // volumeID → decrypted root name
+	for _, v := range volumes {
+		share, err := session.GetShare(ctx, v.Share.ShareID)
+		if err != nil {
+			continue
+		}
+		name, err := share.GetName(ctx)
+		if err != nil {
+			continue
+		}
+		nameIndex[v.VolumeID] = name
+	}
+
+	// Print df-style output.
+	fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
+		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State")
 
 	for _, v := range volumes {
-		shareType := "?"
-		if s, ok := shareIndex[v.Share.ShareID]; ok {
-			shareType = fmtShareType(s.Type)
+		label := nameIndex[v.VolumeID]
+		if label == "" {
+			if s, ok := shareIndex[v.Share.ShareID]; ok {
+				label = fmtShareType(s.Type)
+			} else {
+				label = v.VolumeID[:12] + "..."
+			}
 		}
 
 		used := v.UsedSpace
-		avail := ""
-		usePct := ""
 		size := "unlimited"
+		avail := "-"
+		usePct := "-"
 
 		if v.MaxSpace != nil {
 			total := *v.MaxSpace
@@ -81,16 +94,11 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 			avail = units.BytesSize(float64(free))
 			if total > 0 {
 				usePct = fmt.Sprintf("%.0f%%", float64(used)/float64(total)*100)
-			} else {
-				usePct = "0%"
 			}
-		} else {
-			avail = "-"
-			usePct = "-"
 		}
 
-		t.AppendRow(table.Row{
-			shareType,
+		fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
+			label,
 			size,
 			units.BytesSize(float64(used)),
 			avail,
@@ -98,18 +106,10 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 			units.BytesSize(float64(v.DownloadedBytes)),
 			units.BytesSize(float64(v.UploadedBytes)),
 			fmtVolState(v.State),
-		})
+		)
 	}
 
-	t.Render()
 	return nil
-}
-
-func fmtSpace(bytes *int64) string {
-	if bytes == nil {
-		return "unlimited"
-	}
-	return units.BytesSize(float64(*bytes))
 }
 
 func fmtVolState(state proton.VolumeState) string {
@@ -131,32 +131,9 @@ func fmtShareType(st proton.ShareType) string {
 		return "shared"
 	case proton.ShareTypeDevice:
 		return "device"
-	case 4: // Photos — not yet in go-proton-api constants
+	case 4:
 		return "photos"
 	default:
 		return fmt.Sprintf("unknown(%d)", st)
-	}
-}
-
-func fmtTime(epoch int64) string {
-	if epoch == 0 {
-		return "-"
-	}
-	return time.Unix(epoch, 0).Format("2006-01-02")
-}
-
-func fmtRestore(status *proton.VolumeRestoreStatus) string {
-	if status == nil {
-		return "-"
-	}
-	switch *status {
-	case proton.RestoreStatusDone:
-		return "done"
-	case proton.RestoreStatusInProgress:
-		return "in-progress"
-	case proton.RestoreStatusFailed:
-		return "failed"
-	default:
-		return fmt.Sprintf("unknown(%d)", *status)
 	}
 }
