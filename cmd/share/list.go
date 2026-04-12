@@ -44,15 +44,8 @@ func runShareList(_ *cobra.Command, _ []string) error {
 		name, _ := shares[i].GetName(ctx)
 		meta := shares[i].Metadata()
 
-		typeChar := 'd'
-		perms := "rwxr-xr-x"
-		if meta.Flags == proton.PrimaryShare {
-			perms = "rwx------"
-		}
-
-		fmt.Printf("%c%-9s %-30s %-12s %s\n",
-			typeChar,
-			perms,
+		fmt.Printf("%-8s %-30s %-12s %s\n",
+			fmtShareType(meta.Type),
 			meta.Creator,
 			fmtTime(meta.CreationTime),
 			name,
