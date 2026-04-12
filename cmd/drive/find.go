@@ -24,6 +24,7 @@ var findFlags struct {
 	newer    string
 	maxDepth int
 	print0   bool
+	print    bool // -print is default behavior, explicit flag for compatibility
 }
 
 var driveFindCmd = &cobra.Command{
@@ -46,6 +47,7 @@ func init() {
 	f.StringVar(&findFlags.newer, "newer", "", "Match files newer than this ISO date (YYYY-MM-DD)")
 	f.IntVar(&findFlags.maxDepth, "maxdepth", -1, "Maximum directory depth (-1 for unlimited)")
 	cli.BoolFlag(f, &findFlags.print0, "print0", false, "Separate output with NUL instead of newline")
+	cli.BoolFlag(f, &findFlags.print, "print", false, "Print matching paths (default action)")
 }
 
 type findPredicate func(p string, l *common.Link, depth int) bool

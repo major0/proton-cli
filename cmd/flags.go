@@ -12,6 +12,10 @@ import (
 func BoolFlag(fs *pflag.FlagSet, p *bool, name string, value bool, usage string) {
 	*p = value
 	fs.BoolFunc(name, usage, func(s string) error {
+		if s == "" {
+			*p = true
+			return nil
+		}
 		v, err := strconv.ParseBool(s)
 		if err != nil {
 			return err
@@ -25,6 +29,10 @@ func BoolFlag(fs *pflag.FlagSet, p *bool, name string, value bool, usage string)
 func BoolFlagP(fs *pflag.FlagSet, p *bool, name, shorthand string, value bool, usage string) {
 	*p = value
 	fs.BoolFuncP(name, shorthand, usage, func(s string) error {
+		if s == "" {
+			*p = true
+			return nil
+		}
 		v, err := strconv.ParseBool(s)
 		if err != nil {
 			return err
