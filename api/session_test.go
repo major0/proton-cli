@@ -43,6 +43,7 @@ func genSessionConfig(t *rapid.T) SessionConfig {
 		SaltedKeyPass: rapid.String().Draw(t, "saltedKeyPass"),
 		Cookies:       cookies,
 		LastRefresh:   ts,
+		Service:       rapid.String().Draw(t, "service"),
 	}
 }
 
@@ -80,6 +81,11 @@ func TestPropertySessionConfigCookieRoundTrip(t *testing.T) {
 		// Verify LastRefresh equality.
 		if !original.LastRefresh.Equal(restored.LastRefresh) {
 			t.Fatalf("LastRefresh: got %v, want %v", restored.LastRefresh, original.LastRefresh)
+		}
+
+		// Verify Service equality.
+		if original.Service != restored.Service {
+			t.Fatalf("Service: got %q, want %q", restored.Service, original.Service)
 		}
 	})
 }
@@ -240,6 +246,9 @@ func TestSessionConfigBackwardCompat(t *testing.T) {
 	}
 	if cfg.UID != "u1" || cfg.AccessToken != "a" || cfg.RefreshToken != "r" || cfg.SaltedKeyPass != "k" {
 		t.Fatalf("unexpected field values: %+v", cfg)
+	}
+	if cfg.Service != "" {
+		t.Fatalf("expected empty Service, got %q", cfg.Service)
 	}
 }
 

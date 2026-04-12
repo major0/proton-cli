@@ -1,4 +1,4 @@
-package api
+package drive
 
 import (
 	"context"
@@ -29,8 +29,8 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 		slog.Debug("link.Readdir", "linkID", l.protonLink.LinkID)
 
 		// Respect throttle before making the API call.
-		if l.session.Throttle != nil {
-			if err := l.session.Throttle.Wait(ctx); err != nil {
+		if throttle := l.resolver.Throttle(); throttle != nil {
+			if err := throttle.Wait(ctx); err != nil {
 				select {
 				case ch <- DirEntry{Err: err}:
 				case <-ctx.Done():
@@ -39,13 +39,13 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 			}
 		}
 
-		pChildren, err := l.session.Client.ListChildren(
+		pChildren, err := l.resolver.ListLinkChildren(
 			ctx, l.share.protonShare.ShareID, l.protonLink.LinkID, true,
 		)
 		if err != nil {
 			// Signal throttle on 429-like errors.
-			if l.session.Throttle != nil {
-				l.session.Throttle.Signal(0)
+			if throttle := l.resolver.Throttle(); throttle != nil {
+				throttle.Signal(0)
 			}
 			select {
 			case ch <- DirEntry{Err: err}:
@@ -54,8 +54,8 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 			return
 		}
 
-		if l.session.Throttle != nil {
-			l.session.Throttle.Reset()
+		if throttle := l.resolver.Throttle(); throttle != nil {
+			throttle.Reset()
 		}
 
 		if len(pChildren) == 0 {
@@ -63,7 +63,7 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 		}
 
 		// Fan out name decryption across workers.
-		workers := min(l.session.MaxWorkers, len(pChildren))
+		workers := min(l.resolver.MaxWorkers(), len(pChildren))
 		indexCh := make(chan int)
 		var wg sync.WaitGroup
 
@@ -72,7 +72,7 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 			go func() {
 				defer wg.Done()
 				for idx := range indexCh {
-					child := l.newChildLink(ctx, &pChildren[idx])
+					child := l.resolver.NewChildLink(ctx, l, &pChildren[idx])
 
 					// Trigger name decryption so the caller can
 					// identify the entry. Other fields stay encrypted.

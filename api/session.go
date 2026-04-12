@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -24,6 +22,15 @@ type serialCookie struct {
 	Domain string `json:"domain"`
 	Path   string `json:"path"`
 }
+
+// DefaultMaxWorkers is the default concurrency limit for session operations.
+const DefaultMaxWorkers = 10
+
+// DefaultThrottleBackoff is the initial backoff duration for rate limiting.
+const DefaultThrottleBackoff = time.Second
+
+// DefaultThrottleMaxDelay is the maximum backoff duration for rate limiting.
+const DefaultThrottleMaxDelay = 30 * time.Second
 
 // apiCookieURL returns the parsed Proton API base URL used for cookie scoping.
 func apiCookieURL() *url.URL {
@@ -86,35 +93,34 @@ type Session struct {
 	MaxWorkers int
 	Throttle   *Throttle
 
-	addresses      map[string]proton.Address
-	AddressKeyRing map[string]*crypto.KeyRing
+	addresses       map[string]proton.Address
+	addressKeyRings map[string]*crypto.KeyRing
 
 	user        proton.User
 	UserKeyRing *crypto.KeyRing
 }
 
-// SessionFromCredentials initializes a new session from the provided credentials.
+// SessionFromCredentials initializes a new session from the provided config.
 // The session is not fully usable until it has been Unlock'ed using the
 // user-provided keypass.
-func SessionFromCredentials(ctx context.Context, options []proton.Option, creds *SessionCredentials, managerHook func(*proton.Manager)) (*Session, error) {
+func SessionFromCredentials(ctx context.Context, options []proton.Option, config *SessionConfig, managerHook func(*proton.Manager)) (*Session, error) {
 	var err error
 
-	// Initialize the client from our cached credentials
-	if creds.UID == "" {
+	if config.UID == "" {
 		return nil, ErrMissingUID
 	}
 
-	if creds.AccessToken == "" {
+	if config.AccessToken == "" {
 		return nil, ErrMissingAccessToken
 	}
 
-	if creds.RefreshToken == "" {
+	if config.RefreshToken == "" {
 		return nil, ErrMissingRefreshToken
 	}
 
 	var session Session
-	session.MaxWorkers = 10
-	session.Throttle = NewThrottle(time.Second, 30*time.Second)
+	session.MaxWorkers = DefaultMaxWorkers
+	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
@@ -127,30 +133,18 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 		managerHook(session.manager)
 	}
 
-	slog.Debug("session.config", "uid", creds.UID, "access_token", creds.AccessToken, "refresh_token", creds.RefreshToken)
-	session.Client = session.manager.NewClient(creds.UID, creds.AccessToken, creds.RefreshToken)
+	slog.Debug("session.config", "uid", config.UID, "access_token", "<redacted>", "refresh_token", "<redacted>")
+	session.Client = session.manager.NewClient(config.UID, config.AccessToken, config.RefreshToken)
 	session.Auth = proton.Auth{
-		UID:          creds.UID,
-		AccessToken:  creds.AccessToken,
-		RefreshToken: creds.RefreshToken,
+		UID:          config.UID,
+		AccessToken:  config.AccessToken,
+		RefreshToken: config.RefreshToken,
 	}
 
 	slog.Debug("session.GetUser")
 	session.user, err = session.Client.GetUser(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	slog.Debug("session.GetAddresses")
-
-	addrs, err := session.Client.GetAddresses(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	session.addresses = make(map[string]proton.Address)
-	for _, addr := range addrs {
-		session.addresses[addr.Email] = addr
 	}
 
 	return &session, nil
@@ -161,8 +155,8 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 // session and manager; the caller performs the actual login call.
 func sessionFromLogin(options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
 	session := &Session{}
-	session.MaxWorkers = 10
-	session.Throttle = NewThrottle(time.Second, 30*time.Second)
+	session.MaxWorkers = DefaultMaxWorkers
+	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
@@ -176,22 +170,34 @@ func sessionFromLogin(options []proton.Option, managerHook func(*proton.Manager)
 	return session, session.manager
 }
 
-/* Unlock the user's account keyring, as well as all keyring's associated
- * with alternate addresses. */
-func (s *Session) Unlock(keypass string) error {
+// Unlock decrypts the user's account keyring and all address keyrings.
+// The addresses slice is stored internally for backward compatibility with
+// Drive methods that still reference s.addresses until they move to
+// drive.Client.
+func (s *Session) Unlock(keypass []byte, addresses []proton.Address) error {
+	s.addresses = make(map[string]proton.Address, len(addresses))
+	for _, addr := range addresses {
+		s.addresses[addr.Email] = addr
+	}
+
 	var err error
+	s.UserKeyRing, s.addressKeyRings, err = proton.Unlock(s.user, addresses, keypass, nil)
+	return err
+}
 
-	var addresses []proton.Address
-	for _, addr := range s.addresses {
-		addresses = append(addresses, addr)
-	}
+// AddressKeyRings returns the address keyrings produced by Unlock.
+// Service-specific clients copy this map during their construction.
+func (s *Session) AddressKeyRings() map[string]*crypto.KeyRing {
+	return s.addressKeyRings
+}
 
-	s.UserKeyRing, s.AddressKeyRing, err = proton.Unlock(s.user, addresses, []byte(keypass), nil)
-	if err != nil {
-		return err
-	}
+// User returns the proton.User for this session.
+func (s *Session) User() proton.User { return s.user }
 
-	return nil
+// Addresses fetches addresses from the API.
+// Service-specific clients call this during their own construction.
+func (s *Session) Addresses(ctx context.Context) ([]proton.Address, error) {
+	return s.Client.GetAddresses(ctx)
 }
 
 // AddAuthHandler registers a handler for authentication events.
@@ -209,195 +215,6 @@ func (s *Session) Stop() {
 	s.manager.Close()
 }
 
-// ListVolumes returns all volumes accessible by this session.
-func (s *Session) ListVolumes(ctx context.Context) ([]Volume, error) {
-	pVolumes, err := s.Client.ListVolumes(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	volumes := make([]Volume, len(pVolumes))
-	for i := range pVolumes {
-		volumes[i] = Volume{pVolume: pVolumes[i], session: s}
-	}
-
-	return volumes, nil
-}
-
-// GetVolume returns the volume with the given ID.
-func (s *Session) GetVolume(ctx context.Context, id string) (Volume, error) {
-	pVolume, err := s.Client.GetVolume(ctx, id)
-	if err != nil {
-		return Volume{}, err
-	}
-
-	return Volume{pVolume: pVolume, session: s}, nil
-}
-
-// ListSharesMetadata returns metadata for all shares visible to this session.
-func (s *Session) ListSharesMetadata(ctx context.Context, all bool) ([]ShareMetadata, error) {
-	pShares, err := s.Client.ListShares(ctx, all)
-	if err != nil {
-		return nil, err
-	}
-
-	shares := make([]ShareMetadata, len(pShares))
-	for i := range pShares {
-		shares[i] = ShareMetadata(pShares[i])
-	}
-	return shares, nil
-}
-
-// GetShareMetadata returns the metadata for the share with the given ID.
-func (s *Session) GetShareMetadata(ctx context.Context, id string) (ShareMetadata, error) {
-	shares, err := s.Client.ListShares(ctx, true)
-	if err != nil {
-		return ShareMetadata{}, err
-	}
-
-	for _, share := range shares {
-		if share.ShareID == id {
-			return ShareMetadata(share), nil
-		}
-	}
-
-	return ShareMetadata{}, nil
-}
-
-// ListShares returns all fully-resolved shares visible to this session.
-func (s *Session) ListShares(ctx context.Context, all bool) ([]Share, error) {
-	return s.listShares(ctx, "", all)
-}
-
-func (s *Session) listShares(ctx context.Context, volumeID string, all bool) ([]Share, error) {
-	pshares, err := s.Client.ListShares(ctx, all)
-	if err != nil {
-		return nil, err
-	}
-
-	slog.Debug("session.ListShares", "shares", len(pshares))
-	slog.Debug("session.ListShares", "volumID", volumeID)
-
-	var wg sync.WaitGroup
-	idQueue := make(chan string)
-	shareQueue := make(chan *Share)
-	for i := 0; i < min(s.MaxWorkers, len(pshares)); i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for id := range idQueue {
-				share, err := s.GetShare(ctx, id)
-				if err != nil {
-					slog.Error("worker", "shareID", id, "error", err)
-					continue
-				}
-				shareQueue <- share
-			}
-		}()
-	}
-
-	// Spawn a producer to feed the idQueue, respecting cancellation.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer close(idQueue)
-		for _, s := range pshares {
-			if volumeID != "" && volumeID != s.VolumeID {
-				continue
-			}
-			select {
-			case idQueue <- s.ShareID:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	// Wait for all workers to finish, then close the shareQueue to
-	// signal the main goroutine.
-	go func() {
-		wg.Wait()
-		close(shareQueue)
-	}()
-
-	var shares []Share
-	for share := range shareQueue {
-		shares = append(shares, *share)
-	}
-
-	return shares, nil
-}
-
-// GetShare returns the fully-resolved share with the given ID.
-func (s *Session) GetShare(ctx context.Context, id string) (*Share, error) {
-	pShare, err := s.Client.GetShare(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	shareAddrKR := s.AddressKeyRing[pShare.AddressID]
-	shareKR, err := pShare.GetKeyRing(shareAddrKR)
-	if err != nil {
-		return nil, err
-	}
-
-	share := Share{
-		keyRing:     shareKR,
-		protonShare: &pShare,
-		session:     s,
-	}
-
-	pLink, err := s.Client.GetLink(ctx, pShare.ShareID, pShare.LinkID)
-	if err != nil {
-		return nil, err
-	}
-
-	link := s.newLink(ctx, &share, nil, &pLink)
-	share.Link = link
-
-	return &share, nil
-}
-
-// ResolveShare finds a share by its root link name.
-func (s *Session) ResolveShare(ctx context.Context, name string, all bool) (*Share, error) {
-	shares, err := s.ListShares(ctx, all)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range shares {
-		shareName, err := shares[i].Link.Name()
-		if err != nil {
-			continue
-		}
-		if shareName == name {
-			return &shares[i], nil
-		}
-	}
-
-	return nil, ErrFileNotFound
-}
-
-// ResolvePath resolves a slash-separated path to a link across all shares.
-func (s *Session) ResolvePath(ctx context.Context, path string, all bool) (*Link, error) {
-	parts := strings.Split(path, "/")
-
-	if len(parts) == 0 {
-		return nil, ErrInvalidPath
-	}
-
-	share, err := s.ResolveShare(ctx, parts[0], all)
-	if err != nil {
-		return nil, err
-	}
-
-	return share.Link.resolveParts(ctx, parts[1:])
-}
-
-func (s *Session) newLink(_ context.Context, share *Share, parent *Link, pLink *proton.Link) *Link {
-	return newLink(pLink, parent, share, s)
-}
-
 // SessionRestore loads credentials from the store and creates an unlocked
 // session. Returns ErrNotLoggedIn if no session is stored.
 func SessionRestore(ctx context.Context, options []proton.Option, store SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
@@ -409,15 +226,9 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 		return nil, err
 	}
 
-	slog.Debug("SessionRestore", "uid", config.UID, "access_token", config.AccessToken, "refresh_token", config.RefreshToken)
+	slog.Debug("SessionRestore", "uid", config.UID, "access_token", "<redacted>", "refresh_token", "<redacted>")
 
-	creds := &SessionCredentials{
-		UID:          config.UID,
-		AccessToken:  config.AccessToken,
-		RefreshToken: config.RefreshToken,
-	}
-
-	session, err := SessionFromCredentials(ctx, options, creds, managerHook)
+	session, err := SessionFromCredentials(ctx, options, config, managerHook)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +241,12 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 		return nil, err
 	}
 
-	if err := session.Unlock(string(keypass)); err != nil {
+	addrs, err := session.Client.GetAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := session.Unlock(keypass, addrs); err != nil {
 		return nil, err
 	}
 
@@ -516,13 +332,14 @@ func SessionRetryWithHV(ctx context.Context, session *Session, username, passwor
 	return err
 }
 
-// logCookies logs the current cookies in the session's jar for debugging.
+// logCookies logs the current cookie names in the session's jar for debugging.
+// Only names are logged — values are sensitive and must not appear in logs.
 func logCookies(label string, session *Session) {
 	apiURL := apiCookieURL()
 	cookies := session.cookieJar.Cookies(apiURL)
 	names := make([]string, len(cookies))
 	for i, c := range cookies {
-		names[i] = c.Name + "=" + c.Value
+		names[i] = c.Name
 	}
 	slog.Debug(label, "cookies", names)
 }

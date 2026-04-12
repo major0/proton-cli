@@ -1,4 +1,4 @@
-package api
+package drive
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/major0/proton-cli/api"
 )
 
 // ShareMetadata represents the metadata for a Proton Drive share.
@@ -16,7 +17,7 @@ type Share struct {
 	Link        *Link
 	keyRing     *crypto.KeyRing
 	protonShare *proton.Share
-	session     *Session
+	resolver    LinkResolver
 }
 
 // GetName returns the decrypted name of the share's root link.
@@ -42,9 +43,9 @@ func (s *Share) ResolvePath(ctx context.Context, path string, all bool) (*Link, 
 }
 
 func (s *Share) getKeyRing() (*crypto.KeyRing, error) {
-	linkKR, ok := s.session.AddressKeyRing[s.protonShare.AddressID]
+	linkKR, ok := s.resolver.AddressKeyRing(s.protonShare.AddressID)
 	if !ok {
-		return nil, ErrKeyNotFound
+		return nil, api.ErrKeyNotFound
 	}
 	return s.protonShare.GetKeyRing(linkKR)
 }

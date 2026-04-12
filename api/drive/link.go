@@ -1,4 +1,4 @@
-package api
+package drive
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/major0/proton-cli/api"
 )
 
 // Link represents a file or folder in a Proton Drive share. Fields are
@@ -21,7 +22,7 @@ type Link struct {
 
 	// Relationships — always set at construction time.
 	parentLink *Link
-	session    *Session
+	resolver   LinkResolver
 	share      *Share
 
 	// Lazy-decrypted fields, protected by once.
@@ -120,37 +121,38 @@ func (l *Link) getParentKeyRing() (*crypto.KeyRing, error) {
 
 // deriveKeyRing derives this link's keyring from the parent keyring.
 func (l *Link) deriveKeyRing(parentKR *crypto.KeyRing) (*crypto.KeyRing, error) {
-	if addr, ok := l.session.addresses[l.protonLink.SignatureEmail]; ok {
-		if linkKR, ok := l.session.AddressKeyRing[addr.ID]; ok {
+	if addr, ok := l.resolver.AddressForEmail(l.protonLink.SignatureEmail); ok {
+		if linkKR, ok := l.resolver.AddressKeyRing(addr.ID); ok {
 			return l.protonLink.GetKeyRing(parentKR, linkKR)
 		}
 	}
-	return nil, ErrKeyNotFound
+	return nil, api.ErrKeyNotFound
 }
 
 // decryptName decrypts the link name using the parent keyring.
 func (l *Link) decryptName(parentKR *crypto.KeyRing) (string, error) {
-	if addr, ok := l.session.addresses[l.protonLink.NameSignatureEmail]; ok {
-		if addrKR, ok := l.session.AddressKeyRing[addr.ID]; ok {
+	if addr, ok := l.resolver.AddressForEmail(l.protonLink.NameSignatureEmail); ok {
+		if addrKR, ok := l.resolver.AddressKeyRing(addr.ID); ok {
 			return l.protonLink.GetName(parentKR, addrKR)
 		}
 	}
-	return "", ErrKeyNotFound
+	return "", api.ErrKeyNotFound
 }
 
-// newLink creates a Link wrapper without decrypting anything.
-func newLink(pLink *proton.Link, parent *Link, share *Share, session *Session) *Link {
+// NewLink creates a Link wrapper without decrypting anything.
+func NewLink(pLink *proton.Link, parent *Link, share *Share, resolver LinkResolver) *Link {
 	return &Link{
 		protonLink: pLink,
 		parentLink: parent,
 		share:      share,
-		session:    session,
+		resolver:   resolver,
 	}
 }
 
-// newChildLink creates a child Link from a raw proton.Link.
-func (l *Link) newChildLink(_ context.Context, pLink *proton.Link) *Link {
-	return newLink(pLink, l, l.share, l.session)
+// newChildLink creates a child Link from a raw proton.Link, delegating
+// to the resolver for construction.
+func (l *Link) newChildLink(ctx context.Context, pLink *proton.Link) *Link {
+	return l.resolver.NewChildLink(ctx, l, pLink)
 }
 
 // ResolvePath resolves a slash-separated path relative to this link.
