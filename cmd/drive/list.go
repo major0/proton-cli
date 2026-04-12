@@ -57,13 +57,15 @@ type listOpts struct {
 	recursive bool
 	reverse   bool
 	color     bool
+	trash     bool
+	classify  bool
 }
 
 var listFlags struct {
 	all, almostAll, long, single, across, columns bool
 	human, recursive, reverse                     bool
 	sortSize, sortTime, unsorted                  bool
-	fullTime                                      bool
+	fullTime, trash, classify                     bool
 	format, sortWord, timeStyle, color            string
 }
 
@@ -95,13 +97,16 @@ func init() {
 	f.StringVar(&listFlags.timeStyle, "time-style", "", "Time format: full-iso, long-iso, iso")
 	f.BoolVarP(&listFlags.recursive, "recursive", "R", false, "List subdirectories recursively")
 	f.StringVar(&listFlags.color, "color", "auto", "Colorize output: auto, always, never")
+	f.BoolVar(&listFlags.trash, "trash", false, "Show only trashed items")
+	f.BoolVarP(&listFlags.classify, "classify", "F", false, "Append indicator (/ for directories) to entries")
 }
 
 func resolveOpts() (listOpts, error) {
 	opts := listOpts{
 		all: listFlags.all, almostAll: listFlags.almostAll,
 		human: listFlags.human, recursive: listFlags.recursive,
-		reverse: listFlags.reverse,
+		reverse: listFlags.reverse, trash: listFlags.trash,
+		classify: listFlags.classify,
 	}
 
 	if term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec
@@ -276,15 +281,36 @@ func rootLinks(ctx context.Context, session *common.Session) ([]*common.Link, er
 func filterLinks(links []*common.Link, opts listOpts) []*common.Link {
 	var out []*common.Link
 	for _, l := range links {
-		if l.State() == proton.LinkStateDeleted {
+		state := l.State()
+
+		// --trash: show only trashed items
+		if opts.trash {
+			if state != proton.LinkStateTrashed {
+				continue
+			}
+			out = append(out, l)
 			continue
 		}
+
+		// Always skip permanently deleted
+		if state == proton.LinkStateDeleted {
+			continue
+		}
+
+		// -a / -A: show trashed items alongside active ones
+		// Without -a/-A: hide trashed items
+		if state == proton.LinkStateTrashed && !opts.all && !opts.almostAll {
+			continue
+		}
+
+		// Hide dot-files unless -a or -A
 		if !opts.all && !opts.almostAll {
 			name, err := l.Name()
 			if err == nil && strings.HasPrefix(name, ".") {
 				continue
 			}
 		}
+
 		out = append(out, l)
 	}
 	return out
@@ -355,27 +381,49 @@ func typeChar(lt proton.LinkType) byte {
 const (
 	colorReset    = "\033[0m"
 	colorBoldBlue = "\033[1;34m" // directories
+	colorBoldRed  = "\033[1;31m" // trashed items
 )
 
-// colorName returns the name with ANSI color codes if color is enabled.
-func colorName(name string, lt proton.LinkType, useColor bool) string {
-	if !useColor {
-		return name
+// colorName returns the display name with optional ANSI color and classify suffix.
+// Trashed items are red, directories are bold blue. With classify, directories
+// get a trailing '/'.
+func colorName(l *common.Link, useColor bool, classify bool) string {
+	name, _ := l.Name()
+
+	suffix := ""
+	if classify && l.Type() == proton.LinkTypeFolder {
+		suffix = "/"
 	}
-	if lt == proton.LinkTypeFolder {
-		return colorBoldBlue + name + colorReset
+
+	if !useColor {
+		return name + suffix
+	}
+	if l.State() == proton.LinkStateTrashed {
+		return colorBoldRed + name + suffix + colorReset
+	}
+	if l.Type() == proton.LinkTypeFolder {
+		return colorBoldBlue + name + suffix + colorReset
+	}
+	return name + suffix
+}
+
+// rawName returns the plain name with optional classify suffix (no color).
+// Used for column width calculation.
+func rawName(l *common.Link, classify bool) string {
+	name, _ := l.Name()
+	if classify && l.Type() == proton.LinkTypeFolder {
+		return name + "/"
 	}
 	return name
 }
 
 func printLong(l *common.Link, opts listOpts) {
-	name, _ := l.Name()
 	fmt.Printf("%c%-9s %8s %s %s\n",
 		typeChar(l.Type()),
 		"rwxr-xr-x",
 		formatSize(l.Size(), opts),
 		formatTimestamp(l.ModifyTime(), opts.timeStyle),
-		colorName(name, l.Type(), opts.color),
+		colorName(l, opts.color, opts.classify),
 	)
 }
 
@@ -387,17 +435,16 @@ func printLinks(links []*common.Link, opts listOpts) {
 		}
 	case formatSingle:
 		for _, l := range links {
-			name, _ := l.Name()
-			fmt.Println(colorName(name, l.Type(), opts.color))
+			fmt.Println(colorName(l, opts.color, opts.classify))
 		}
 	case formatColumns:
-		printColumns(links, false, opts.color)
+		printColumns(links, false, opts)
 	case formatAcross:
-		printColumns(links, true, opts.color)
+		printColumns(links, true, opts)
 	}
 }
 
-func printColumns(links []*common.Link, across bool, useColor bool) {
+func printColumns(links []*common.Link, across bool, opts listOpts) {
 	if len(links) == 0 {
 		return
 	}
@@ -410,13 +457,13 @@ func printColumns(links []*common.Link, across bool, useColor bool) {
 	entries := make([]entry, len(links))
 	maxLen := 0
 	for i, l := range links {
-		n, _ := l.Name()
+		raw := rawName(l, opts.classify)
 		entries[i] = entry{
-			name:    n,
-			display: colorName(n, l.Type(), useColor),
+			name:    raw,
+			display: colorName(l, opts.color, opts.classify),
 		}
-		if len(n) > maxLen {
-			maxLen = len(n)
+		if len(raw) > maxLen {
+			maxLen = len(raw)
 		}
 	}
 
