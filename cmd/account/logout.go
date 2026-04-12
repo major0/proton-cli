@@ -33,5 +33,5 @@ var authLogoutCmd = &cobra.Command{
 
 func init() {
 	accountCmd.AddCommand(authLogoutCmd)
-	authLogoutCmd.Flags().BoolVarP(&authLogoutForce, "force", "f", false, "Force logout of Proton")
+	cli.BoolFlagP(authLogoutCmd.Flags(), &authLogoutForce, "force", "f", false, "Force logout of Proton")
 }

@@ -26,8 +26,8 @@ var driveMkdirCmd = &cobra.Command{
 
 func init() {
 	driveCmd.AddCommand(driveMkdirCmd)
-	driveMkdirCmd.Flags().BoolVarP(&mkdirFlags.parents, "parents", "p", false, "Create parent directories as needed")
-	driveMkdirCmd.Flags().BoolVarP(&mkdirFlags.verbose, "verbose", "v", false, "Print each directory as it is created")
+	cli.BoolFlagP(driveMkdirCmd.Flags(), &mkdirFlags.parents, "parents", "p", false, "Create parent directories as needed")
+	cli.BoolFlagP(driveMkdirCmd.Flags(), &mkdirFlags.verbose, "verbose", "v", false, "Print each directory as it is created")
 }
 
 func runMkdir(_ *cobra.Command, args []string) error {

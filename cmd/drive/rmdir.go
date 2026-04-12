@@ -26,8 +26,8 @@ var driveRmdirCmd = &cobra.Command{
 
 func init() {
 	driveCmd.AddCommand(driveRmdirCmd)
-	driveRmdirCmd.Flags().BoolVarP(&rmdirFlags.verbose, "verbose", "v", false, "Print each directory as it is removed")
-	driveRmdirCmd.Flags().BoolVar(&rmdirFlags.permanent, "permanent", false, "Permanently delete instead of moving to trash")
+	cli.BoolFlagP(driveRmdirCmd.Flags(), &rmdirFlags.verbose, "verbose", "v", false, "Print each directory as it is removed")
+	cli.BoolFlag(driveRmdirCmd.Flags(), &rmdirFlags.permanent, "permanent", false, "Permanently delete instead of moving to trash")
 }
 
 func runRmdir(_ *cobra.Command, args []string) error {

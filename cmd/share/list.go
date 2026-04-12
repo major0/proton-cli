@@ -34,7 +34,7 @@ var shareListCmd = &cobra.Command{
 func init() {
 	shareCmd.AddCommand(shareListCmd)
 	shareListCmd.Flags().StringVar(&shareListFlags.color, "color", "auto", "Colorize output: auto, always, never")
-	shareListCmd.Flags().BoolVarP(&shareListFlags.classify, "classify", "F", false, "Append indicator (/ for directories) to entries")
+	cli.BoolFlagP(shareListCmd.Flags(), &shareListFlags.classify, "classify", "F", false, "Append indicator (/ for directories) to entries")
 }
 
 func runShareList(_ *cobra.Command, _ []string) error {

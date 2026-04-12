@@ -45,7 +45,7 @@ func init() {
 	f.IntVar(&findFlags.mtime, "mtime", 0, "Modified time in days (negative=within N days, positive=older than N days)")
 	f.StringVar(&findFlags.newer, "newer", "", "Match files newer than this ISO date (YYYY-MM-DD)")
 	f.IntVar(&findFlags.maxDepth, "maxdepth", -1, "Maximum directory depth (-1 for unlimited)")
-	f.BoolVar(&findFlags.print0, "print0", false, "Separate output with NUL instead of newline")
+	cli.BoolFlag(f, &findFlags.print0, "print0", false, "Separate output with NUL instead of newline")
 }
 
 type findPredicate func(p string, l *common.Link, depth int) bool

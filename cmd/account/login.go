@@ -142,5 +142,5 @@ func init() {
 	authLoginCmd.Flags().StringVarP(&authLoginParams.password, "password", "p", "", "Proton password")
 	authLoginCmd.Flags().StringVarP(&authLoginParams.mboxpass, "mboxpass", "m", "", "Required of 2 password mode is enabled.")
 	authLoginCmd.Flags().StringVarP(&authLoginParams.twoFA, "2fa", "2", "", "2FA code")
-	authLoginCmd.Flags().BoolVar(&authLoginParams.noBrowser, "no-browser", false, "Do not open browser for CAPTCHA; print URL and prompt for token")
+	cli.BoolFlag(authLoginCmd.Flags(), &authLoginParams.noBrowser, "no-browser", false, "Do not open browser for CAPTCHA; print URL and prompt for token")
 }
