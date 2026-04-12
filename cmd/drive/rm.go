@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -73,11 +74,10 @@ func rmOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
 		return fmt.Errorf("rm: %s: %w", rawPath, err)
 	}
 
-	if rmFlags.permanent {
-		err = dc.RmPermanent(ctx, share, link, rmFlags.recursive)
-	} else {
-		err = dc.Rm(ctx, share, link, rmFlags.recursive)
-	}
+	err = dc.Remove(ctx, share, link, drive.RemoveOpts{
+		Recursive: rmFlags.recursive,
+		Permanent: rmFlags.permanent,
+	})
 
 	if err != nil {
 		return err

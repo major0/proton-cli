@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -89,11 +90,10 @@ func rmdirOne(ctx context.Context, dc *driveClient.Client, rawPath string) error
 		return fmt.Errorf("rmdir: %s: not a directory", relPath)
 	}
 
-	if rmdirFlags.permanent {
-		err = dc.RmDirPermanent(ctx, share, link, false)
-	} else {
-		err = dc.RmDir(ctx, share, link, false)
-	}
+	err = dc.Remove(ctx, share, link, drive.RemoveOpts{
+		Recursive: false,
+		Permanent: rmdirFlags.permanent,
+	})
 
 	if err != nil {
 		return err
