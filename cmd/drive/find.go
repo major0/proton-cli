@@ -36,9 +36,10 @@ var driveFindCmd = &cobra.Command{
 func init() {
 	driveCmd.AddCommand(driveFindCmd)
 	f := driveFindCmd.Flags()
+	f.SetLongOnly(true)
 	f.StringVar(&findFlags.name, "name", "", "Match file name (glob pattern, case-sensitive)")
 	f.StringVar(&findFlags.iname, "iname", "", "Match file name (glob pattern, case-insensitive)")
-	f.StringVarP(&findFlags.findType, "type", "t", "", "File type: f (file), d (directory)")
+	f.StringVar(&findFlags.findType, "type", "", "File type: f (file), d (directory)")
 	f.Int64Var(&findFlags.minSize, "minsize", 0, "Minimum file size in bytes")
 	f.Int64Var(&findFlags.maxSize, "maxsize", 0, "Maximum file size in bytes")
 	f.IntVar(&findFlags.mtime, "mtime", 0, "Modified time in days (negative=within N days, positive=older than N days)")
