@@ -1,0 +1,121 @@
+package driveCmd
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	common "github.com/major0/proton-cli/api"
+	cli "github.com/major0/proton-cli/cmd"
+	"github.com/spf13/cobra"
+)
+
+var rmFlags struct {
+	recursive bool
+	verbose   bool
+	permanent bool
+}
+
+var driveRmCmd = &cobra.Command{
+	Use:   "rm [options] <path> [<path> ...]",
+	Short: "Remove files and directories from Proton Drive",
+	Long:  "Remove files and directories from Proton Drive (moves to trash by default)",
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runRm,
+}
+
+var driveTrashEmptyCmd = &cobra.Command{
+	Use:   "empty-trash",
+	Short: "Permanently delete all items in the trash",
+	Long:  "Permanently delete all items in the Proton Drive trash",
+	RunE:  runEmptyTrash,
+}
+
+func init() {
+	driveCmd.AddCommand(driveRmCmd)
+	driveRmCmd.Flags().BoolVarP(&rmFlags.recursive, "recursive", "r", false, "Remove directories and their contents recursively")
+	driveRmCmd.Flags().BoolVarP(&rmFlags.verbose, "verbose", "v", false, "Print each removal")
+	driveRmCmd.Flags().BoolVar(&rmFlags.permanent, "permanent", false, "Permanently delete instead of moving to trash")
+
+	driveCmd.AddCommand(driveTrashEmptyCmd)
+}
+
+func runRm(_ *cobra.Command, args []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	defer cancel()
+
+	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	if err != nil {
+		return err
+	}
+
+	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+	session.AddDeauthHandler(common.NewDeauthHandler())
+
+	for _, arg := range args {
+		if err := rmOne(ctx, session, arg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func rmOne(ctx context.Context, session *common.Session, rawPath string) error {
+	if !strings.HasPrefix(rawPath, "proton://") {
+		return fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
+	}
+
+	link, share, err := resolveProtonPath(ctx, session, rawPath)
+	if err != nil {
+		return fmt.Errorf("rm: %s: %w", rawPath, err)
+	}
+
+	if rmFlags.permanent {
+		err = session.RmPermanent(ctx, share, link, rmFlags.recursive)
+	} else {
+		err = session.Rm(ctx, share, link, rmFlags.recursive)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if rmFlags.verbose {
+		name, _ := link.Name()
+		action := "trashed"
+		if rmFlags.permanent {
+			action = "deleted"
+		}
+		fmt.Printf("rm: %s '%s'\n", action, name)
+	}
+
+	return nil
+}
+
+func runEmptyTrash(_ *cobra.Command, _ []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	defer cancel()
+
+	session, err := common.SessionRestore(ctx, cli.ProtonOpts, cli.SessionStoreVar, cli.ManagerHook())
+	if err != nil {
+		return err
+	}
+
+	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+	session.AddDeauthHandler(common.NewDeauthHandler())
+
+	shares, err := session.ListShares(ctx, true)
+	if err != nil {
+		return err
+	}
+
+	for i := range shares {
+		if err := session.EmptyTrash(ctx, &shares[i]); err != nil {
+			return fmt.Errorf("emptying trash: %w", err)
+		}
+	}
+
+	fmt.Println("Trash emptied.")
+	return nil
+}
