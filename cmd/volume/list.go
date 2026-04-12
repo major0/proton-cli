@@ -57,8 +57,7 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	t.AppendHeader(table.Row{
-		"Volume ID", "State", "Type", "Size", "Used",
-		"Down", "Up", "Created", "Restore",
+		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State",
 	})
 
 	for _, v := range volumes {
@@ -67,16 +66,38 @@ func runVolumeList(_ *cobra.Command, _ []string) error {
 			shareType = fmtShareType(s.Type)
 		}
 
+		used := v.UsedSpace
+		avail := ""
+		usePct := ""
+		size := "unlimited"
+
+		if v.MaxSpace != nil {
+			total := *v.MaxSpace
+			size = units.BytesSize(float64(total))
+			free := total - used
+			if free < 0 {
+				free = 0
+			}
+			avail = units.BytesSize(float64(free))
+			if total > 0 {
+				usePct = fmt.Sprintf("%.0f%%", float64(used)/float64(total)*100)
+			} else {
+				usePct = "0%"
+			}
+		} else {
+			avail = "-"
+			usePct = "-"
+		}
+
 		t.AppendRow(table.Row{
-			v.VolumeID,
-			fmtVolState(v.State),
 			shareType,
-			fmtSpace(v.MaxSpace),
-			units.BytesSize(float64(v.UsedSpace)),
+			size,
+			units.BytesSize(float64(used)),
+			avail,
+			usePct,
 			units.BytesSize(float64(v.DownloadedBytes)),
 			units.BytesSize(float64(v.UploadedBytes)),
-			fmtTime(v.CreationTime),
-			fmtRestore(v.RestoreStatus),
+			fmtVolState(v.State),
 		})
 	}
 
