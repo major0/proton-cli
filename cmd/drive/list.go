@@ -200,29 +200,6 @@ func resolveOpts() (listOpts, error) {
 	return opts, nil
 }
 
-func parsePath(raw string) string {
-	path := strings.TrimPrefix(raw, "proton://")
-	path = strings.TrimPrefix(path, "/")
-	trailingSlash := ""
-	if strings.HasSuffix(path, "/") {
-		trailingSlash = "/"
-	}
-	var parts []string
-	for _, p := range strings.Split(path, "/") {
-		switch p {
-		case "", ".":
-			continue
-		case "..":
-			if len(parts) > 0 {
-				parts = parts[:len(parts)-1]
-			}
-		default:
-			parts = append(parts, p)
-		}
-	}
-	return strings.Join(parts, "/") + trailingSlash
-}
-
 func resolveLinks(ctx context.Context, dc *driveClient.Client, args []string) ([]*drive.Link, error) {
 	if len(args) == 0 {
 		return rootLinks(ctx, dc)

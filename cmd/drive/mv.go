@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"strings"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
@@ -135,33 +134,4 @@ func doMove(ctx context.Context, dc *driveClient.Client, srcShare *drive.Share, 
 	return nil
 }
 
-// resolveProtonPath resolves a proton:// path to a Link and its Share.
-func resolveProtonPath(ctx context.Context, dc *driveClient.Client, rawPath string) (*drive.Link, *drive.Share, error) {
-	if !strings.HasPrefix(rawPath, "proton://") {
-		return nil, nil, fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
-	}
 
-	p := parsePath(rawPath)
-	if p == "" {
-		return nil, nil, fmt.Errorf("empty path")
-	}
-
-	parts := strings.SplitN(p, "/", 2)
-	shareName := parts[0]
-
-	share, err := dc.ResolveShare(ctx, shareName, true)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if len(parts) == 1 || parts[1] == "" {
-		return share.Link, share, nil
-	}
-
-	link, err := share.Link.ResolvePath(ctx, parts[1], true)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return link, share, nil
-}

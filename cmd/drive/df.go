@@ -7,6 +7,7 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
 	"github.com/major0/proton-cli/api/account"
+	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -79,7 +80,7 @@ func runDf(_ *cobra.Command, _ []string) error {
 		label := nameIndex[v.ProtonVolume.VolumeID]
 		if label == "" {
 			if s, ok := shareIndex[v.ProtonVolume.Share.ShareID]; ok {
-				label = dfShareType(s.Type)
+				label = drive.FormatShareType(s.Type)
 			} else {
 				label = v.ProtonVolume.VolumeID[:12] + "..."
 			}
@@ -142,17 +143,4 @@ func dfVolState(state proton.VolumeState) string {
 	}
 }
 
-func dfShareType(st proton.ShareType) string {
-	switch st {
-	case proton.ShareTypeMain:
-		return "main"
-	case proton.ShareTypeStandard:
-		return "shared"
-	case proton.ShareTypeDevice:
-		return "device"
-	case 4:
-		return "photos"
-	default:
-		return fmt.Sprintf("unknown(%d)", st)
-	}
-}
+

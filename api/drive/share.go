@@ -2,6 +2,7 @@ package drive
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -11,6 +12,25 @@ import (
 
 // ShareMetadata represents the metadata for a Proton Drive share.
 type ShareMetadata proton.ShareMetadata
+
+// ShareTypePhotos is the undocumented share type for Proton Photos.
+const ShareTypePhotos proton.ShareType = 4
+
+// FormatShareType returns a human-readable label for a share type.
+func FormatShareType(st proton.ShareType) string {
+	switch st {
+	case proton.ShareTypeMain:
+		return "main"
+	case proton.ShareTypeStandard:
+		return "shared"
+	case proton.ShareTypeDevice:
+		return "device"
+	case ShareTypePhotos:
+		return "photos"
+	default:
+		return fmt.Sprintf("unknown(%d)", st)
+	}
+}
 
 // Share represents a fully-resolved Proton Drive share with its keyring.
 type Share struct {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -66,7 +67,7 @@ func runShareList(_ *cobra.Command, _ []string) error {
 		display := formatName(name, linkType, useColor, shareListFlags.classify)
 
 		fmt.Printf("%-8s %-30s %-12s %s\n",
-			fmtShareType(meta.Type),
+			drive.FormatShareType(meta.Type),
 			meta.Creator,
 			fmtTime(meta.CreationTime),
 			display,
@@ -99,20 +100,7 @@ func formatName(name string, lt proton.LinkType, useColor, classify bool) string
 	return name + suffix
 }
 
-func fmtShareType(st proton.ShareType) string {
-	switch st {
-	case proton.ShareTypeMain:
-		return "main"
-	case proton.ShareTypeStandard:
-		return "shared"
-	case proton.ShareTypeDevice:
-		return "device"
-	case 4:
-		return "photos"
-	default:
-		return fmt.Sprintf("?(%d)", st)
-	}
-}
+
 
 func fmtShareState(state proton.ShareState) string {
 	switch state {
