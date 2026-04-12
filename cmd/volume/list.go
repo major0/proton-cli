@@ -110,6 +110,8 @@ func fmtShareType(st proton.ShareType) string {
 		return "shared"
 	case proton.ShareTypeDevice:
 		return "device"
+	case 4: // Photos — not yet in go-proton-api constants
+		return "photos"
 	default:
 		return fmt.Sprintf("unknown(%d)", st)
 	}
