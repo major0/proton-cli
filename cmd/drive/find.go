@@ -27,6 +27,7 @@ var findFlags struct {
 	print0   bool
 	print    bool // -print is default behavior, explicit flag for compatibility
 	depth    bool // -depth: process directory contents before the directory itself
+	trashed  bool // include trashed items
 }
 
 var driveFindCmd = &cobra.Command{
@@ -51,6 +52,7 @@ func init() {
 	cli.BoolFlag(f, &findFlags.print0, "print0", false, "Separate output with NUL instead of newline")
 	cli.BoolFlag(f, &findFlags.print, "print", false, "Print matching paths (default action)")
 	cli.BoolFlag(f, &findFlags.depth, "depth", false, "Process directory contents before the directory itself")
+	cli.BoolFlag(f, &findFlags.trashed, "trashed", false, "Include trashed items in results")
 }
 
 type findPredicate func(p string, l *common.Link, depth int) bool
@@ -212,6 +214,15 @@ func findWalk(ctx context.Context, prefix string, l *common.Link, depth int, pre
 		return nil
 	}
 
+	// Skip trashed/deleted items unless explicitly searching for them.
+	state := l.State()
+	if state == proton.LinkStateDeleted {
+		return nil
+	}
+	if state == proton.LinkStateTrashed && !findFlags.trashed {
+		return nil
+	}
+
 	// Breadth-first (default): print before descending.
 	if !findFlags.depth {
 		if matchAll(preds, prefix, l, depth) {
@@ -237,14 +248,16 @@ func findWalk(ctx context.Context, prefix string, l *common.Link, depth int, pre
 	return nil
 }
 
-// findChildren fans out child processing concurrently.
+// findChildren collects children, prints matches at this level, then
+// descends into child directories. This ensures breadth-first ordering:
+// all entries at depth N are printed before any at depth N+1.
 func findChildren(ctx context.Context, prefix string, l *common.Link, depth int, preds []findPredicate, sep string) error {
 	type childWork struct {
 		path string
 		link *common.Link
 	}
 
-	// Collect children from Readdir.
+	// Collect all children from Readdir.
 	var children []childWork
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
@@ -254,6 +267,15 @@ func findChildren(ctx context.Context, prefix string, l *common.Link, depth int,
 
 		childName, err := entry.Link.Name()
 		if err != nil {
+			continue
+		}
+
+		// Skip trashed/deleted unless searching for them.
+		state := entry.Link.State()
+		if state == proton.LinkStateDeleted {
+			continue
+		}
+		if state == proton.LinkStateTrashed && !findFlags.trashed {
 			continue
 		}
 
@@ -268,32 +290,75 @@ func findChildren(ctx context.Context, prefix string, l *common.Link, depth int,
 		return nil
 	}
 
-	// Fan out: process children concurrently.
-	errCh := make(chan error, len(children))
-	sem := make(chan struct{}, 3) // limit concurrent directory walks to avoid 429
-
-	var wg sync.WaitGroup
-	for _, child := range children {
-		wg.Add(1)
-		go func(c childWork) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			if err := findWalk(ctx, c.path, c.link, depth+1, preds, sep); err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
+	// Phase 1: print all matches at this level.
+	if !findFlags.depth {
+		for _, c := range children {
+			if matchAll(preds, c.path, c.link, depth+1) {
+				fmt.Print(c.path + sep)
 			}
-		}(child)
+		}
 	}
 
-	wg.Wait()
-	close(errCh)
+	// Phase 2: descend into child directories concurrently.
+	var dirs []childWork
+	for _, c := range children {
+		if c.link.Type() == proton.LinkTypeFolder {
+			if findFlags.maxDepth < 0 || depth+1 < findFlags.maxDepth {
+				dirs = append(dirs, c)
+			}
+		}
+	}
 
-	if err, ok := <-errCh; ok {
+	if len(dirs) > 0 {
+		errCh := make(chan error, len(dirs))
+		sem := make(chan struct{}, 3)
+
+		var wg sync.WaitGroup
+		for _, d := range dirs {
+			wg.Add(1)
+			go func(c childWork) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				if err := findDescend(ctx, c.path, c.link, depth+1, preds, sep); err != nil {
+					select {
+					case errCh <- err:
+					default:
+					}
+				}
+			}(d)
+		}
+
+		wg.Wait()
+		close(errCh)
+
+		if err, ok := <-errCh; ok {
+			return err
+		}
+	}
+
+	// Phase 3 (depth-first only): print matches after descending.
+	if findFlags.depth {
+		for _, c := range children {
+			if matchAll(preds, c.path, c.link, depth+1) {
+				fmt.Print(c.path + sep)
+			}
+		}
+	}
+
+	return nil
+}
+
+// findDescend is the recursive entry point for child directories.
+func findDescend(ctx context.Context, prefix string, l *common.Link, depth int, preds []findPredicate, sep string) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return nil
+
+	if findFlags.maxDepth >= 0 && depth > findFlags.maxDepth {
+		return nil
+	}
+
+	return findChildren(ctx, prefix, l, depth, preds, sep)
 }
