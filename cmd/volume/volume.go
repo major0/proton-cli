@@ -9,8 +9,8 @@ import (
 var volumeCmd = &cobra.Command{
 	Use:     "volume",
 	Aliases: []string{"vol", "vols"},
-	Short:   "Manage ProtonDrive volumes",
-	Long:    "Manage ProtonDrive volumes",
+	Short:   "Manage Proton Drive volumes",
+	Long:    "Manage Proton Drive volumes",
 	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
 	},

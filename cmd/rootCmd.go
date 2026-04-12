@@ -43,9 +43,9 @@ var (
 	}{}
 
 	rootCmd = &cobra.Command{
-		Use:   "protondrive [options] <command>",
-		Short: "protondrive is a command line interface for ProtonDrive",
-		Long:  `protondrive is a command line interface for managing and manipulating the ProtonDrive storage solution`,
+		Use:   "proton [options] <command>",
+		Short: "proton is a command line interface for Proton services",
+		Long:  `proton is a command line interface for managing Proton services (Drive, Mail, etc.)`,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			switch {
 			case rootParams.Verbose == 1:
@@ -72,6 +72,7 @@ var (
 
 			// Rebuild proton options based on verbosity.
 			ProtonOpts = []proton.Option{
+				proton.WithHostURL(APIHost),
 				proton.WithAppVersion(AppVersion),
 				proton.WithUserAgent(UserAgent),
 			}
@@ -98,9 +99,8 @@ func AddCommand(cmd *cobra.Command) {
 // ManagerHook returns the debug hook callback when DebugHTTP is enabled,
 // or nil otherwise. Pass the result to SessionFromLogin, SessionRestore, etc.
 func ManagerHook() func(*proton.Manager) {
-	if DebugHTTP {
-		return InstallDebugHooks
-	}
+	// Temporarily disabled — WithDebug(true) provides resty-level logging.
+	// Our custom hooks may conflict with resty's debug mode.
 	return nil
 }
 
@@ -123,6 +123,7 @@ func init() {
 	// proton.WithLogger(common.Logger)
 
 	ProtonOpts = []proton.Option{
+		proton.WithHostURL(APIHost),
 		proton.WithAppVersion(AppVersion),
 		proton.WithUserAgent(UserAgent),
 	}

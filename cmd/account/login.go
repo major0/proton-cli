@@ -61,7 +61,7 @@ var authLoginCmd = &cobra.Command{
 		// Build manager hook for debug logging at verbosity >= 3.
 		managerHook := cli.ManagerHook()
 
-		session, err := common.SessionFromLogin(ctx, cli.ProtonOpts, username, password, managerHook)
+		session, err := common.SessionFromLogin(ctx, cli.ProtonOpts, username, password, nil, managerHook)
 		if err != nil {
 			// Check for HV error (code 9001).
 			apiErr := new(proton.APIError)
@@ -78,19 +78,21 @@ var authLoginCmd = &cobra.Command{
 				return fmt.Errorf("unsupported HV methods: %v", hv.Methods)
 			}
 
-			// Prompt the user to solve the CAPTCHA on verify.proton.me.
-			// The backend marks the challenge token as solved server-side.
-			if authLoginParams.noBrowser {
-				SolveCaptchaNoBrowser(hv)
-			} else {
-				SolveCaptcha(hv)
+			// Solve the CAPTCHA and get the composite token.
+			// The verify.proton.me page returns a composite token via
+			// postMessage that must be sent in x-pm-human-verification-token.
+			solvedToken, solveErr := SolveCaptcha(hv, authLoginParams.noBrowser)
+			if solveErr != nil {
+				return fmt.Errorf("CAPTCHA: %w", solveErr)
 			}
+
+			// Replace the token with the composite solved token.
+			hv.Token = solvedToken
 
 			fmt.Println("Authenticating ...")
 
-			// Retry with the same HV details — the token is now verified.
-			session, err = common.SessionFromLoginWithHV(ctx, cli.ProtonOpts, username, password, hv, managerHook)
-			if err != nil {
+			// Retry on the same session (same manager + cookie jar).
+			if err := common.SessionRetryWithHV(ctx, session, username, password, hv); err != nil {
 				return err
 			}
 		}

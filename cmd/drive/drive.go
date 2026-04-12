@@ -8,8 +8,8 @@ import (
 
 var driveCmd = &cobra.Command{
 	Use:   "drive",
-	Short: "Manage files/directories stored in ProtonDrive",
-	Long:  "Manage files/directories stored in ProtonDrive",
+	Short: "Manage files and directories in Proton Drive",
+	Long:  "Manage files and directories in Proton Drive",
 	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
 	},

@@ -79,6 +79,10 @@ type Session struct {
 
 	cookieJar http.CookieJar
 
+	// cachedAuthInfo holds the AuthInfo from the initial login attempt.
+	// It is reused on HV retry so the SRP session matches the solved CAPTCHA.
+	cachedAuthInfo *proton.AuthInfo
+
 	MaxWorkers int
 
 	addresses      map[string]proton.Address
@@ -123,6 +127,11 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, creds 
 
 	slog.Debug("session.config", "uid", creds.UID, "access_token", creds.AccessToken, "refresh_token", creds.RefreshToken)
 	session.Client = session.manager.NewClient(creds.UID, creds.AccessToken, creds.RefreshToken)
+	session.Auth = proton.Auth{
+		UID:          creds.UID,
+		AccessToken:  creds.AccessToken,
+		RefreshToken: creds.RefreshToken,
+	}
 
 	slog.Debug("session.GetUser")
 	session.user, err = session.Client.GetUser(ctx)
@@ -162,41 +171,6 @@ func sessionFromLogin(options []proton.Option, managerHook func(*proton.Manager)
 	}
 
 	return session, session.manager
-}
-
-// SessionFromLogin initializes a new session from the provided login/password.
-// The returned session may have extra authentication requirements, such as 2FA.
-// Once all authentication challenges have been met, the session will still
-// need to be Unlock()'ed to gain access to the User and Address keyrings.
-func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string, managerHook func(*proton.Manager)) (*Session, error) {
-	session, manager := sessionFromLogin(options, managerHook)
-
-	slog.Debug("session.login", "username", username, "password", "<hidden>")
-
-	var err error
-	session.Client, session.Auth, err = manager.NewClientWithLogin(ctx, username, []byte(password))
-	if err != nil {
-		return nil, err
-	}
-
-	return session, nil
-}
-
-// SessionFromLoginWithHV performs SRP login with a pre-solved HV token.
-// It shares common setup with SessionFromLogin but calls
-// NewClientWithLoginWithHVToken instead of NewClientWithLogin.
-func SessionFromLoginWithHV(ctx context.Context, options []proton.Option, username, password string, hv *proton.APIHVDetails, managerHook func(*proton.Manager)) (*Session, error) {
-	session, manager := sessionFromLogin(options, managerHook)
-
-	slog.Debug("session.login.hv", "username", username, "password", "<hidden>")
-
-	var err error
-	session.Client, session.Auth, err = manager.NewClientWithLoginWithHVToken(ctx, username, []byte(password), hv)
-	if err != nil {
-		return nil, err
-	}
-
-	return session, nil
 }
 
 /* Unlock the user's account keyring, as well as all keyring's associated
@@ -542,4 +516,59 @@ func SessionRevoke(ctx context.Context, session *Session, store SessionStore, fo
 // SessionList returns account names from the session store.
 func SessionList(store SessionStore) ([]string, error) {
 	return store.List()
+}
+
+// SessionFromLogin initializes a new session from the provided login/password.
+// If hvDetails is non-nil, the login includes the HV token for CAPTCHA retry.
+// The same manager (and cookie jar) is used for both initial and HV-retried
+// login attempts — this is required because Proton's backend correlates the
+// solved CAPTCHA with the session cookie from the initial attempt.
+func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string, hvDetails *proton.APIHVDetails, managerHook func(*proton.Manager)) (*Session, error) {
+	session, manager := sessionFromLogin(options, managerHook)
+
+	slog.Debug("session.login", "username", username, "password", "<hidden>")
+
+	// Fetch AuthInfo separately so we can cache it for HV retries.
+	// The SRP session in AuthInfo is bound to the CAPTCHA token — reusing
+	// it on retry is required for the solved token to be accepted.
+	info, err := manager.AuthInfo(ctx, proton.AuthInfoReq{Username: username})
+	if err != nil {
+		return session, err
+	}
+	session.cachedAuthInfo = &info
+
+	session.Client, session.Auth, err = manager.NewClientWithLoginWithCachedInfo(ctx, info, username, []byte(password), hvDetails)
+	logCookies("session.login.done", session)
+	slog.Debug("session.login.done", "error", err)
+	if err != nil {
+		return session, err
+	}
+
+	return session, nil
+}
+
+// SessionRetryWithHV retries login on an existing session (reusing its
+// manager and cookie jar) with HV details after the user solved the CAPTCHA.
+// A fresh AuthInfo is fetched because the original SRP session is invalidated
+// by the 9001 response. The solved CAPTCHA composite token is NOT bound to
+// the SRP session — it's bound to the HumanVerificationToken.
+func SessionRetryWithHV(ctx context.Context, session *Session, username, password string, hv *proton.APIHVDetails) error {
+	logCookies("session.login.hv.before", session)
+	slog.Debug("session.login.hv", "username", username, "password", "<hidden>")
+
+	var err error
+	session.Client, session.Auth, err = session.manager.NewClientWithLoginWithHVToken(ctx, username, []byte(password), hv)
+	logCookies("session.login.hv.after", session)
+	return err
+}
+
+// logCookies logs the current cookies in the session's jar for debugging.
+func logCookies(label string, session *Session) {
+	apiURL := apiCookieURL()
+	cookies := session.cookieJar.Cookies(apiURL)
+	names := make([]string, len(cookies))
+	for i, c := range cookies {
+		names[i] = c.Name + "=" + c.Value
+	}
+	slog.Debug(label, "cookies", names)
 }

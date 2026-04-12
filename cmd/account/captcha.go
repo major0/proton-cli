@@ -1,22 +1,32 @@
 package accountCmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/chromedp/chromedp"
 	"github.com/major0/proton-cli/internal"
 )
 
-// formatHvURL builds the Proton CAPTCHA verification URL from HV details.
-// Matches proton-bridge's hv.FormatHvURL.
-func formatHvURL(details *proton.APIHVDetails) string {
-	return fmt.Sprintf("https://verify.proton.me/?methods=%s&token=%s",
-		strings.Join(details.Methods, ","),
-		details.Token)
+// captchaURL builds the CAPTCHA page URL.
+func captchaURL(token string) string {
+	return fmt.Sprintf("https://drive-api.proton.me/core/v4/captcha?Token=%s&ForceWebMessaging=1", token)
+}
+
+// hasDisplay reports whether a graphical display is available.
+func hasDisplay() bool {
+	switch runtime.GOOS {
+	case "darwin", "windows":
+		return true
+	default:
+		return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
+	}
 }
 
 // openBrowser opens the given URL in the user's default browser.
@@ -28,35 +38,110 @@ func openBrowser(rawURL string) error {
 	default:
 		cmd = "xdg-open"
 	}
-	return exec.Command(cmd, rawURL).Start() //nolint:gosec // URL is constructed internally
+	return exec.Command(cmd, rawURL).Start() //nolint:gosec
 }
 
-// SolveCaptcha opens the Proton CAPTCHA URL in the browser and waits for
-// the user to solve it. The CAPTCHA is solved on Proton's servers — the
-// backend marks the challenge token as verified. The caller retries the
-// login with the same HV details and it succeeds.
-func SolveCaptcha(hv *proton.APIHVDetails) {
-	hvURL := formatHvURL(hv)
+// SolveCaptcha presents the CAPTCHA to the user and returns the solved
+// composite token. Uses chromedp (headed Chrome) when a display is
+// available, falls back to manual token entry for headless/SSH sessions
+// or when --no-browser is set.
+func SolveCaptcha(hv *proton.APIHVDetails, noBrowser bool) (string, error) {
+	if !noBrowser && hasDisplay() {
+		token, err := solveChromeDP(hv)
+		if err == nil {
+			return token, nil
+		}
+		fmt.Fprintf(os.Stderr, "Chrome CAPTCHA failed: %v\nFalling back to manual mode.\n", err)
+	}
+	return solveManual(hv)
+}
 
-	fmt.Println("\nHuman verification required.")
-	fmt.Printf("Opening CAPTCHA in browser: %s\n\n", hvURL)
+// solveChromeDP launches a headed Chrome window with the CAPTCHA page,
+// injects a postMessage listener, and waits for the user to solve it.
+// The solved token is captured via a JS variable polled from Go.
+func solveChromeDP(hv *proton.APIHVDetails) (string, error) {
+	url := captchaURL(hv.Token)
 
-	if err := openBrowser(hvURL); err != nil {
-		fmt.Fprintf(os.Stderr, "Could not open browser. Please open manually:\n  %s\n\n", hvURL)
+	fmt.Println("\nHuman verification required. Opening CAPTCHA in Chrome...")
+
+	// Create a headed (visible) Chrome context.
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", false),
+		chromedp.Flag("disable-gpu", false),
+		chromedp.WindowSize(500, 700),
+	)
+
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+
+	// 5 minute timeout for the user to solve the CAPTCHA.
+	ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	// Navigate and inject the postMessage listener.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Evaluate(`
+			window.__captchaToken = "";
+			window.addEventListener("message", function(e) {
+				if (e.data && e.data.type === "pm_captcha" && e.data.token) {
+					window.__captchaToken = e.data.token;
+				}
+			});
+		`, nil),
+	); err != nil {
+		return "", fmt.Errorf("navigating to CAPTCHA: %w", err)
 	}
 
-	fmt.Println("Solve the CAPTCHA in your browser, then press ENTER to continue.")
-	_, _ = internal.UserPrompt("Press ENTER", false)
+	// Poll for the token.
+	var token string
+	for {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("CAPTCHA timeout")
+		default:
+		}
+
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(`window.__captchaToken`, &token),
+		); err != nil {
+			return "", fmt.Errorf("polling token: %w", err)
+		}
+
+		if token != "" {
+			fmt.Println("CAPTCHA solved.")
+			return token, nil
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
-// SolveCaptchaNoBrowser prints the Proton CAPTCHA URL and waits for the
-// user to solve it. For SSH/headless use where the CLI cannot open a browser.
-func SolveCaptchaNoBrowser(hv *proton.APIHVDetails) {
-	hvURL := formatHvURL(hv)
+// solveManual falls back to manual token entry for headless sessions
+// or when Chrome is unavailable.
+func solveManual(hv *proton.APIHVDetails) (string, error) {
+	url := captchaURL(hv.Token)
 
-	fmt.Println("\nHuman verification required.")
-	fmt.Println("Open this URL in your browser to solve the CAPTCHA:")
-	fmt.Printf("\n  %s\n\n", hvURL)
-	fmt.Println("Solve the CAPTCHA, then press ENTER to continue.")
-	_, _ = internal.UserPrompt("Press ENTER", false)
+	fmt.Println("\nHuman verification required (manual mode).")
+	fmt.Println("")
+	fmt.Println("Steps:")
+	fmt.Println("  1. Open your browser's Developer Tools (F12)")
+	fmt.Println("  2. Go to the Console tab and paste this snippet:")
+	fmt.Println("")
+	fmt.Println(`     window.addEventListener("message", e => { if(e.data?.type==="pm_captcha") prompt("Copy this token:",e.data.token) })`)
+	fmt.Println("")
+	fmt.Println("  3. Navigate to this URL:")
+	fmt.Printf("     %s\n\n", url)
+	fmt.Println("  4. Solve the CAPTCHA — a prompt will show the token")
+	fmt.Println("  5. Copy and paste it below")
+	fmt.Println("")
+
+	token, err := internal.UserPrompt("Solved token", false)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(token), nil
 }

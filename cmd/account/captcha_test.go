@@ -2,33 +2,31 @@ package accountCmd
 
 import (
 	"testing"
-
-	proton "github.com/ProtonMail/go-proton-api"
 )
 
-func TestFormatHvURL(t *testing.T) {
+func TestCaptchaURL(t *testing.T) {
 	tests := []struct {
-		name    string
-		details *proton.APIHVDetails
-		want    string
+		name  string
+		token string
+		want  string
 	}{
 		{
-			"single method",
-			&proton.APIHVDetails{Methods: []string{"captcha"}, Token: "abc123"},
-			"https://verify.proton.me/?methods=captcha&token=abc123",
+			"basic token",
+			"abc123",
+			"https://drive-api.proton.me/core/v4/captcha?Token=abc123&ForceWebMessaging=1",
 		},
 		{
-			"multiple methods",
-			&proton.APIHVDetails{Methods: []string{"captcha", "sms"}, Token: "xyz"},
-			"https://verify.proton.me/?methods=captcha,sms&token=xyz",
+			"token with special chars",
+			"abc-123_XYZ",
+			"https://drive-api.proton.me/core/v4/captcha?Token=abc-123_XYZ&ForceWebMessaging=1",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatHvURL(tt.details)
+			got := captchaURL(tt.token)
 			if got != tt.want {
-				t.Errorf("formatHvURL() = %q, want %q", got, tt.want)
+				t.Errorf("captchaURL() = %q, want %q", got, tt.want)
 			}
 		})
 	}

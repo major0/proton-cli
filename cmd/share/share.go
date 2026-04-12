@@ -9,8 +9,8 @@ import (
 var shareCmd = &cobra.Command{
 	Use:     "share",
 	Aliases: []string{"shares"},
-	Short:   "Manage ProtonDrive shares",
-	Long:    "Manage ProtonDrive shares",
+	Short:   "Manage Proton Drive shares",
+	Long:    "Manage Proton Drive shares",
 	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
 	},

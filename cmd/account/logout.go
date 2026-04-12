@@ -11,8 +11,8 @@ import (
 var authLogoutForce = false
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
-	Short: "logout of ProtonDrive",
-	Long:  `logout of ProtonDrive`,
+	Short: "Logout of Proton",
+	Long:  `Logout of Proton`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
@@ -33,5 +33,5 @@ var authLogoutCmd = &cobra.Command{
 
 func init() {
 	accountCmd.AddCommand(authLogoutCmd)
-	authLogoutCmd.Flags().BoolVarP(&authLogoutForce, "force", "f", false, "Force logout of ProtonDrive")
+	authLogoutCmd.Flags().BoolVarP(&authLogoutForce, "force", "f", false, "Force logout of Proton")
 }

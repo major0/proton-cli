@@ -8,8 +8,8 @@ import (
 
 var accountCmd = &cobra.Command{
 	Use:   "account",
-	Short: "Manage user authentication with ProtonDrive",
-	Long:  "Manage user authentication with ProtonDrive",
+	Short: "Manage user authentication with Proton",
+	Long:  "Manage user authentication with Proton",
 	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
 	},

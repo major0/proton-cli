@@ -3,9 +3,10 @@ package cli
 
 // Application constants unique to proton-cli.
 const (
-	cacheFileName  = "protondrive/cache.yaml"
-	configFileName = "protondrive/config.yaml"
+	cacheFileName  = "proton/cache.yaml"
+	configFileName = "proton/config.yaml"
 	Version        = "0.0.1"
-	AppVersion     = "macos-drive@1.0.0-alpha.1+proton-cli"
-	UserAgent      = "proton-cli" + "/" + Version + " (Proton CLI v" + Version + ")"
+	AppVersion     = "windows-drive@1.20.2"
+	UserAgent      = "NoClient/0.0.1"
+	APIHost        = "https://drive-api.proton.me"
 )
