@@ -2,6 +2,7 @@ package drive
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -25,8 +26,11 @@ type Link struct {
 	resolver   LinkResolver
 	share      *Share
 
-	// Lazy-decrypted fields, protected by once.
-	once        sync.Once
+	// Lazy-decrypted fields, protected by mu.
+	// decrypted is true when decryption succeeded or failed permanently.
+	// Transient errors leave decrypted false to allow retry.
+	mu          sync.Mutex
+	decrypted   bool
 	decryptErr  error
 	name        string
 	keyRing     *crypto.KeyRing
@@ -68,31 +72,60 @@ func (l *Link) MIMEType() string { return l.protonLink.MIMEType }
 // LinkID returns the encrypted link ID without decryption.
 func (l *Link) LinkID() string { return l.protonLink.LinkID }
 
-// decrypt performs lazy one-time decryption of the link's name and keyrings.
+// isTransient returns true for errors that may succeed on retry.
+func isTransient(err error) bool {
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded)
+}
+
+// decrypt performs lazy decryption of the link's name and keyrings.
+// Permanent errors are cached; transient errors allow retry.
 // Safe to call from multiple goroutines.
 func (l *Link) decrypt() error {
-	l.once.Do(func() {
-		parentKR, err := l.getParentKeyRing()
-		if err != nil {
-			l.decryptErr = fmt.Errorf("decrypt %s: parent keyring: %w", l.protonLink.LinkID, err)
-			return
-		}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-		l.keyRing, err = l.deriveKeyRing(parentKR)
-		if err != nil {
-			l.decryptErr = fmt.Errorf("decrypt %s: keyring: %w", l.protonLink.LinkID, err)
-			return
-		}
+	if l.decrypted {
+		return l.decryptErr
+	}
 
-		l.nameKeyRing = l.keyRing
-
-		l.name, err = l.decryptName(parentKR)
-		if err != nil {
-			l.decryptErr = fmt.Errorf("decrypt %s: name: %w", l.protonLink.LinkID, err)
-			return
+	parentKR, err := l.getParentKeyRing()
+	if err != nil {
+		if isTransient(err) {
+			return fmt.Errorf("decrypt %s: parent keyring: %w", l.protonLink.LinkID, err)
 		}
-	})
-	return l.decryptErr
+		l.decryptErr = fmt.Errorf("decrypt %s: parent keyring: %w", l.protonLink.LinkID, err)
+		l.decrypted = true
+		return l.decryptErr
+	}
+
+	l.keyRing, err = l.deriveKeyRing(parentKR)
+	if err != nil {
+		if isTransient(err) {
+			return fmt.Errorf("decrypt %s: keyring: %w", l.protonLink.LinkID, err)
+		}
+		l.decryptErr = fmt.Errorf("decrypt %s: keyring: %w", l.protonLink.LinkID, err)
+		l.decrypted = true
+		return l.decryptErr
+	}
+
+	l.nameKeyRing = l.keyRing
+
+	l.name, err = l.decryptName(parentKR)
+	if err != nil {
+		if isTransient(err) {
+			// Clear partially-set fields on transient failure.
+			l.keyRing = nil
+			l.nameKeyRing = nil
+			return fmt.Errorf("decrypt %s: name: %w", l.protonLink.LinkID, err)
+		}
+		l.decryptErr = fmt.Errorf("decrypt %s: name: %w", l.protonLink.LinkID, err)
+		l.decrypted = true
+		return l.decryptErr
+	}
+
+	l.decrypted = true
+	return nil
 }
 
 // Name returns the decrypted name. Triggers lazy decryption on first call.

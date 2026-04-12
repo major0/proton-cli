@@ -38,7 +38,8 @@ func (m *mockRemoveResolver) NewChildLink(_ context.Context, parent *Link, pLink
 		resolver:   m,
 	}
 	// Pre-set decrypted state so Readdir doesn't fail on crypto.
-	child.once.Do(func() { child.name = pLink.LinkID })
+	child.name = pLink.LinkID
+	child.decrypted = true
 	return child
 }
 
@@ -65,7 +66,8 @@ func makeTestFolder(resolver LinkResolver, name string) *Link {
 		protonLink: rootPLink,
 		resolver:   resolver,
 	}
-	rootLink.once.Do(func() { rootLink.name = "root" })
+	rootLink.name = "root"
+	rootLink.decrypted = true
 
 	share := NewShare(pShare, nil, rootLink, resolver)
 	rootLink.share = share
@@ -77,7 +79,8 @@ func makeTestFolder(resolver LinkResolver, name string) *Link {
 		share:      share,
 		resolver:   resolver,
 	}
-	folder.once.Do(func() { folder.name = name })
+	folder.name = name
+	folder.decrypted = true
 
 	return folder
 }
@@ -92,7 +95,8 @@ func makeTestShareRoot(resolver LinkResolver) (*Link, *Share) {
 		protonLink: rootPLink,
 		resolver:   resolver,
 	}
-	rootLink.once.Do(func() { rootLink.name = "root" })
+	rootLink.name = "root"
+	rootLink.decrypted = true
 
 	share := NewShare(pShare, nil, rootLink, resolver)
 	rootLink.share = share
