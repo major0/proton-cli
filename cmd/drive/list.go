@@ -201,35 +201,27 @@ func resolveOpts() (listOpts, error) {
 }
 
 func resolveLinks(ctx context.Context, dc *driveClient.Client, args []string) ([]*drive.Link, error) {
+	// No args → list root share contents (same as proton:///). 
 	if len(args) == 0 {
-		return rootLinks(ctx, dc)
+		share, err := dc.ResolveShareByType(ctx, proton.ShareTypeMain)
+		if err != nil {
+			return nil, fmt.Errorf("resolving root share: %w", err)
+		}
+		children, err := share.Link.ListChildren(ctx, true)
+		if err != nil {
+			return nil, err
+		}
+		return children, nil
 	}
 
 	var links []*drive.Link
 	for _, arg := range args {
-		if !strings.HasPrefix(arg, "proton://") {
-			return nil, fmt.Errorf("invalid path: %s (must start with proton://)", arg)
-		}
-
-		path := parsePath(arg)
-		if path == "" {
-			roots, err := rootLinks(ctx, dc)
-			if err != nil {
-				return nil, err
-			}
-			links = append(links, roots...)
-			continue
-		}
-
-		link, err := dc.ResolvePath(ctx, path, true)
+		link, _, err := resolveProtonPath(ctx, dc, arg)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", arg, err)
 		}
 
-		if strings.HasSuffix(path, "/") {
-			if link.Type() != proton.LinkTypeFolder {
-				return nil, fmt.Errorf("%s: not a directory", arg)
-			}
+		if link.Type() == proton.LinkTypeFolder {
 			children, err := link.ListChildren(ctx, true)
 			if err != nil {
 				return nil, err
@@ -240,19 +232,6 @@ func resolveLinks(ctx context.Context, dc *driveClient.Client, args []string) ([
 		}
 	}
 
-	return links, nil
-}
-
-func rootLinks(ctx context.Context, dc *driveClient.Client) ([]*drive.Link, error) {
-	shares, err := dc.ListShares(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-
-	links := make([]*drive.Link, len(shares))
-	for i := range shares {
-		links[i] = shares[i].Link
-	}
 	return links, nil
 }
 

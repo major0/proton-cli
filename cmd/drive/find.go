@@ -153,29 +153,19 @@ func runFind(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Default to all shares if no path given, or if proton:// alone.
+	// No args → search root share. Explicit paths → search those.
 	var roots []*drive.Link
 	var rootPaths []string
 
-	// Normalize: no args or bare "proton://" both mean "all shares".
-	searchAll := len(args) == 0
-	if len(args) == 1 {
-		p := parsePath(args[0])
-		if p == "" {
-			searchAll = true
-		}
-	}
-
-	if searchAll {
-		shares, err := dc.ListShares(ctx, true)
+	if len(args) == 0 {
+		// Default to root share (main volume share).
+		share, err := dc.ResolveShareByType(ctx, proton.ShareTypeMain)
 		if err != nil {
-			return err
+			return fmt.Errorf("find: resolving root share: %w", err)
 		}
-		for i := range shares {
-			name, _ := shares[i].GetName(ctx)
-			roots = append(roots, shares[i].Link)
-			rootPaths = append(rootPaths, "proton://"+name+"/")
-		}
+		name, _ := share.GetName(ctx)
+		roots = append(roots, share.Link)
+		rootPaths = append(rootPaths, name+"/")
 	} else {
 		for _, arg := range args {
 			link, _, err := resolveProtonPath(ctx, dc, arg)
