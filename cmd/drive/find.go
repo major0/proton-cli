@@ -3,10 +3,8 @@ package driveCmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -193,175 +191,51 @@ func runFind(_ *cobra.Command, args []string) error {
 		}
 	}
 
-	preds := buildPredicates()
+	order := drive.BreadthFirst
+	if findFlags.depth {
+		order = drive.DepthFirst
+	}
+
 	sep := "\n"
 	if findFlags.print0 {
 		sep = "\x00"
 	}
 
+	preds := buildPredicates()
+
 	for i, root := range roots {
-		if err := findWalk(ctx, rootPaths[i], root, 0, preds, sep); err != nil {
-			return err
+		results := make(chan drive.WalkEntry, 64)
+		var walkErr error
+
+		go func() {
+			defer close(results)
+			walkErr = dc.TreeWalk(ctx, root, rootPaths[i], order, results)
+		}()
+
+		for entry := range results {
+			// Skip trashed/deleted.
+			state := entry.Link.State()
+			if state == proton.LinkStateDeleted {
+				continue
+			}
+			if state == proton.LinkStateTrashed && !findFlags.trashed {
+				continue
+			}
+
+			// Apply maxdepth.
+			if findFlags.maxDepth >= 0 && entry.Depth > findFlags.maxDepth {
+				continue
+			}
+
+			if matchAll(preds, entry.Path, entry.Link, entry.Depth) {
+				fmt.Print(entry.Path + sep)
+			}
+		}
+
+		if walkErr != nil {
+			return walkErr
 		}
 	}
 
 	return nil
-}
-
-func findWalk(ctx context.Context, prefix string, l *drive.Link, depth int, preds []findPredicate, sep string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	if findFlags.maxDepth >= 0 && depth > findFlags.maxDepth {
-		return nil
-	}
-
-	// Skip trashed/deleted items unless explicitly searching for them.
-	state := l.State()
-	if state == proton.LinkStateDeleted {
-		return nil
-	}
-	if state == proton.LinkStateTrashed && !findFlags.trashed {
-		return nil
-	}
-
-	// Breadth-first (default): print before descending.
-	if !findFlags.depth {
-		if matchAll(preds, prefix, l, depth) {
-			fmt.Print(prefix + sep)
-		}
-	}
-
-	if l.Type() == proton.LinkTypeFolder {
-		if findFlags.maxDepth < 0 || depth < findFlags.maxDepth {
-			if err := findChildren(ctx, prefix, l, depth, preds, sep); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Depth-first: print after descending.
-	if findFlags.depth {
-		if matchAll(preds, prefix, l, depth) {
-			fmt.Print(prefix + sep)
-		}
-	}
-
-	return nil
-}
-
-// findChildren collects children, prints matches at this level, then
-// descends into child directories. This ensures breadth-first ordering:
-// all entries at depth N are printed before any at depth N+1.
-func findChildren(ctx context.Context, prefix string, l *drive.Link, depth int, preds []findPredicate, sep string) error {
-	type childWork struct {
-		path string
-		link *drive.Link
-	}
-
-	// Collect all children from Readdir.
-	var children []childWork
-	for entry := range l.Readdir(ctx) {
-		if entry.Err != nil {
-			fmt.Fprintf(os.Stderr, "find: %s: %v\n", prefix, entry.Err)
-			continue
-		}
-
-		childName, err := entry.Link.Name()
-		if err != nil {
-			continue
-		}
-
-		// Skip trashed/deleted unless searching for them.
-		state := entry.Link.State()
-		if state == proton.LinkStateDeleted {
-			continue
-		}
-		if state == proton.LinkStateTrashed && !findFlags.trashed {
-			continue
-		}
-
-		childPath := prefix + childName
-		if entry.Link.Type() == proton.LinkTypeFolder {
-			childPath += "/"
-		}
-		children = append(children, childWork{path: childPath, link: entry.Link})
-	}
-
-	if len(children) == 0 {
-		return nil
-	}
-
-	// Phase 1: print all matches at this level.
-	if !findFlags.depth {
-		for _, c := range children {
-			if matchAll(preds, c.path, c.link, depth+1) {
-				fmt.Print(c.path + sep)
-			}
-		}
-	}
-
-	// Phase 2: descend into child directories concurrently.
-	var dirs []childWork
-	for _, c := range children {
-		if c.link.Type() == proton.LinkTypeFolder {
-			if findFlags.maxDepth < 0 || depth+1 < findFlags.maxDepth {
-				dirs = append(dirs, c)
-			}
-		}
-	}
-
-	if len(dirs) > 0 {
-		errCh := make(chan error, len(dirs))
-		sem := make(chan struct{}, 3)
-
-		var wg sync.WaitGroup
-		for _, d := range dirs {
-			wg.Add(1)
-			go func(c childWork) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				if err := findDescend(ctx, c.path, c.link, depth+1, preds, sep); err != nil {
-					select {
-					case errCh <- err:
-					default:
-					}
-				}
-			}(d)
-		}
-
-		wg.Wait()
-		close(errCh)
-
-		if err, ok := <-errCh; ok {
-			return err
-		}
-	}
-
-	// Phase 3 (depth-first only): print matches after descending.
-	if findFlags.depth {
-		for _, c := range children {
-			if matchAll(preds, c.path, c.link, depth+1) {
-				fmt.Print(c.path + sep)
-			}
-		}
-	}
-
-	return nil
-}
-
-// findDescend is the recursive entry point for child directories.
-func findDescend(ctx context.Context, prefix string, l *drive.Link, depth int, preds []findPredicate, sep string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	if findFlags.maxDepth >= 0 && depth > findFlags.maxDepth {
-		return nil
-	}
-
-	return findChildren(ctx, prefix, l, depth, preds, sep)
 }
