@@ -100,28 +100,6 @@ func formatName(name string, lt proton.LinkType, useColor, classify bool) string
 	return name + suffix
 }
 
-func fmtShareState(state proton.ShareState) string {
-	switch state {
-	case proton.ShareStateActive:
-		return "active"
-	case proton.ShareStateDeleted:
-		return "deleted"
-	default:
-		return fmt.Sprintf("?(%d)", state)
-	}
-}
-
-func fmtShareFlags(flags proton.ShareFlags) string {
-	switch flags {
-	case proton.NoFlags:
-		return "-"
-	case proton.PrimaryShare:
-		return "primary"
-	default:
-		return fmt.Sprintf("?(%d)", flags)
-	}
-}
-
 func fmtTime(epoch int64) string {
 	if epoch == 0 {
 		return "-"

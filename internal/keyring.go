@@ -1,3 +1,4 @@
+// Package internal provides shared utilities for the proton-cli application.
 package internal
 
 import (
