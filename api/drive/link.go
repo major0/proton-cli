@@ -178,13 +178,53 @@ func (l *Link) decryptName(parentKR *crypto.KeyRing) (string, error) {
 // package for API operations that need raw link fields.
 func (l *Link) ProtonLink() *proton.Link { return l.protonLink }
 
+// Parent returns the parent directory link (..).
+// For share roots (parentLink == nil), returns self — matching POSIX /.. → / behavior.
+func (l *Link) Parent() *Link {
+	if l.parentLink == nil {
+		return l
+	}
+	return l.parentLink
+}
+
 // ParentLink returns the parent Link, or nil for share roots.
 func (l *Link) ParentLink() *Link { return l.parentLink }
+
+// AbsPath walks the parent chain to the share root and returns the
+// fully qualified path from the share root. Triggers lazy decryption
+// of names along the chain.
+func (l *Link) AbsPath(_ context.Context) (string, error) {
+	var parts []string
+	current := l
+	for current.parentLink != nil {
+		name, err := current.Name()
+		if err != nil {
+			return "", fmt.Errorf("abspath: %w", err)
+		}
+		parts = append(parts, name)
+		current = current.parentLink
+	}
+	// current is now the share root — prepend its name.
+	rootName, err := current.Name()
+	if err != nil {
+		return "", fmt.Errorf("abspath: root: %w", err)
+	}
+	// Reverse parts (we walked leaf→root, need root→leaf).
+	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+		parts[i], parts[j] = parts[j], parts[i]
+	}
+	if len(parts) == 0 {
+		return rootName, nil
+	}
+	return rootName + "/" + strings.Join(parts, "/"), nil
+}
 
 // Share returns the Link's associated Share.
 func (l *Link) Share() *Share { return l.share }
 
 // NewLink creates a Link wrapper without decrypting anything.
+// parent is the parent directory link. For share roots, pass nil —
+// Parent() will return self, matching POSIX /.. → / behavior.
 func NewLink(pLink *proton.Link, parent *Link, share *Share, resolver LinkResolver) *Link {
 	return &Link{
 		protonLink: pLink,
@@ -212,24 +252,29 @@ func (l *Link) ResolvePath(ctx context.Context, path string, _ bool) (*Link, err
 	return l.resolveParts(ctx, parts)
 }
 
-// resolveParts walks path components using Lookup (concurrent, cancellable).
-// Only the matching child at each level is decrypted.
+// resolveParts walks path components, handling "." (self) and ".." (parent)
+// via tree traversal. Only the matching child at each level is decrypted.
 func (l *Link) resolveParts(ctx context.Context, parts []string) (*Link, error) {
-	if len(parts) == 0 || (len(parts) == 1 && parts[0] == "") {
-		return l, nil
+	current := l
+	for _, part := range parts {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			current = current.Parent()
+		default:
+			if current.Type() != proton.LinkTypeFolder {
+				return nil, ErrNotAFolder
+			}
+			child, err := current.Lookup(ctx, part)
+			if err != nil {
+				return nil, err
+			}
+			if child == nil {
+				return nil, ErrFileNotFound
+			}
+			current = child
+		}
 	}
-
-	if l.Type() != proton.LinkTypeFolder {
-		return nil, ErrNotAFolder
-	}
-
-	child, err := l.Lookup(ctx, parts[0])
-	if err != nil {
-		return nil, err
-	}
-	if child == nil {
-		return nil, ErrFileNotFound
-	}
-
-	return child.resolveParts(ctx, parts[1:])
+	return current, nil
 }
