@@ -98,11 +98,14 @@ func solveChromeDP(hv *proton.APIHVDetails) (string, error) {
 
 	// Poll for the token.
 	var token string
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("CAPTCHA timeout")
-		default:
+			return "", fmt.Errorf("CAPTCHA timeout: %w", ctx.Err())
+		case <-ticker.C:
 		}
 
 		if err := chromedp.Run(ctx,
@@ -115,8 +118,6 @@ func solveChromeDP(hv *proton.APIHVDetails) (string, error) {
 			fmt.Println("CAPTCHA solved.")
 			return token, nil
 		}
-
-		time.Sleep(500 * time.Millisecond)
 	}
 }
 
