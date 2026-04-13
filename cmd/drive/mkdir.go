@@ -81,7 +81,15 @@ func mkdirOne(ctx context.Context, dc *driveClient.Client, rawPath string) error
 	}
 
 	if mkdirFlags.parents {
-		return mkdirAllCmd(ctx, dc, share, relPath)
+		_, err := dc.MkDirAll(ctx, share, share.Link, relPath)
+		if err != nil {
+			return err
+		}
+		if mkdirFlags.verbose {
+			shareName, _ := share.GetName(ctx)
+			fmt.Printf("mkdir: created directory '%s/%s'\n", shareName, relPath)
+		}
+		return nil
 	}
 
 	return mkdirSingle(ctx, dc, share, relPath)
@@ -125,44 +133,3 @@ func mkdirSingle(ctx context.Context, dc *driveClient.Client, share *drive.Share
 	return nil
 }
 
-func mkdirAllCmd(ctx context.Context, dc *driveClient.Client, share *drive.Share, relPath string) error {
-	relPath = strings.TrimSuffix(relPath, "/")
-	parts := strings.Split(relPath, "/")
-
-	current := share.Link
-	builtPath, _ := share.GetName(ctx)
-
-	for _, name := range parts {
-		if name == "" || name == "." {
-			continue
-		}
-
-		child, err := current.Lookup(ctx, name)
-		if err != nil {
-			return err
-		}
-
-		if child != nil {
-			if child.Type() != proton.LinkTypeFolder {
-				return fmt.Errorf("mkdir: %s/%s: not a directory", builtPath, name)
-			}
-			current = child
-			builtPath += "/" + name
-			continue
-		}
-
-		newDir, err := dc.MkDir(ctx, share, current, name)
-		if err != nil {
-			return err
-		}
-
-		if mkdirFlags.verbose {
-			fmt.Printf("mkdir: created directory '%s/%s'\n", builtPath, name)
-		}
-
-		current = newDir
-		builtPath += "/" + name
-	}
-
-	return nil
-}
