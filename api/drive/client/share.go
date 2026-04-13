@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
@@ -136,6 +137,22 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 	share.Link = link
 
 	return share, nil
+}
+
+// ResolveShareByType finds a share by its type (Main, Photos, etc.)
+// without decrypting share names. Uses metadata to find the type match,
+// then resolves only that share.
+func (c *Client) ResolveShareByType(ctx context.Context, st proton.ShareType) (*drive.Share, error) {
+	metas, err := c.ListSharesMetadata(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	for _, meta := range metas {
+		if meta.Type == st {
+			return c.GetShare(ctx, meta.ShareID)
+		}
+	}
+	return nil, drive.ErrFileNotFound
 }
 
 // ResolveShare finds a share by its root link name.
