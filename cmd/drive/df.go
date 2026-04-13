@@ -25,35 +25,8 @@ func init() {
 	driveCmd.AddCommand(driveDfCmd)
 }
 
-func runDf(_ *cobra.Command, _ []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
-	defer cancel()
-
-	session, err := cli.RestoreSession(ctx)
-	if err != nil {
-		return err
-	}
-
-	dc, err := driveClient.NewClient(ctx, session)
-	if err != nil {
-		return err
-	}
-
-	volumes, err := dc.ListVolumes(ctx)
-	if err != nil {
-		return err
-	}
-
-	shares, err := dc.ListSharesMetadata(ctx, true)
-	if err != nil {
-		return err
-	}
-
-	shareIndex := make(map[string]proton.ShareMetadata, len(shares))
-	for _, s := range shares {
-		shareIndex[s.ShareID] = proton.ShareMetadata(s)
-	}
-
+// buildNameIndex resolves volume share names, logging errors at debug level.
+func buildNameIndex(ctx context.Context, dc *driveClient.Client, volumes []drive.Volume) map[string]string {
 	nameIndex := make(map[string]string)
 	for _, v := range volumes {
 		share, err := dc.GetShare(ctx, v.ProtonVolume.Share.ShareID)
@@ -68,17 +41,11 @@ func runDf(_ *cobra.Command, _ []string) error {
 		}
 		nameIndex[v.ProtonVolume.VolumeID] = name
 	}
+	return nameIndex
+}
 
-	// Account-level quota from the user object.
-	acct := account.NewClient(session)
-	user, err := acct.GetUser(ctx)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
-		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State")
-
+// printVolumeRows prints the df-style table rows for each volume.
+func printVolumeRows(volumes []drive.Volume, nameIndex map[string]string, shareIndex map[string]proton.ShareMetadata) {
 	for _, v := range volumes {
 		label := nameIndex[v.ProtonVolume.VolumeID]
 		if label == "" {
@@ -118,6 +85,50 @@ func runDf(_ *cobra.Command, _ []string) error {
 			dfVolState(v.ProtonVolume.State),
 		)
 	}
+}
+
+func runDf(_ *cobra.Command, _ []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	defer cancel()
+
+	session, err := cli.RestoreSession(ctx)
+	if err != nil {
+		return err
+	}
+
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return err
+	}
+
+	volumes, err := dc.ListVolumes(ctx)
+	if err != nil {
+		return err
+	}
+
+	shares, err := dc.ListSharesMetadata(ctx, true)
+	if err != nil {
+		return err
+	}
+
+	shareIndex := make(map[string]proton.ShareMetadata, len(shares))
+	for _, s := range shares {
+		shareIndex[s.ShareID] = proton.ShareMetadata(s)
+	}
+
+	nameIndex := buildNameIndex(ctx, dc, volumes)
+
+	// Account-level quota from the user object.
+	acct := account.NewClient(session)
+	user, err := acct.GetUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
+		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State")
+
+	printVolumeRows(volumes, nameIndex, shareIndex)
 
 	// Account total line.
 	acctSize := units.BytesSize(float64(user.MaxSpace))
