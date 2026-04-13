@@ -48,6 +48,14 @@ const (
 	timeLongISO
 )
 
+// listEntry pairs a DirEntry with its resolved display name. The name
+// is resolved once at collection time via EntryName() and reused for
+// filtering, sorting, and display — avoiding repeated decryption.
+type listEntry struct {
+	entry drive.DirEntry
+	name  string // resolved display name
+}
+
 type listOpts struct {
 	format    outputFormat
 	sortBy    sortMode
@@ -101,6 +109,7 @@ func init() {
 	f.StringVar(&listFlags.color, "color", "auto", "Colorize output: auto, always, never")
 	cli.BoolFlag(f, &listFlags.trash, "trash", false, "Show only trashed items")
 	cli.BoolFlagP(f, &listFlags.classify, "classify", "F", false, "Append indicator (/ for directories) to entries")
+	cli.BoolFlagP(f, &listFlags.inode, "inode", "i", false, "Print link ID for each entry")
 }
 
 func resolveOpts() (listOpts, error) {
@@ -108,7 +117,7 @@ func resolveOpts() (listOpts, error) {
 		all: listFlags.all, almostAll: listFlags.almostAll,
 		human: listFlags.human, recursive: listFlags.recursive,
 		reverse: listFlags.reverse, trash: listFlags.trash,
-		classify: listFlags.classify,
+		classify: listFlags.classify, inode: listFlags.inode,
 	}
 
 	if term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec
@@ -201,21 +210,53 @@ func resolveOpts() (listOpts, error) {
 	return opts, nil
 }
 
-func resolveLinks(ctx context.Context, dc *driveClient.Client, args []string) ([]*drive.Link, error) {
-	// No args → list root share contents (same as proton:///). 
+// collectEntries reads directory entries and resolves names once.
+// With -a: includes . and .. entries.
+// With -A: includes dot-files but not . and ..
+// Without -a/-A: skips . and .. (uses ListChildren).
+func collectEntries(ctx context.Context, dir *drive.Link, opts listOpts) ([]listEntry, error) {
+	if opts.all {
+		// -a: include . and ..
+		var entries []listEntry
+		for de := range dir.Readdir(ctx) {
+			if de.Err != nil {
+				return nil, de.Err
+			}
+			name, err := de.EntryName()
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, listEntry{entry: de, name: name})
+		}
+		return entries, nil
+	}
+	// No -a: skip . and ..
+	children, err := dir.ListChildren(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]listEntry, 0, len(children))
+	for _, l := range children {
+		name, err := l.Name()
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, listEntry{entry: drive.DirEntry{Link: l}, name: name})
+	}
+	return entries, nil
+}
+
+func resolveEntries(ctx context.Context, dc *driveClient.Client, args []string, opts listOpts) ([]listEntry, error) {
+	// No args → list root share contents (same as proton:///).
 	if len(args) == 0 {
 		share, err := dc.ResolveShareByType(ctx, proton.ShareTypeMain)
 		if err != nil {
 			return nil, fmt.Errorf("resolving root share: %w", err)
 		}
-		children, err := share.Link.ListChildren(ctx, true)
-		if err != nil {
-			return nil, err
-		}
-		return children, nil
+		return collectEntries(ctx, share.Link, opts)
 	}
 
-	var links []*drive.Link
+	var entries []listEntry
 	for _, arg := range args {
 		link, _, err := resolveProtonPath(ctx, dc, arg)
 		if err != nil {
@@ -223,22 +264,27 @@ func resolveLinks(ctx context.Context, dc *driveClient.Client, args []string) ([
 		}
 
 		if link.Type() == proton.LinkTypeFolder {
-			children, err := link.ListChildren(ctx, true)
+			dirEntries, err := collectEntries(ctx, link, opts)
 			if err != nil {
 				return nil, err
 			}
-			links = append(links, children...)
+			entries = append(entries, dirEntries...)
 		} else {
-			links = append(links, link)
+			name, err := link.Name()
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", arg, err)
+			}
+			entries = append(entries, listEntry{entry: drive.DirEntry{Link: link}, name: name})
 		}
 	}
 
-	return links, nil
+	return entries, nil
 }
 
-func filterLinks(links []*drive.Link, opts listOpts) []*drive.Link {
-	var out []*drive.Link
-	for _, l := range links {
+func filterEntries(entries []listEntry, opts listOpts) []listEntry {
+	var out []listEntry
+	for _, e := range entries {
+		l := e.entry.Link
 		state := l.State()
 
 		// --trash: show only trashed items
@@ -246,7 +292,7 @@ func filterLinks(links []*drive.Link, opts listOpts) []*drive.Link {
 			if state != proton.LinkStateTrashed {
 				continue
 			}
-			out = append(out, l)
+			out = append(out, e)
 			continue
 		}
 
@@ -262,39 +308,34 @@ func filterLinks(links []*drive.Link, opts listOpts) []*drive.Link {
 		}
 
 		// Hide dot-files unless -a or -A
-		if !opts.all && !opts.almostAll {
-			name, err := l.Name()
-			if err == nil && strings.HasPrefix(name, ".") {
-				continue
-			}
+		if !opts.all && !opts.almostAll && strings.HasPrefix(e.name, ".") {
+			continue
 		}
 
-		out = append(out, l)
+		out = append(out, e)
 	}
 	return out
 }
 
-func doSort(links []*drive.Link, opts listOpts) {
+func sortEntries(entries []listEntry, opts listOpts) {
 	if opts.sortBy == sortNone {
 		if opts.reverse {
-			for i, j := 0, len(links)-1; i < j; i, j = i+1, j-1 {
-				links[i], links[j] = links[j], links[i]
+			for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+				entries[i], entries[j] = entries[j], entries[i]
 			}
 		}
 		return
 	}
 
-	sort.SliceStable(links, func(i, j int) bool {
+	sort.SliceStable(entries, func(i, j int) bool {
 		var less bool
 		switch opts.sortBy {
 		case sortSize:
-			less = links[i].Size() > links[j].Size()
+			less = entries[i].entry.Link.Size() > entries[j].entry.Link.Size()
 		case sortTime:
-			less = links[i].ModifyTime() > links[j].ModifyTime()
+			less = entries[i].entry.Link.ModifyTime() > entries[j].entry.Link.ModifyTime()
 		default:
-			ni, _ := links[i].Name()
-			nj, _ := links[j].Name()
-			less = strings.ToLower(ni) < strings.ToLower(nj)
+			less = strings.ToLower(entries[i].name) < strings.ToLower(entries[j].name)
 		}
 		if opts.reverse {
 			return !less
@@ -343,11 +384,7 @@ const (
 )
 
 // colorName returns the display name with optional ANSI color and classify suffix.
-// Trashed items are red, directories are bold blue. With classify, directories
-// get a trailing '/'.
-func colorName(l *drive.Link, useColor bool, classify bool) string {
-	name, _ := l.Name()
-
+func colorName(name string, l *drive.Link, useColor bool, classify bool) string {
 	suffix := ""
 	if classify && l.Type() == proton.LinkTypeFolder {
 		suffix = "/"
@@ -366,60 +403,72 @@ func colorName(l *drive.Link, useColor bool, classify bool) string {
 }
 
 // rawName returns the plain name with optional classify suffix (no color).
-// Used for column width calculation.
-func rawName(l *drive.Link, classify bool) string {
-	name, _ := l.Name()
+func rawName(name string, l *drive.Link, classify bool) string {
 	if classify && l.Type() == proton.LinkTypeFolder {
 		return name + "/"
 	}
 	return name
 }
 
-func printLong(l *drive.Link, opts listOpts) {
-	fmt.Printf("%c%-9s %8s %s %s\n",
+func printLong(e listEntry, opts listOpts) {
+	l := e.entry.Link
+	prefix := ""
+	if opts.inode {
+		prefix = fmt.Sprintf("%s ", l.LinkID())
+	}
+	fmt.Printf("%s%c%-9s %8s %s %s\n",
+		prefix,
 		typeChar(l.Type()),
 		"rwxr-xr-x",
 		formatSize(l.Size(), opts),
 		formatTimestamp(l.ModifyTime(), opts.timeStyle),
-		colorName(l, opts.color, opts.classify),
+		colorName(e.name, l, opts.color, opts.classify),
 	)
 }
 
-func printLinks(links []*drive.Link, opts listOpts) {
+func printEntries(entries []listEntry, opts listOpts) {
 	switch opts.format {
 	case formatLong:
-		for _, l := range links {
-			printLong(l, opts)
+		for _, e := range entries {
+			printLong(e, opts)
 		}
 	case formatSingle:
-		for _, l := range links {
-			fmt.Println(colorName(l, opts.color, opts.classify))
+		for _, e := range entries {
+			prefix := ""
+			if opts.inode {
+				prefix = fmt.Sprintf("%s ", e.entry.Link.LinkID())
+			}
+			fmt.Println(prefix + colorName(e.name, e.entry.Link, opts.color, opts.classify))
 		}
 	case formatColumns:
-		printColumns(links, false, opts)
+		printEntryColumns(entries, false, opts)
 	case formatAcross:
-		printColumns(links, true, opts)
+		printEntryColumns(entries, true, opts)
 	}
 }
 
-func printColumns(links []*drive.Link, across bool, opts listOpts) {
-	if len(links) == 0 {
+func printEntryColumns(entries []listEntry, across bool, opts listOpts) {
+	if len(entries) == 0 {
 		return
 	}
 
-	type entry struct {
-		name    string
+	type colEntry struct {
+		raw     string
 		display string
 	}
 
-	entries := make([]entry, len(links))
+	cols := make([]colEntry, len(entries))
 	maxLen := 0
-	for i, l := range links {
-		raw := rawName(l, opts.classify)
-		entries[i] = entry{
-			name:    raw,
-			display: colorName(l, opts.color, opts.classify),
+	for i, e := range entries {
+		raw := rawName(e.name, e.entry.Link, opts.classify)
+		if opts.inode {
+			raw = e.entry.Link.LinkID() + " " + raw
 		}
+		display := colorName(e.name, e.entry.Link, opts.color, opts.classify)
+		if opts.inode {
+			display = e.entry.Link.LinkID() + " " + display
+		}
+		cols[i] = colEntry{raw: raw, display: display}
 		if len(raw) > maxLen {
 			maxLen = len(raw)
 		}
@@ -435,7 +484,7 @@ func printColumns(links []*drive.Link, across bool, opts listOpts) {
 	if numCols < 1 {
 		numCols = 1
 	}
-	numRows := (len(entries) + numCols - 1) / numCols
+	numRows := (len(cols) + numCols - 1) / numCols
 
 	for row := 0; row < numRows; row++ {
 		for col := 0; col < numCols; col++ {
@@ -445,46 +494,45 @@ func printColumns(links []*drive.Link, across bool, opts listOpts) {
 			} else {
 				idx = col*numRows + row
 			}
-			if idx >= len(entries) {
+			if idx >= len(cols) {
 				continue
 			}
-			e := entries[idx]
+			ce := cols[idx]
 			if col < numCols-1 {
-				// Pad based on raw name length, not display length (ANSI codes).
-				padding := colWidth - len(e.name)
+				padding := colWidth - len(ce.raw)
 				if padding < 0 {
 					padding = 0
 				}
-				fmt.Print(e.display)
+				fmt.Print(ce.display)
 				for i := 0; i < padding; i++ {
 					fmt.Print(" ")
 				}
 			} else {
-				fmt.Print(e.display)
+				fmt.Print(ce.display)
 			}
 		}
 		fmt.Println()
 	}
 }
 
-func listRecursive(ctx context.Context, prefix string, links []*drive.Link, opts listOpts) error {
-	for _, l := range links {
+func listRecursive(ctx context.Context, prefix string, entries []listEntry, opts listOpts) error {
+	for _, e := range entries {
+		l := e.entry.Link
 		if l.Type() != proton.LinkTypeFolder {
 			continue
 		}
 
-		name, _ := l.Name()
-		path := prefix + name + "/"
-		children, err := l.ListChildren(ctx, true)
+		path := prefix + e.name + "/"
+		children, err := collectEntries(ctx, l, opts)
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 
-		children = filterLinks(children, opts)
-		doSort(children, opts)
+		children = filterEntries(children, opts)
+		sortEntries(children, opts)
 
-		fmt.Printf("\n%s:\n", prefix+name)
-		printLinks(children, opts)
+		fmt.Printf("\n%s:\n", prefix+e.name)
+		printEntries(children, opts)
 
 		if err := listRecursive(ctx, path, children, opts); err != nil {
 			return err
@@ -514,17 +562,17 @@ func runList(_ *cobra.Command, args []string) error {
 
 	slog.Debug("drive.list", "args", args)
 
-	links, err := resolveLinks(ctx, dc, args)
+	entries, err := resolveEntries(ctx, dc, args, opts)
 	if err != nil {
 		return err
 	}
 
-	links = filterLinks(links, opts)
-	doSort(links, opts)
-	printLinks(links, opts)
+	entries = filterEntries(entries, opts)
+	sortEntries(entries, opts)
+	printEntries(entries, opts)
 
 	if opts.recursive {
-		if err := listRecursive(ctx, "", links, opts); err != nil {
+		if err := listRecursive(ctx, "", entries, opts); err != nil {
 			return err
 		}
 	}

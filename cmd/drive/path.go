@@ -43,7 +43,8 @@ func parseProtonURI(rawPath string) (sharePart, pathPart string, err error) {
 		}
 		normalized, err := drive.NormalizePath(pathPart)
 		if err != nil {
-			return "", "", err
+			// Path normalized to empty (e.g. "test1/..") → share root.
+			return "", "", nil
 		}
 		return "", normalized, nil
 	}

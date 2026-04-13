@@ -186,7 +186,7 @@ func runFind(_ *cobra.Command, args []string) error {
 	preds := buildPredicates()
 
 	for i, root := range roots {
-		results := make(chan drive.WalkEntry, 64)
+		results := make(chan driveClient.WalkEntry, 64)
 		var walkErr error
 
 		go func() {

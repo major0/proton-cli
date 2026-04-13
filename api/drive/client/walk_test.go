@@ -140,9 +140,9 @@ func genTree(t *rapid.T, prefix string, depth, maxDepth int) treeNode {
 }
 
 // collectEntries runs TreeWalk and collects all entries from the channel.
-func collectEntries(ctx context.Context, c *client.Client, root *drive.Link, rootPath string, order drive.WalkOrder) ([]drive.WalkEntry, error) {
-	results := make(chan drive.WalkEntry, 256)
-	var entries []drive.WalkEntry
+func collectEntries(ctx context.Context, c *client.Client, root *drive.Link, rootPath string, order drive.WalkOrder) ([]client.WalkEntry, error) {
+	results := make(chan client.WalkEntry, 256)
+	var entries []client.WalkEntry
 	var walkErr error
 
 	done := make(chan struct{})
@@ -280,7 +280,7 @@ func TestTreeWalk_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	results := make(chan drive.WalkEntry, 1)
+	results := make(chan client.WalkEntry, 1)
 
 	done := make(chan error, 1)
 	go func() {

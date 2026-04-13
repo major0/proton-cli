@@ -8,10 +8,20 @@ import (
 	"github.com/major0/proton-cli/api/drive"
 )
 
+// WalkEntry is a single entry yielded by TreeWalk. Lives in the client
+// layer because it carries decrypted content (EntryName, Path) that the
+// types layer (api/drive/) must not hold.
+type WalkEntry struct {
+	Path      string      // constructed traversal path from decrypted names
+	Link      *drive.Link // raw encrypted link
+	Depth     int         // depth from walk root (root = 0)
+	EntryName string      // decrypted entry name via DirEntry.EntryName()
+}
+
 // TreeWalk walks the directory tree rooted at root and sends each entry
 // to the results channel. The caller owns the channel and controls
 // buffering, backpressure, and lifetime. Cancel ctx to stop the walk.
-func (c *Client) TreeWalk(ctx context.Context, root *drive.Link, rootPath string, order drive.WalkOrder, results chan<- drive.WalkEntry) error {
+func (c *Client) TreeWalk(ctx context.Context, root *drive.Link, rootPath string, order drive.WalkOrder, results chan<- WalkEntry) error {
 	switch order {
 	case drive.DepthFirst:
 		return c.walkDepthFirst(ctx, root, rootPath, 0, "", results)
@@ -26,10 +36,9 @@ type queueItem struct {
 	depth int
 }
 
-func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPath string, results chan<- drive.WalkEntry) error {
-	// Emit the root itself.
+func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPath string, results chan<- WalkEntry) error {
 	select {
-	case results <- drive.WalkEntry{Path: rootPath, Link: root, Depth: 0}:
+	case results <- WalkEntry{Path: rootPath, Link: root, Depth: 0}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -44,21 +53,23 @@ func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPat
 				continue
 			}
 
-			for entry := range c.ReaddirNamed(ctx, item.link) {
+			for entry := range item.link.Readdir(ctx) {
 				if entry.Err != nil {
 					continue
 				}
-
-				// Skip . and ..
-				if entry.EntryName == "." || entry.EntryName == ".." {
+				name, err := entry.EntryName()
+				if err != nil {
+					continue
+				}
+				if name == "." || name == ".." {
 					continue
 				}
 
-				childPath := path.Join(item.path, entry.EntryName)
+				childPath := path.Join(item.path, name)
 				childDepth := item.depth + 1
 
 				select {
-				case results <- drive.WalkEntry{Path: childPath, Link: entry.Link, Depth: childDepth, EntryName: entry.EntryName}:
+				case results <- WalkEntry{Path: childPath, Link: entry.Link, Depth: childDepth, EntryName: name}:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -75,33 +86,33 @@ func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPat
 	return nil
 }
 
-func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath string, depth int, entryName string, results chan<- drive.WalkEntry) error {
+func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath string, depth int, entryName string, results chan<- WalkEntry) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	// If folder, recurse into children first (post-order).
 	if link.Type() == proton.LinkTypeFolder {
-		for entry := range c.ReaddirNamed(ctx, link) {
+		for entry := range link.Readdir(ctx) {
 			if entry.Err != nil {
 				continue
 			}
-
-			// Skip . and ..
-			if entry.EntryName == "." || entry.EntryName == ".." {
+			name, err := entry.EntryName()
+			if err != nil {
+				continue
+			}
+			if name == "." || name == ".." {
 				continue
 			}
 
-			childPath := path.Join(linkPath, entry.EntryName)
-			if err := c.walkDepthFirst(ctx, entry.Link, childPath, depth+1, entry.EntryName, results); err != nil {
+			childPath := path.Join(linkPath, name)
+			if err := c.walkDepthFirst(ctx, entry.Link, childPath, depth+1, name, results); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Emit this entry after all descendants.
 	select {
-	case results <- drive.WalkEntry{Path: linkPath, Link: link, Depth: depth, EntryName: entryName}:
+	case results <- WalkEntry{Path: linkPath, Link: link, Depth: depth, EntryName: entryName}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}

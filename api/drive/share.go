@@ -39,6 +39,11 @@ type Share struct {
 	protonShare *proton.Share
 	resolver    LinkResolver
 	volumeID    string // volume this share belongs to
+
+	// DirentCacheEnabled controls whether DirEntry.EntryName() caches
+	// the decrypted name on the entry. Disabled by default — opt-in
+	// per share via config-store.
+	DirentCacheEnabled bool
 }
 
 // GetName returns the decrypted name of the share's root link.

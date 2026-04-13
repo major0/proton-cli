@@ -6,12 +6,29 @@ import (
 	"sync"
 )
 
-// DirEntry is a single entry yielded by Readdir. The types layer does
-// not carry decrypted content — consumers that need names should use
-// the client layer's ReaddirNamed.
+// DirEntry is a single entry yielded by Readdir.
 type DirEntry struct {
 	Link *Link
 	Err  error
+	name string // pre-set for . and ..; cached for children when dirent cache enabled
+}
+
+// EntryName returns the display name for this entry. For . and ..,
+// returns the pre-set literal. For children, calls Link.Name() to
+// decrypt on demand. When the share's dirent cache is enabled, the
+// resolved name is stored for subsequent calls.
+func (e *DirEntry) EntryName() (string, error) {
+	if e.name != "" {
+		return e.name, nil
+	}
+	name, err := e.Link.Name()
+	if err != nil {
+		return "", err
+	}
+	if e.Link.share != nil && e.Link.share.DirentCacheEnabled {
+		e.name = name
+	}
+	return name, nil
 }
 
 // Readdir returns a channel that yields directory entries for this folder.
@@ -31,13 +48,14 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 
 		// Emit . (self) and .. (parent) as the first two entries.
 		// For share roots, both point to the same link (POSIX /.. → /).
+		// Names are pre-set — no decryption needed.
 		select {
-		case ch <- DirEntry{Link: l}:
+		case ch <- DirEntry{Link: l, name: "."}:
 		case <-ctx.Done():
 			return
 		}
 		select {
-		case ch <- DirEntry{Link: l.Parent()}:
+		case ch <- DirEntry{Link: l.Parent(), name: ".."}:
 		case <-ctx.Done():
 			return
 		}
@@ -130,24 +148,17 @@ func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	first := true
-	second := true
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
 			return nil, entry.Err
 		}
-		// Skip . and .. (first two entries by convention).
-		if first {
-			first = false
-			continue
-		}
-		if second {
-			second = false
-			continue
-		}
-		entryName, err := entry.Link.Name()
+		entryName, err := entry.EntryName()
 		if err != nil {
 			return nil, err
+		}
+		// Skip . and ..
+		if entryName == "." || entryName == ".." {
+			continue
 		}
 		if entryName == name {
 			return entry.Link, nil
@@ -161,17 +172,18 @@ func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 // Built on Readdir — prefer Readdir for streaming or early termination.
 func (l *Link) ListChildren(ctx context.Context, _ bool) ([]*Link, error) {
 	links := make([]*Link, 0, 16)
-	idx := 0
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
 			return nil, entry.Err
 		}
-		// Skip . (idx 0) and .. (idx 1).
-		if idx < 2 {
-			idx++
+		entryName, err := entry.EntryName()
+		if err != nil {
+			return nil, err
+		}
+		// Skip . and ..
+		if entryName == "." || entryName == ".." {
 			continue
 		}
-		idx++
 		links = append(links, entry.Link)
 	}
 	return links, nil

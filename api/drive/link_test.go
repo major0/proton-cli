@@ -588,15 +588,19 @@ func TestDotDotDotCorrectness_Property(t *testing.T) {
 	})
 }
 
-// TestDirEntryHasNoDecryptedContent_Property verifies that the DirEntry
-// struct contains only Link and Err fields — no name or other decrypted
-// content.
+// TestDirEntryFields_Property verifies that the DirEntry struct contains
+// only the expected fields: Link, Err, and the unexported name field
+// used for pre-set . and .. literals. No other decrypted content is
+// stored on the struct.
 //
-// **Property 3: DirEntry Has No Decrypted Content**
+// **Property 3: DirEntry Carries Only Controlled State**
 // **Validates: Requirement 2.4**
-func TestDirEntryHasNoDecryptedContent_Property(t *testing.T) {
+func TestDirEntryFields_Property(t *testing.T) {
 	typ := reflect.TypeOf(DirEntry{})
-	allowed := map[string]bool{"Link": true, "Err": true}
+	// Link and Err are exported; name is unexported and pre-set only
+	// for . and .. entries (never populated from decryption results
+	// in the types layer).
+	allowed := map[string]bool{"Link": true, "Err": true, "name": true}
 
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
@@ -605,8 +609,14 @@ func TestDirEntryHasNoDecryptedContent_Property(t *testing.T) {
 		}
 	}
 
-	if typ.NumField() != 2 {
-		t.Fatalf("DirEntry has %d fields, expected 2 (Link, Err)", typ.NumField())
+	if typ.NumField() != 3 {
+		t.Fatalf("DirEntry has %d fields, expected 3 (Link, Err, name)", typ.NumField())
+	}
+
+	// Verify name is unexported (controlled access only via EntryName).
+	nameField, _ := typ.FieldByName("name")
+	if nameField.IsExported() {
+		t.Fatal("DirEntry.name must be unexported — decrypted names are accessed via EntryName()")
 	}
 }
 
