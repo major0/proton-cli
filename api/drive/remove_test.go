@@ -69,7 +69,7 @@ func makeTestFolder(resolver LinkResolver, name string) *Link {
 	rootLink.name = "root"
 	rootLink.decrypted = true
 
-	share := NewShare(pShare, nil, rootLink, resolver)
+	share := NewShare(pShare, nil, rootLink, resolver, "")
 	rootLink.share = share
 
 	folderPLink := &proton.Link{LinkID: name, Type: proton.LinkTypeFolder}
@@ -98,7 +98,7 @@ func makeTestShareRoot(resolver LinkResolver) (*Link, *Share) {
 	rootLink.name = "root"
 	rootLink.decrypted = true
 
-	share := NewShare(pShare, nil, rootLink, resolver)
+	share := NewShare(pShare, nil, rootLink, resolver, "")
 	rootLink.share = share
 
 	return rootLink, share

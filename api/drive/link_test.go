@@ -336,7 +336,7 @@ func TestParentChainIntegrity_Property(t *testing.T) {
 		)
 		share := NewShare(
 			&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
-			nil, root, resolver,
+			nil, root, resolver, "",
 		)
 		root = NewTestLink(
 			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},
@@ -388,7 +388,7 @@ func TestAbsPathRoundTrip_Property(t *testing.T) {
 		)
 		share := NewShare(
 			&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
-			nil, root, resolver,
+			nil, root, resolver, "",
 		)
 		root = NewTestLink(
 			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},
@@ -438,7 +438,7 @@ func TestDotDotResolution_Property(t *testing.T) {
 		)
 		share := NewShare(
 			&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
-			nil, root, resolver,
+			nil, root, resolver, "",
 		)
 		root = NewTestLink(
 			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},

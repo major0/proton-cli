@@ -8,3 +8,6 @@ import "github.com/ProtonMail/go-proton-api"
 type Volume struct {
 	ProtonVolume proton.Volume
 }
+
+// VolumeID returns the stable device identifier for this volume.
+func (v *Volume) VolumeID() string { return v.ProtonVolume.VolumeID }

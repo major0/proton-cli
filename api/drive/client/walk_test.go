@@ -90,7 +90,7 @@ func buildResolver(root treeNode) *drive.Link {
 	}
 	rootPLink := &proton.Link{LinkID: root.id, Type: lt}
 	rootLink := drive.NewTestLink(rootPLink, nil, nil, r, root.name)
-	share := drive.NewShare(pShare, nil, rootLink, r)
+	share := drive.NewShare(pShare, nil, rootLink, r, "")
 
 	// Re-create root link with share set.
 	rootLink = drive.NewTestLink(rootPLink, nil, share, r, root.name)
@@ -344,7 +344,7 @@ func TestTreeWalk_FileRoot(t *testing.T) {
 	}
 	rootPLink := &proton.Link{LinkID: "file-root", Type: proton.LinkTypeFile}
 	rootLink := drive.NewTestLink(rootPLink, nil, nil, r, "myfile.txt")
-	share := drive.NewShare(pShare, nil, rootLink, r)
+	share := drive.NewShare(pShare, nil, rootLink, r, "")
 	rootLink = drive.NewTestLink(rootPLink, nil, share, r, "myfile.txt")
 	share.Link = rootLink
 

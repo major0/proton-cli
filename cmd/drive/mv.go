@@ -115,10 +115,10 @@ func mvMultiple(ctx context.Context, dc *driveClient.Client, srcPaths []string, 
 	return nil
 }
 
-func doMove(ctx context.Context, dc *driveClient.Client, srcShare *drive.Share, src *drive.Link, destShare *drive.Share, destParent *drive.Link, newName string) error {
-	// Currently only support moves within the same share.
-	if srcShare != destShare {
-		return fmt.Errorf("mv: cross-share moves not supported")
+func doMove(ctx context.Context, dc *driveClient.Client, srcShare *drive.Share, src *drive.Link, _ *drive.Share, destParent *drive.Link, newName string) error {
+	// Currently only support moves within the same volume.
+	if !drive.SameDevice(src, destParent) {
+		return fmt.Errorf("mv: cross-volume moves not supported (source and destination are on different volumes)")
 	}
 
 	if err := dc.Move(ctx, srcShare, src, destParent, newName); err != nil {

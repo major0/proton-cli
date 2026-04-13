@@ -130,7 +130,7 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 		return nil, err
 	}
 
-	share := drive.NewShare(&pShare, shareKR, nil, c)
+	share := drive.NewShare(&pShare, shareKR, nil, c, pShare.VolumeID)
 	link := drive.NewLink(&pLink, nil, share, c)
 	// Set the link on the share after construction to break the circular reference.
 	share.Link = link

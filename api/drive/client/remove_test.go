@@ -50,7 +50,7 @@ func TestRemove_ShareRoot_Property(t *testing.T) {
 		}
 		rootPLink := &proton.Link{LinkID: "root-link", Type: proton.LinkTypeFolder}
 		rootLink := drive.NewLink(rootPLink, nil, nil, resolver)
-		share := drive.NewShare(pShare, nil, rootLink, resolver)
+		share := drive.NewShare(pShare, nil, rootLink, resolver, "")
 
 		// Share root link: ParentLink() == nil.
 		linkPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}

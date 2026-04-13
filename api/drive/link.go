@@ -222,6 +222,19 @@ func (l *Link) AbsPath(_ context.Context) (string, error) {
 // Share returns the Link's associated Share.
 func (l *Link) Share() *Share { return l.share }
 
+// VolumeID returns the volume ID for this link's share.
+func (l *Link) VolumeID() string {
+	if l.share == nil {
+		return ""
+	}
+	return l.share.VolumeID()
+}
+
+// SameDevice returns true if two links are on the same volume.
+func SameDevice(a, b *Link) bool {
+	return a.VolumeID() == b.VolumeID()
+}
+
 // NewLink creates a Link wrapper without decrypting anything.
 // parent is the parent directory link. For share roots, pass nil —
 // Parent() will return self, matching POSIX /.. → / behavior.

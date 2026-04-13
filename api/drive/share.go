@@ -38,6 +38,7 @@ type Share struct {
 	keyRing     *crypto.KeyRing
 	protonShare *proton.Share
 	resolver    LinkResolver
+	volumeID    string // volume this share belongs to
 }
 
 // GetName returns the decrypted name of the share's root link.
@@ -69,13 +70,17 @@ func (s *Share) ProtonShare() *proton.Share { return s.protonShare }
 // KeyRingValue returns the share's keyring.
 func (s *Share) KeyRingValue() *crypto.KeyRing { return s.keyRing }
 
+// VolumeID returns the volume ID this share belongs to.
+func (s *Share) VolumeID() string { return s.volumeID }
+
 // NewShare constructs a Share. Used by the client package.
-func NewShare(pShare *proton.Share, keyRing *crypto.KeyRing, link *Link, resolver LinkResolver) *Share {
+func NewShare(pShare *proton.Share, keyRing *crypto.KeyRing, link *Link, resolver LinkResolver, volumeID string) *Share {
 	return &Share{
 		protonShare: pShare,
 		keyRing:     keyRing,
 		Link:        link,
 		resolver:    resolver,
+		volumeID:    volumeID,
 	}
 }
 
