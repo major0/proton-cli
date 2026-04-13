@@ -65,11 +65,9 @@ func printShareMetadata(ctx context.Context, s *drive.Share) {
 	shareName, _ := s.GetName(ctx)
 
 	fmt.Printf("Share:    %s\n", shareName)
-	fmt.Printf("ID:       %s\n", meta.ShareID)
 	fmt.Printf("Type:     %s\n", drive.FormatShareType(meta.Type))
 	fmt.Printf("Creator:  %s\n", meta.Creator)
 	fmt.Printf("Created:  %s\n", fmtTime(meta.CreationTime))
-	fmt.Printf("Address:  %s\n", s.ProtonShare().AddressID)
 }
 
 func printMembers(ctx context.Context, sc *shareClient.Client, shareID string) {
