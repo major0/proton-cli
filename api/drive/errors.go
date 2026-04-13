@@ -12,6 +12,4 @@ var (
 	ErrNotEmpty = errors.New("directory not empty")
 	// ErrInvalidPath indicates that the provided path is malformed.
 	ErrInvalidPath = errors.New("invalid path")
-	// ErrSkipDir is returned by WalkFunc to skip a directory subtree.
-	ErrSkipDir = errors.New("skip directory")
 )
