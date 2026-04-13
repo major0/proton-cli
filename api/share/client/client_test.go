@@ -31,7 +31,7 @@ func TestListMembers(t *testing.T) {
 		if r.Method != "GET" {
 			t.Fatalf("method = %s, want GET", r.Method)
 		}
-		if !strings.HasSuffix(r.URL.Path, "/drive/shares/share-1/members") {
+		if !strings.HasSuffix(r.URL.Path, "/drive/v2/shares/share-1/members") {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		json.NewEncoder(w).Encode(share.MembersResponse{
@@ -58,7 +58,7 @@ func TestRemoveMember(t *testing.T) {
 		if r.Method != "DELETE" {
 			t.Fatalf("method = %s, want DELETE", r.Method)
 		}
-		if !strings.HasSuffix(r.URL.Path, "/drive/shares/share-1/members/m1") {
+		if !strings.HasSuffix(r.URL.Path, "/drive/v2/shares/share-1/members/m1") {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		json.NewEncoder(w).Encode(map[string]int{"Code": 1000})

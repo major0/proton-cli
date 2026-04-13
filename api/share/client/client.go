@@ -23,7 +23,7 @@ func NewClient(session *api.Session) *Client {
 
 // ListMembers returns all members of a share.
 func (c *Client) ListMembers(ctx context.Context, shareID string) ([]share.Member, error) {
-	path := fmt.Sprintf("/drive/shares/%s/members", shareID)
+	path := fmt.Sprintf("/drive/v2/shares/%s/members", shareID)
 	var resp share.MembersResponse
 	if err := c.Session.DoJSON(ctx, "GET", path, nil, &resp); err != nil {
 		return nil, fmt.Errorf("share.ListMembers %s: %w", shareID, err)
@@ -33,7 +33,7 @@ func (c *Client) ListMembers(ctx context.Context, shareID string) ([]share.Membe
 
 // RemoveMember removes a member from a share.
 func (c *Client) RemoveMember(ctx context.Context, shareID, memberID string) error {
-	path := fmt.Sprintf("/drive/shares/%s/members/%s", shareID, memberID)
+	path := fmt.Sprintf("/drive/v2/shares/%s/members/%s", shareID, memberID)
 	if err := c.Session.DoJSON(ctx, "DELETE", path, nil, nil); err != nil {
 		return fmt.Errorf("share.RemoveMember %s/%s: %w", shareID, memberID, err)
 	}
