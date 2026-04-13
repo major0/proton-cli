@@ -318,3 +318,160 @@ func TestDecrypt_TransientThenRetry(t *testing.T) {
 		t.Fatal("expected decrypted=true after permanent error on retry")
 	}
 }
+
+// TestParentChainIntegrity_Property verifies that for any link obtained
+// via a mock chain, repeated Parent() calls reach a self-referencing root.
+//
+// **Property 9: Parent Chain Integrity**
+// **Validates: Requirements 11.1, 11.2**
+func TestParentChainIntegrity_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		depth := rapid.IntRange(0, 10).Draw(t, "depth")
+
+		resolver := &mockLinkResolver{}
+		// Build a chain: root → child1 → child2 → ... → childN
+		root := NewTestLink(
+			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},
+			nil, nil, resolver, "root",
+		)
+		share := NewShare(
+			&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
+			nil, root, resolver,
+		)
+		root = NewTestLink(
+			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},
+			nil, share, resolver, "root",
+		)
+		share.Link = root
+
+		current := root
+		for i := 0; i < depth; i++ {
+			child := NewTestLink(
+				&proton.Link{LinkID: fmt.Sprintf("child-%d", i), Type: proton.LinkTypeFolder},
+				current, share, resolver, fmt.Sprintf("child%d", i),
+			)
+			current = child
+		}
+
+		// Walk Parent() chain — should reach root (self-referencing).
+		walker := current
+		for i := 0; i <= depth+5; i++ {
+			parent := walker.Parent()
+			if parent == walker {
+				// Reached self-referencing root.
+				return
+			}
+			walker = parent
+		}
+		t.Fatal("parent chain did not reach self-referencing root")
+	})
+}
+
+// TestAbsPathRoundTrip_Property verifies that for any link reachable by
+// building a chain, AbsPath returns a path that matches the expected
+// construction from decrypted names.
+//
+// **Property 10: AbsPath Round-Trip**
+// **Validates: Requirement 11.5**
+func TestAbsPathRoundTrip_Property(t *testing.T) {
+	// Generate safe path segment names (non-empty, no slashes, no dots).
+	segmentGen := rapid.StringMatching(`[a-zA-Z0-9_-]{1,20}`)
+
+	rapid.Check(t, func(t *rapid.T) {
+		depth := rapid.IntRange(0, 8).Draw(t, "depth")
+		rootName := segmentGen.Draw(t, "rootName")
+
+		resolver := &mockLinkResolver{}
+		root := NewTestLink(
+			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},
+			nil, nil, resolver, rootName,
+		)
+		share := NewShare(
+			&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
+			nil, root, resolver,
+		)
+		root = NewTestLink(
+			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},
+			nil, share, resolver, rootName,
+		)
+		share.Link = root
+
+		// Build chain and collect expected path segments.
+		names := []string{rootName}
+		current := root
+		for i := 0; i < depth; i++ {
+			childName := segmentGen.Draw(t, fmt.Sprintf("name-%d", i))
+			child := NewTestLink(
+				&proton.Link{LinkID: fmt.Sprintf("child-%d", i), Type: proton.LinkTypeFolder},
+				current, share, resolver, childName,
+			)
+			names = append(names, childName)
+			current = child
+		}
+
+		ctx := context.Background()
+		absPath, err := current.AbsPath(ctx)
+		if err != nil {
+			t.Fatalf("AbsPath failed: %v", err)
+		}
+
+		expected := strings.Join(names, "/")
+		if absPath != expected {
+			t.Fatalf("AbsPath = %q, want %q", absPath, expected)
+		}
+	})
+}
+
+// TestDotDotResolution_Property verifies that ResolvePath("..") equals
+// Parent() for non-root links, and equals self for share roots.
+//
+// **Property 11: Dot-Dot Resolution**
+// **Validates: Requirements 11.1, 11.3**
+func TestDotDotResolution_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		depth := rapid.IntRange(0, 8).Draw(t, "depth")
+
+		resolver := &mockLinkResolver{}
+		root := NewTestLink(
+			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},
+			nil, nil, resolver, "root",
+		)
+		share := NewShare(
+			&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
+			nil, root, resolver,
+		)
+		root = NewTestLink(
+			&proton.Link{LinkID: "root", Type: proton.LinkTypeFolder},
+			nil, share, resolver, "root",
+		)
+		share.Link = root
+
+		current := root
+		for i := 0; i < depth; i++ {
+			child := NewTestLink(
+				&proton.Link{LinkID: fmt.Sprintf("child-%d", i), Type: proton.LinkTypeFolder},
+				current, share, resolver, fmt.Sprintf("child%d", i),
+			)
+			current = child
+		}
+
+		ctx := context.Background()
+		resolved, err := current.ResolvePath(ctx, "..", false)
+		if err != nil {
+			t.Fatalf("ResolvePath(..) failed: %v", err)
+		}
+
+		parent := current.Parent()
+		if resolved != parent {
+			t.Fatalf("ResolvePath(..) returned %p (LinkID=%s), Parent() returned %p (LinkID=%s)",
+				resolved, resolved.LinkID(), parent, parent.LinkID())
+		}
+
+		// For share root specifically, both should be self.
+		if depth == 0 {
+			if resolved != current {
+				t.Fatalf("share root: ResolvePath(..) should return self, got LinkID=%s", resolved.LinkID())
+			}
+		}
+	})
+}
