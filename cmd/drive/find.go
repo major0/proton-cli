@@ -54,13 +54,13 @@ func init() {
 	cli.BoolFlag(f, &findFlags.trashed, "trashed", false, "Include trashed items in results")
 }
 
-type findPredicate func(p string, l *drive.Link, depth int) bool
+type findPredicate func(p string, l *drive.Link, depth int, entryName string) bool
 
 func buildPredicates() []findPredicate {
 	var preds []findPredicate
 
 	if findFlags.findType != "" {
-		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int, _ string) bool {
 			switch findFlags.findType {
 			case "f":
 				return l.Type() == proton.LinkTypeFile
@@ -73,42 +73,34 @@ func buildPredicates() []findPredicate {
 	}
 
 	if findFlags.name != "" {
-		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
-			name, err := l.Name()
-			if err != nil {
-				return false
-			}
-			matched, _ := path.Match(findFlags.name, name)
+		preds = append(preds, func(_ string, _ *drive.Link, _ int, entryName string) bool {
+			matched, _ := path.Match(findFlags.name, entryName)
 			return matched
 		})
 	}
 
 	if findFlags.iname != "" {
 		pattern := strings.ToLower(findFlags.iname)
-		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
-			name, err := l.Name()
-			if err != nil {
-				return false
-			}
-			matched, _ := path.Match(pattern, strings.ToLower(name))
+		preds = append(preds, func(_ string, _ *drive.Link, _ int, entryName string) bool {
+			matched, _ := path.Match(pattern, strings.ToLower(entryName))
 			return matched
 		})
 	}
 
 	if findFlags.minSize > 0 {
-		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int, _ string) bool {
 			return l.Size() >= findFlags.minSize
 		})
 	}
 
 	if findFlags.maxSize > 0 {
-		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int, _ string) bool {
 			return l.Size() <= findFlags.maxSize
 		})
 	}
 
 	if findFlags.mtime != 0 {
-		preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
+		preds = append(preds, func(_ string, l *drive.Link, _ int, _ string) bool {
 			mt := time.Unix(l.ModifyTime(), 0)
 			days := time.Since(mt).Hours() / 24
 			if findFlags.mtime < 0 {
@@ -121,7 +113,7 @@ func buildPredicates() []findPredicate {
 	if findFlags.newer != "" {
 		t, err := time.Parse("2006-01-02", findFlags.newer)
 		if err == nil {
-			preds = append(preds, func(_ string, l *drive.Link, _ int) bool {
+			preds = append(preds, func(_ string, l *drive.Link, _ int, _ string) bool {
 				return time.Unix(l.ModifyTime(), 0).After(t)
 			})
 		}
@@ -130,9 +122,9 @@ func buildPredicates() []findPredicate {
 	return preds
 }
 
-func matchAll(preds []findPredicate, p string, l *drive.Link, depth int) bool {
+func matchAll(preds []findPredicate, p string, l *drive.Link, depth int, entryName string) bool {
 	for _, pred := range preds {
-		if !pred(p, l, depth) {
+		if !pred(p, l, depth, entryName) {
 			return false
 		}
 	}
@@ -217,7 +209,7 @@ func runFind(_ *cobra.Command, args []string) error {
 				continue
 			}
 
-			if matchAll(preds, entry.Path, entry.Link, entry.Depth) {
+			if matchAll(preds, entry.Path, entry.Link, entry.Depth, entry.EntryName) {
 				fmt.Print(entry.Path + sep)
 			}
 		}

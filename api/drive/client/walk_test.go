@@ -396,3 +396,36 @@ func TestTreeWalk_EntryCount(t *testing.T) {
 		t.Fatalf("expected %d entries, got %d", expected, len(bfEntries))
 	}
 }
+
+// TestWalkEntryNamePropagation_Property verifies that for all non-root
+// WalkEntry values, EntryName is non-empty.
+//
+// **Property 7: WalkEntry.EntryName Propagation**
+// **Validates: Requirement 4.1**
+func TestWalkEntryNamePropagation_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		maxDepth := rapid.IntRange(1, 4).Draw(t, "maxDepth")
+		tree := genTree(t, "root", 0, maxDepth)
+
+		rootLink := buildResolver(tree)
+		c := &client.Client{}
+
+		for _, order := range []drive.WalkOrder{drive.BreadthFirst, drive.DepthFirst} {
+			entries, err := collectEntries(context.Background(), c, rootLink, "root", order)
+			if err != nil {
+				t.Fatalf("TreeWalk: %v", err)
+			}
+
+			for _, entry := range entries {
+				// Root entry has no EntryName (it's the walk starting point).
+				if entry.Depth == 0 {
+					continue
+				}
+				if entry.EntryName == "" {
+					t.Fatalf("non-root WalkEntry at path %q depth %d has empty EntryName",
+						entry.Path, entry.Depth)
+				}
+			}
+		}
+	})
+}

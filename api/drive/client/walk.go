@@ -14,7 +14,7 @@ import (
 func (c *Client) TreeWalk(ctx context.Context, root *drive.Link, rootPath string, order drive.WalkOrder, results chan<- drive.WalkEntry) error {
 	switch order {
 	case drive.DepthFirst:
-		return c.walkDepthFirst(ctx, root, rootPath, 0, results)
+		return c.walkDepthFirst(ctx, root, rootPath, 0, "", results)
 	default:
 		return c.walkBreadthFirst(ctx, root, rootPath, results)
 	}
@@ -44,29 +44,21 @@ func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPat
 				continue
 			}
 
-			idx := 0
-			for entry := range item.link.Readdir(ctx) {
+			for entry := range c.ReaddirNamed(ctx, item.link) {
 				if entry.Err != nil {
 					continue
 				}
 
-				// Skip . and .. (first two entries).
-				if idx < 2 {
-					idx++
-					continue
-				}
-				idx++
-
-				childName, err := entry.Link.Name()
-				if err != nil {
+				// Skip . and ..
+				if entry.EntryName == "." || entry.EntryName == ".." {
 					continue
 				}
 
-				childPath := path.Join(item.path, childName)
+				childPath := path.Join(item.path, entry.EntryName)
 				childDepth := item.depth + 1
 
 				select {
-				case results <- drive.WalkEntry{Path: childPath, Link: entry.Link, Depth: childDepth}:
+				case results <- drive.WalkEntry{Path: childPath, Link: entry.Link, Depth: childDepth, EntryName: entry.EntryName}:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -83,33 +75,25 @@ func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPat
 	return nil
 }
 
-func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath string, depth int, results chan<- drive.WalkEntry) error {
+func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath string, depth int, entryName string, results chan<- drive.WalkEntry) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
 	// If folder, recurse into children first (post-order).
 	if link.Type() == proton.LinkTypeFolder {
-		idx := 0
-		for entry := range link.Readdir(ctx) {
+		for entry := range c.ReaddirNamed(ctx, link) {
 			if entry.Err != nil {
 				continue
 			}
 
-			// Skip . and .. (first two entries).
-			if idx < 2 {
-				idx++
-				continue
-			}
-			idx++
-
-			childName, err := entry.Link.Name()
-			if err != nil {
+			// Skip . and ..
+			if entry.EntryName == "." || entry.EntryName == ".." {
 				continue
 			}
 
-			childPath := path.Join(linkPath, childName)
-			if err := c.walkDepthFirst(ctx, entry.Link, childPath, depth+1, results); err != nil {
+			childPath := path.Join(linkPath, entry.EntryName)
+			if err := c.walkDepthFirst(ctx, entry.Link, childPath, depth+1, entry.EntryName, results); err != nil {
 				return err
 			}
 		}
@@ -117,7 +101,7 @@ func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath 
 
 	// Emit this entry after all descendants.
 	select {
-	case results <- drive.WalkEntry{Path: linkPath, Link: link, Depth: depth}:
+	case results <- drive.WalkEntry{Path: linkPath, Link: link, Depth: depth, EntryName: entryName}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
