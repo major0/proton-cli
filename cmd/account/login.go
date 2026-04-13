@@ -58,10 +58,7 @@ var authLoginCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 
-		// Build manager hook for debug logging at verbosity >= 3.
-		managerHook := cli.ManagerHook()
-
-		session, err := common.SessionFromLogin(ctx, cli.ProtonOpts, username, password, nil, managerHook)
+		session, err := common.SessionFromLogin(ctx, cli.ProtonOpts, username, password, nil, nil)
 		if err != nil {
 			// Check for HV error (code 9001).
 			apiErr := new(proton.APIError)

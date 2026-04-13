@@ -100,18 +100,10 @@ func AddCommand(cmd *cobra.Command) {
 	rootCmd.AddCommand(cmd)
 }
 
-// ManagerHook returns the debug hook callback when DebugHTTP is enabled,
-// or nil otherwise. Pass the result to SessionFromLogin, SessionRestore, etc.
-func ManagerHook() func(*proton.Manager) {
-	// Temporarily disabled — WithDebug(true) provides resty-level logging.
-	// Our custom hooks may conflict with resty's debug mode.
-	return nil
-}
-
 // RestoreSession returns a fully initialized, ready-to-use session using
-// the package-level ProtonOpts, SessionStoreVar, and ManagerHook.
+// the package-level ProtonOpts and SessionStoreVar.
 func RestoreSession(ctx context.Context) (*common.Session, error) {
-	return common.ReadySession(ctx, ProtonOpts, SessionStoreVar, ManagerHook())
+	return common.ReadySession(ctx, ProtonOpts, SessionStoreVar, nil)
 }
 
 // Execute runs the root command and exits on error.
