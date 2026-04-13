@@ -334,6 +334,11 @@ func SessionList(store SessionStore) ([]string, error) {
 // The same manager (and cookie jar) is used for both initial and HV-retried
 // login attempts — this is required because Proton's backend correlates the
 // solved CAPTCHA with the session cookie from the initial attempt.
+//
+// On error, the returned *Session is intentionally non-nil and reusable for
+// SessionRetryWithHV. The manager and cookie jar must be preserved across
+// attempts so that the solved CAPTCHA correlates with the session cookie
+// established during the initial (failed) login request.
 func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string, hvDetails *proton.APIHVDetails, managerHook func(*proton.Manager)) (*Session, error) {
 	session, manager := sessionFromLogin(options, managerHook)
 
