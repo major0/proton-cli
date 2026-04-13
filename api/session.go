@@ -94,6 +94,7 @@ type SessionOptions struct {
 type Session struct {
 	Client  *proton.Client
 	Auth    proton.Auth
+	BaseURL string // override for DoJSON; defaults to proton.DefaultHostURL
 	manager *proton.Manager
 
 	cookieJar http.CookieJar
@@ -242,7 +243,11 @@ type apiEnvelope struct {
 func (s *Session) DoJSON(ctx context.Context, method, path string, body, result any) error {
 	reqURL := path
 	if !strings.HasPrefix(path, "http") {
-		reqURL = proton.DefaultHostURL + path
+		base := s.BaseURL
+		if base == "" {
+			base = proton.DefaultHostURL
+		}
+		reqURL = base + path
 	}
 
 	var bodyReader io.Reader
