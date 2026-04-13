@@ -6,17 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api"
 )
 
-// Link represents a file or folder in a Proton Drive share. Fields are
-// decrypted lazily — the raw encrypted proton.Link is retained and
-// decryption happens on first access. This keeps encrypted data in memory
-// as long as possible and avoids decrypting nodes that are never read.
+// Link represents a file or folder in a Proton Drive share. The raw
+// encrypted proton.Link is the canonical representation. Decrypted
+// fields (name, keyrings) are derived on demand and never cached —
+// Name() and KeyRing() decrypt on every call.
 type Link struct {
 	// Raw encrypted link from the API. Always populated.
 	protonLink *proton.Link
@@ -26,15 +25,9 @@ type Link struct {
 	resolver   LinkResolver
 	share      *Share
 
-	// Lazy-decrypted fields, protected by mu.
-	// decrypted is true when decryption succeeded or failed permanently.
-	// Transient errors leave decrypted false to allow retry.
-	mu          sync.Mutex
-	decrypted   bool
-	decryptErr  error
-	name        string
-	keyRing     *crypto.KeyRing
-	nameKeyRing *crypto.KeyRing
+	// testName overrides Name() when non-empty. Set only by
+	// NewTestLink to avoid needing real crypto in tests.
+	testName string
 }
 
 // Type returns the link type (file or folder) without decryption.
@@ -78,70 +71,28 @@ func isTransient(err error) bool {
 		errors.Is(err, context.DeadlineExceeded)
 }
 
-// decrypt performs lazy decryption of the link's name and keyrings.
-// Permanent errors are cached; transient errors allow retry.
-// Safe to call from multiple goroutines.
-func (l *Link) decrypt() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if l.decrypted {
-		return l.decryptErr
+// Name returns the decrypted name. Decrypts on every call — no state
+// is retained on the Link. For test links with testName set, returns
+// the override directly.
+func (l *Link) Name() (string, error) {
+	if l.testName != "" {
+		return l.testName, nil
 	}
-
 	parentKR, err := l.getParentKeyRing()
 	if err != nil {
-		if isTransient(err) {
-			return fmt.Errorf("decrypt %s: parent keyring: %w", l.protonLink.LinkID, err)
-		}
-		l.decryptErr = fmt.Errorf("decrypt %s: parent keyring: %w", l.protonLink.LinkID, err)
-		l.decrypted = true
-		return l.decryptErr
+		return "", fmt.Errorf("name %s: parent keyring: %w", l.protonLink.LinkID, err)
 	}
-
-	l.keyRing, err = l.deriveKeyRing(parentKR)
-	if err != nil {
-		if isTransient(err) {
-			return fmt.Errorf("decrypt %s: keyring: %w", l.protonLink.LinkID, err)
-		}
-		l.decryptErr = fmt.Errorf("decrypt %s: keyring: %w", l.protonLink.LinkID, err)
-		l.decrypted = true
-		return l.decryptErr
-	}
-
-	l.nameKeyRing = l.keyRing
-
-	l.name, err = l.decryptName(parentKR)
-	if err != nil {
-		if isTransient(err) {
-			// Clear partially-set fields on transient failure.
-			l.keyRing = nil
-			l.nameKeyRing = nil
-			return fmt.Errorf("decrypt %s: name: %w", l.protonLink.LinkID, err)
-		}
-		l.decryptErr = fmt.Errorf("decrypt %s: name: %w", l.protonLink.LinkID, err)
-		l.decrypted = true
-		return l.decryptErr
-	}
-
-	l.decrypted = true
-	return nil
+	return l.decryptName(parentKR)
 }
 
-// Name returns the decrypted name. Triggers lazy decryption on first call.
-func (l *Link) Name() (string, error) {
-	if err := l.decrypt(); err != nil {
-		return "", err
-	}
-	return l.name, nil
-}
-
-// KeyRing returns the link's decrypted keyring. Triggers lazy decryption.
+// KeyRing returns the link's keyring. Derives on every call — no state
+// is retained on the Link.
 func (l *Link) KeyRing() (*crypto.KeyRing, error) {
-	if err := l.decrypt(); err != nil {
-		return nil, err
+	parentKR, err := l.getParentKeyRing()
+	if err != nil {
+		return nil, fmt.Errorf("keyring %s: parent keyring: %w", l.protonLink.LinkID, err)
 	}
-	return l.keyRing, nil
+	return l.deriveKeyRing(parentKR)
 }
 
 // getParentKeyRing returns the parent's keyring for decryption.

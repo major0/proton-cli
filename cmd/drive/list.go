@@ -60,13 +60,14 @@ type listOpts struct {
 	color     bool
 	trash     bool
 	classify  bool
+	inode     bool
 }
 
 var listFlags struct {
 	all, almostAll, long, single, across, columns bool
 	human, recursive, reverse                     bool
 	sortSize, sortTime, unsorted                  bool
-	fullTime, trash, classify                     bool
+	fullTime, trash, classify, inode              bool
 	format, sortWord, timeStyle, color            string
 }
 

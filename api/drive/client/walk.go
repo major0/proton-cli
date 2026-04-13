@@ -44,10 +44,18 @@ func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPat
 				continue
 			}
 
+			idx := 0
 			for entry := range item.link.Readdir(ctx) {
 				if entry.Err != nil {
 					continue
 				}
+
+				// Skip . and .. (first two entries).
+				if idx < 2 {
+					idx++
+					continue
+				}
+				idx++
 
 				childName, err := entry.Link.Name()
 				if err != nil {
@@ -82,10 +90,18 @@ func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath 
 
 	// If folder, recurse into children first (post-order).
 	if link.Type() == proton.LinkTypeFolder {
+		idx := 0
 		for entry := range link.Readdir(ctx) {
 			if entry.Err != nil {
 				continue
 			}
+
+			// Skip . and .. (first two entries).
+			if idx < 2 {
+				idx++
+				continue
+			}
+			idx++
 
 			childName, err := entry.Link.Name()
 			if err != nil {

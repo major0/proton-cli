@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -169,153 +170,59 @@ func TestIsTransient_KnownErrors(t *testing.T) {
 	}
 }
 
-// transientResolver is a mock LinkResolver that returns transient errors
-// on the first N calls to getParentKeyRing (via the parent link's KeyRing),
-// then succeeds. Used to test decrypt retry semantics.
-type transientResolver struct {
-	mockLinkResolver
-	calls    int
-	failFor  int
-	failWith error
-}
-
-func (r *transientResolver) AddressForEmail(_ string) (proton.Address, bool) {
-	r.calls++
-	if r.calls <= r.failFor {
-		return proton.Address{}, false
-	}
-	return proton.Address{ID: "addr-1"}, true
-}
-
-func (r *transientResolver) AddressKeyRing(id string) (*crypto.KeyRing, bool) {
-	if id == "addr-1" {
-		// Return a non-nil keyring stub. The actual crypto operations
-		// will fail, but we're testing the retry/cache logic, not crypto.
-		return nil, false
-	}
-	return nil, false
-}
-
-// TestDecrypt_TransientNotCached verifies that a transient error during
-// decrypt does not set decrypted=true, allowing retry on subsequent calls.
-func TestDecrypt_TransientNotCached(t *testing.T) {
+// TestName_ErrorPropagation verifies that Name() propagates errors from
+// the parent keyring chain when the resolver has no matching address.
+func TestName_ErrorPropagation(t *testing.T) {
 	resolver := &mockLinkResolver{}
-	// Create a share root with no parent — getParentKeyRing will call
-	// share.getKeyRing() which will fail. We simulate transient by
-	// wrapping context.Canceled in the share's keyring error path.
-	// Instead, we test the struct fields directly after a transient error.
+
+	// Build a share root so getParentKeyRing doesn't panic on nil share.
+	rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
+	root := NewTestLink(rootPLink, nil, nil, resolver, "root")
+	share := NewShare(
+		&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
+		nil, root, resolver, "",
+	)
+	root = NewTestLink(rootPLink, nil, share, resolver, "root")
+	share.Link = root
+
+	pLink := &proton.Link{
+		LinkID:             "test-link",
+		NameSignatureEmail: "test@example.com",
+		SignatureEmail:     "test@example.com",
+	}
+	link := NewLink(pLink, root, share, resolver)
+
+	// Name() calls getParentKeyRing → parent.KeyRing() → deriveKeyRing
+	// which fails because the resolver has no matching address.
+	_, err := link.Name()
+	if err == nil {
+		t.Fatal("expected error from Name(), got nil")
+	}
+}
+
+// TestKeyRing_ErrorPropagation verifies that KeyRing() propagates errors
+// from the parent keyring chain.
+func TestKeyRing_ErrorPropagation(t *testing.T) {
+	resolver := &mockLinkResolver{}
+
+	rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
+	root := NewTestLink(rootPLink, nil, nil, resolver, "root")
+	share := NewShare(
+		&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
+		nil, root, resolver, "",
+	)
+	root = NewTestLink(rootPLink, nil, share, resolver, "root")
+	share.Link = root
 
 	pLink := &proton.Link{
 		LinkID:         "test-link",
 		SignatureEmail: "test@example.com",
 	}
-	link := NewLink(pLink, nil, nil, resolver)
-	// share is nil, so getParentKeyRing will panic. Instead, set up a
-	// parent link that returns a transient error from KeyRing().
+	link := NewLink(pLink, root, share, resolver)
 
-	// Create a parent link that has a transient decryptErr.
-	parentPLink := &proton.Link{LinkID: "parent"}
-	parent := NewLink(parentPLink, nil, nil, resolver)
-	parent.decryptErr = context.Canceled
-	parent.decrypted = true
-
-	link.parentLink = parent
-
-	err := link.decrypt()
+	_, err := link.KeyRing()
 	if err == nil {
-		t.Fatal("expected error from decrypt, got nil")
-	}
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled, got: %v", err)
-	}
-	// Transient: decrypted should still be false.
-	if link.decrypted {
-		t.Fatal("expected decrypted=false after transient error")
-	}
-	if link.decryptErr != nil {
-		t.Fatalf("expected decryptErr=nil after transient error, got: %v", link.decryptErr)
-	}
-}
-
-// TestDecrypt_PermanentCached verifies that a permanent error during
-// decrypt sets decrypted=true and caches the error.
-func TestDecrypt_PermanentCached(t *testing.T) {
-	resolver := &mockLinkResolver{}
-	pLink := &proton.Link{
-		LinkID:         "test-link",
-		SignatureEmail: "test@example.com",
-	}
-	link := NewLink(pLink, nil, nil, resolver)
-
-	// Create a parent link that has a permanent (non-transient) decryptErr.
-	parentPLink := &proton.Link{LinkID: "parent"}
-	parent := NewLink(parentPLink, nil, nil, resolver)
-	parent.decryptErr = fmt.Errorf("parent: %w", api.ErrKeyNotFound)
-	parent.decrypted = true
-
-	link.parentLink = parent
-
-	err1 := link.decrypt()
-	if err1 == nil {
-		t.Fatal("expected error from first decrypt, got nil")
-	}
-	if !errors.Is(err1, api.ErrKeyNotFound) {
-		t.Fatalf("expected ErrKeyNotFound, got: %v", err1)
-	}
-	// Permanent: decrypted should be true.
-	if !link.decrypted {
-		t.Fatal("expected decrypted=true after permanent error")
-	}
-
-	// Second call should return the same cached error.
-	err2 := link.decrypt()
-	if err2 == nil {
-		t.Fatal("expected error from second decrypt, got nil")
-	}
-	if err1.Error() != err2.Error() {
-		t.Fatalf("expected same cached error, got %v vs %v", err1, err2)
-	}
-}
-
-// TestDecrypt_TransientThenRetry verifies that after a transient error,
-// a subsequent call to decrypt retries from scratch.
-func TestDecrypt_TransientThenRetry(t *testing.T) {
-	resolver := &mockLinkResolver{}
-	pLink := &proton.Link{
-		LinkID:         "test-link",
-		SignatureEmail: "test@example.com",
-	}
-	link := NewLink(pLink, nil, nil, resolver)
-
-	// First call: parent returns transient error.
-	parentPLink := &proton.Link{LinkID: "parent"}
-	parent := NewLink(parentPLink, nil, nil, resolver)
-	parent.decryptErr = context.DeadlineExceeded
-	parent.decrypted = true
-	link.parentLink = parent
-
-	err := link.decrypt()
-	if err == nil {
-		t.Fatal("expected transient error, got nil")
-	}
-	if link.decrypted {
-		t.Fatal("expected decrypted=false after transient error")
-	}
-
-	// Now fix the parent to return a permanent error (simulating a
-	// different failure on retry — the point is decrypt retries).
-	parent.decryptErr = fmt.Errorf("parent: %w", api.ErrKeyNotFound)
-
-	err = link.decrypt()
-	if err == nil {
-		t.Fatal("expected permanent error on retry, got nil")
-	}
-	if !errors.Is(err, api.ErrKeyNotFound) {
-		t.Fatalf("expected ErrKeyNotFound on retry, got: %v", err)
-	}
-	// Now it should be cached.
-	if !link.decrypted {
-		t.Fatal("expected decrypted=true after permanent error on retry")
+		t.Fatal("expected error from KeyRing(), got nil")
 	}
 }
 
@@ -474,4 +381,245 @@ func TestDotDotResolution_Property(t *testing.T) {
 			}
 		}
 	})
+}
+
+// countingResolver wraps mockLinkResolver and counts AddressKeyRing
+// calls as a proxy for decryption/derivation attempts.
+type countingResolver struct {
+	mockLinkResolver
+	keyRingCalls int
+}
+
+func (r *countingResolver) AddressKeyRing(id string) (*crypto.KeyRing, bool) {
+	r.keyRingCalls++
+	return r.mockLinkResolver.AddressKeyRing(id)
+}
+
+// TestNameNoCacheDecryptsEveryTime_Property verifies that calling Name()
+// N times on a Link (without testName) triggers exactly N decryption
+// attempts. No state is retained on the Link between calls.
+//
+// **Property 1: Name() Decrypts Every Time**
+// **Validates: Requirement 1.2**
+func TestNameNoCacheDecryptsEveryTime_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		callCount := rapid.IntRange(1, 5).Draw(t, "callCount")
+
+		resolver := &countingResolver{}
+
+		// Build a share with an AddressID so getKeyRing calls AddressKeyRing.
+		rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
+		root := NewTestLink(rootPLink, nil, nil, resolver, "root")
+		share := NewShare(
+			&proton.Share{
+				ShareMetadata: proton.ShareMetadata{ShareID: "s"},
+				AddressID:     "addr-1",
+			},
+			nil, root, resolver, "",
+		)
+		root = NewTestLink(rootPLink, nil, share, resolver, "root")
+		share.Link = root
+
+		// Create a non-test link (no testName) — Name() will attempt
+		// real decryption via the resolver on every call.
+		pLink := &proton.Link{
+			LinkID:             "child",
+			NameSignatureEmail: "user@example.com",
+			SignatureEmail:     "user@example.com",
+		}
+		link := NewLink(pLink, root, share, resolver)
+
+		resolver.keyRingCalls = 0
+		for i := 0; i < callCount; i++ {
+			// Name() will fail (resolver returns false for AddressKeyRing)
+			// but we're verifying it attempts the chain each time.
+			_, _ = link.Name()
+		}
+
+		// Each Name() call goes through getParentKeyRing → parent.KeyRing()
+		// → share.getKeyRing() → AddressKeyRing. The chain fails there,
+		// but the call was made. Each call produces at least 1 AddressKeyRing call.
+		if resolver.keyRingCalls < callCount {
+			t.Fatalf("expected at least %d AddressKeyRing calls, got %d",
+				callCount, resolver.keyRingCalls)
+		}
+	})
+}
+
+// TestKeyRingAlwaysDerives_Property verifies that calling KeyRing()
+// N times triggers exactly N derivation attempts. KeyRing is never cached.
+//
+// **Property 6: KeyRing() Always Derives**
+// **Validates: Requirement 1.3**
+func TestKeyRingAlwaysDerives_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		callCount := rapid.IntRange(1, 5).Draw(t, "callCount")
+
+		resolver := &countingResolver{}
+
+		rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
+		root := NewTestLink(rootPLink, nil, nil, resolver, "root")
+		share := NewShare(
+			&proton.Share{
+				ShareMetadata: proton.ShareMetadata{ShareID: "s"},
+				AddressID:     "addr-1",
+			},
+			nil, root, resolver, "",
+		)
+		root = NewTestLink(rootPLink, nil, share, resolver, "root")
+		share.Link = root
+
+		pLink := &proton.Link{
+			LinkID:         "child",
+			SignatureEmail: "user@example.com",
+		}
+		link := NewLink(pLink, root, share, resolver)
+
+		resolver.keyRingCalls = 0
+		for i := 0; i < callCount; i++ {
+			_, _ = link.KeyRing()
+		}
+
+		// Each KeyRing() call goes through the same chain, producing
+		// at least 1 AddressKeyRing call per invocation.
+		if resolver.keyRingCalls < callCount {
+			t.Fatalf("expected at least %d AddressKeyRing calls, got %d",
+				callCount, resolver.keyRingCalls)
+		}
+	})
+}
+
+// readdirResolver is a mock LinkResolver that returns pre-built children
+// for Readdir testing.
+type readdirResolver struct {
+	children []proton.Link
+}
+
+func (r *readdirResolver) ListLinkChildren(_ context.Context, _, _ string, _ bool) ([]proton.Link, error) {
+	return r.children, nil
+}
+
+func (r *readdirResolver) NewChildLink(_ context.Context, parent *Link, pLink *proton.Link) *Link {
+	return NewTestLink(pLink, parent, parent.share, r, pLink.LinkID)
+}
+
+func (r *readdirResolver) AddressForEmail(_ string) (proton.Address, bool) {
+	return proton.Address{}, false
+}
+
+func (r *readdirResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
+	return nil, false
+}
+
+func (r *readdirResolver) Throttle() *api.Throttle { return nil }
+func (r *readdirResolver) MaxWorkers() int         { return 1 }
+
+// TestDotDotDotCorrectness_Property verifies that the first two entries
+// from Readdir have Link pointers equal to self and Parent() respectively.
+// For share roots, both point to the same link.
+//
+// **Property 2: Dot and DotDot Correctness**
+// **Validates: Requirements 2.1, 2.2**
+func TestDotDotDotCorrectness_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		depth := rapid.IntRange(0, 10).Draw(t, "depth")
+		childCount := rapid.IntRange(0, 5).Draw(t, "childCount")
+
+		children := make([]proton.Link, childCount)
+		for i := range children {
+			children[i] = proton.Link{
+				LinkID: fmt.Sprintf("child-%d", i),
+				Type:   proton.LinkTypeFile,
+			}
+		}
+		resolver := &readdirResolver{children: children}
+
+		// Build chain of depth levels.
+		rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
+		root := NewTestLink(rootPLink, nil, nil, resolver, "root")
+		share := NewShare(
+			&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
+			nil, root, resolver, "",
+		)
+		root = NewTestLink(rootPLink, nil, share, resolver, "root")
+		share.Link = root
+
+		current := root
+		for i := 0; i < depth; i++ {
+			child := NewTestLink(
+				&proton.Link{LinkID: fmt.Sprintf("dir-%d", i), Type: proton.LinkTypeFolder},
+				current, share, resolver, fmt.Sprintf("dir%d", i),
+			)
+			current = child
+		}
+
+		ctx := context.Background()
+		entries := make([]DirEntry, 0)
+		for entry := range current.Readdir(ctx) {
+			entries = append(entries, entry)
+		}
+
+		if len(entries) < 2 {
+			t.Fatalf("expected at least 2 entries (. and ..), got %d", len(entries))
+		}
+
+		// First entry is . (self).
+		if entries[0].Link != current {
+			t.Fatalf(". entry Link %p != self %p", entries[0].Link, current)
+		}
+
+		// Second entry is .. (parent).
+		expectedParent := current.Parent()
+		if entries[1].Link != expectedParent {
+			t.Fatalf(".. entry Link %p != Parent() %p", entries[1].Link, expectedParent)
+		}
+
+		// For share roots, both . and .. point to self.
+		if depth == 0 {
+			if entries[0].Link != entries[1].Link {
+				t.Fatal("share root: . and .. should be the same link")
+			}
+		}
+
+		// Total entries: 2 (. and ..) + childCount.
+		if len(entries) != 2+childCount {
+			t.Fatalf("expected %d entries, got %d", 2+childCount, len(entries))
+		}
+	})
+}
+
+// TestDirEntryHasNoDecryptedContent_Property verifies that the DirEntry
+// struct contains only Link and Err fields — no name or other decrypted
+// content.
+//
+// **Property 3: DirEntry Has No Decrypted Content**
+// **Validates: Requirement 2.4**
+func TestDirEntryHasNoDecryptedContent_Property(t *testing.T) {
+	typ := reflect.TypeOf(DirEntry{})
+	allowed := map[string]bool{"Link": true, "Err": true}
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if !allowed[field.Name] {
+			t.Fatalf("DirEntry has unexpected field %q — types layer must not carry decrypted content", field.Name)
+		}
+	}
+
+	if typ.NumField() != 2 {
+		t.Fatalf("DirEntry has %d fields, expected 2 (Link, Err)", typ.NumField())
+	}
+}
+
+// TestLinkHasNoCachedFields verifies that the Link struct does not have
+// the removed cached fields (name, keyRing, nameKeyRing, decrypted,
+// decryptErr, mu).
+func TestLinkHasNoCachedFields(t *testing.T) {
+	typ := reflect.TypeOf(Link{})
+	forbidden := []string{"mu", "decrypted", "decryptErr", "name", "keyRing", "nameKeyRing"}
+
+	for _, name := range forbidden {
+		if _, ok := typ.FieldByName(name); ok {
+			t.Fatalf("Link struct still has forbidden field %q", name)
+		}
+	}
 }

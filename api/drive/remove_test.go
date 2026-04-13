@@ -31,16 +31,7 @@ func (m *mockRemoveResolver) ListLinkChildren(_ context.Context, _, _ string, _ 
 }
 
 func (m *mockRemoveResolver) NewChildLink(_ context.Context, parent *Link, pLink *proton.Link) *Link {
-	child := &Link{
-		protonLink: pLink,
-		parentLink: parent,
-		share:      parent.share,
-		resolver:   m,
-	}
-	// Pre-set decrypted state so Readdir doesn't fail on crypto.
-	child.name = pLink.LinkID
-	child.decrypted = true
-	return child
+	return NewTestLink(pLink, parent, parent.share, m, pLink.LinkID)
 }
 
 func (m *mockRemoveResolver) AddressForEmail(_ string) (proton.Address, bool) {
@@ -55,32 +46,20 @@ func (m *mockRemoveResolver) Throttle() *api.Throttle { return nil }
 func (m *mockRemoveResolver) MaxWorkers() int         { return 1 }
 
 // makeTestFolder creates a folder Link with a parent, backed by the
-// given resolver. The folder's decrypted state is pre-set so
-// ListChildren works without real crypto.
+// given resolver. Uses NewTestLink for test name overrides.
 func makeTestFolder(resolver LinkResolver, name string) *Link {
 	pShare := &proton.Share{
 		ShareMetadata: proton.ShareMetadata{ShareID: "test-share"},
 	}
 	rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
-	rootLink := &Link{
-		protonLink: rootPLink,
-		resolver:   resolver,
-	}
-	rootLink.name = "root"
-	rootLink.decrypted = true
+	rootLink := NewTestLink(rootPLink, nil, nil, resolver, "root")
 
 	share := NewShare(pShare, nil, rootLink, resolver, "")
-	rootLink.share = share
+	rootLink = NewTestLink(rootPLink, nil, share, resolver, "root")
+	share.Link = rootLink
 
 	folderPLink := &proton.Link{LinkID: name, Type: proton.LinkTypeFolder}
-	folder := &Link{
-		protonLink: folderPLink,
-		parentLink: rootLink,
-		share:      share,
-		resolver:   resolver,
-	}
-	folder.name = name
-	folder.decrypted = true
+	folder := NewTestLink(folderPLink, rootLink, share, resolver, name)
 
 	return folder
 }
@@ -91,15 +70,11 @@ func makeTestShareRoot(resolver LinkResolver) (*Link, *Share) {
 		ShareMetadata: proton.ShareMetadata{ShareID: "test-share"},
 	}
 	rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
-	rootLink := &Link{
-		protonLink: rootPLink,
-		resolver:   resolver,
-	}
-	rootLink.name = "root"
-	rootLink.decrypted = true
+	rootLink := NewTestLink(rootPLink, nil, nil, resolver, "root")
 
 	share := NewShare(pShare, nil, rootLink, resolver, "")
-	rootLink.share = share
+	rootLink = NewTestLink(rootPLink, nil, share, resolver, "root")
+	share.Link = rootLink
 
 	return rootLink, share
 }

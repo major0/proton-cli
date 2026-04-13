@@ -6,20 +6,21 @@ import (
 	"sync"
 )
 
-// DirEntry is a single entry yielded by Readdir.
+// DirEntry is a single entry yielded by Readdir. The types layer does
+// not carry decrypted content — consumers that need names should use
+// the client layer's ReaddirNamed.
 type DirEntry struct {
 	Link *Link
 	Err  error
 }
 
-// Readdir returns a channel that yields child links of this folder.
-// Children are fetched in one API call. Name decryption is performed
-// concurrently across workers. The channel is closed when all children
-// have been yielded or the context is cancelled.
+// Readdir returns a channel that yields directory entries for this folder.
+// The first two entries are always . (self) and .. (parent), followed by
+// children fetched via the resolver. Children are yielded without name
+// decryption — the types layer constructs child Links only.
 //
-// The returned Links are lazily decrypted — only the name is decrypted
-// during Readdir (needed for the caller to identify entries). Keyrings
-// and other fields are decrypted on demand.
+// The channel is closed when all entries have been yielded or the context
+// is cancelled.
 func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 	ch := make(chan DirEntry)
 
@@ -27,6 +28,19 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 		defer close(ch)
 
 		slog.Debug("link.Readdir", "linkID", l.protonLink.LinkID)
+
+		// Emit . (self) and .. (parent) as the first two entries.
+		// For share roots, both point to the same link (POSIX /.. → /).
+		select {
+		case ch <- DirEntry{Link: l}:
+		case <-ctx.Done():
+			return
+		}
+		select {
+		case ch <- DirEntry{Link: l.Parent()}:
+		case <-ctx.Done():
+			return
+		}
 
 		// Respect throttle before making the API call.
 		if throttle := l.resolver.Throttle(); throttle != nil {
@@ -62,7 +76,7 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 			return
 		}
 
-		// Fan out name decryption across workers.
+		// Fan out child link construction across workers.
 		workers := min(l.resolver.MaxWorkers(), len(pChildren))
 		indexCh := make(chan int)
 		var wg sync.WaitGroup
@@ -73,17 +87,6 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 				defer wg.Done()
 				for idx := range indexCh {
 					child := l.resolver.NewChildLink(ctx, l, &pChildren[idx])
-
-					// Trigger name decryption so the caller can
-					// identify the entry. Other fields stay encrypted.
-					if err := child.decrypt(); err != nil {
-						select {
-						case ch <- DirEntry{Err: err}:
-						case <-ctx.Done():
-							return
-						}
-						continue
-					}
 
 					select {
 					case ch <- DirEntry{Link: child}:
@@ -113,14 +116,34 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 }
 
 // Lookup finds a child by name in this folder. Returns nil if not found.
-// Cancels remaining decryption work as soon as the match is found.
+// Handles "." (self) and ".." (parent) directly without scanning children.
+// Cancels remaining work as soon as the match is found.
 func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
+	// Fast path for . and ..
+	switch name {
+	case ".":
+		return l, nil
+	case "..":
+		return l.Parent(), nil
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	first := true
+	second := true
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
 			return nil, entry.Err
+		}
+		// Skip . and .. (first two entries by convention).
+		if first {
+			first = false
+			continue
+		}
+		if second {
+			second = false
+			continue
 		}
 		entryName, err := entry.Link.Name()
 		if err != nil {
@@ -134,13 +157,21 @@ func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 }
 
 // ListChildren returns all child links of this folder as a slice.
+// Excludes the synthetic . and .. entries (first two from Readdir).
 // Built on Readdir — prefer Readdir for streaming or early termination.
 func (l *Link) ListChildren(ctx context.Context, _ bool) ([]*Link, error) {
 	links := make([]*Link, 0, 16)
+	idx := 0
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
 			return nil, entry.Err
 		}
+		// Skip . (idx 0) and .. (idx 1).
+		if idx < 2 {
+			idx++
+			continue
+		}
+		idx++
 		links = append(links, entry.Link)
 	}
 	return links, nil
