@@ -92,10 +92,12 @@ type SessionOptions struct {
 
 // Session holds an authenticated Proton API session with decrypted keyrings.
 type Session struct {
-	Client  *proton.Client
-	Auth    proton.Auth
-	BaseURL string // override for DoJSON; defaults to proton.DefaultHostURL
-	manager *proton.Manager
+	Client     *proton.Client
+	Auth       proton.Auth
+	BaseURL    string // override for DoJSON; defaults to proton.DefaultHostURL
+	AppVersion string // x-pm-appversion header value for DoJSON requests
+	UserAgent  string // User-Agent header value for DoJSON requests
+	manager    *proton.Manager
 
 	cookieJar http.CookieJar
 	authMu    sync.Mutex // serializes auth handler updates
@@ -266,6 +268,12 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 
 	req.Header.Set("x-pm-uid", s.Auth.UID)
 	req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
+	if s.AppVersion != "" {
+		req.Header.Set("x-pm-appversion", s.AppVersion)
+	}
+	if s.UserAgent != "" {
+		req.Header.Set("User-Agent", s.UserAgent)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

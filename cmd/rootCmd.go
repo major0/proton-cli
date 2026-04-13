@@ -103,7 +103,13 @@ func AddCommand(cmd *cobra.Command) {
 // RestoreSession returns a fully initialized, ready-to-use session using
 // the package-level ProtonOpts and SessionStoreVar.
 func RestoreSession(ctx context.Context) (*common.Session, error) {
-	return common.ReadySession(ctx, ProtonOpts, SessionStoreVar, nil)
+	session, err := common.ReadySession(ctx, ProtonOpts, SessionStoreVar, nil)
+	if err != nil {
+		return nil, err
+	}
+	session.AppVersion = AppVersion
+	session.UserAgent = UserAgent
+	return session, nil
 }
 
 // Execute runs the root command and exits on error.
