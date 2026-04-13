@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 )
 
 var (
@@ -16,3 +17,17 @@ var (
 	// ErrNotLoggedIn indicates that no active session exists.
 	ErrNotLoggedIn = errors.New("not logged in")
 )
+
+// APIError represents a non-success response from the Proton API.
+type APIError struct {
+	Status  int    // HTTP status code
+	Code    int    // Proton API error code
+	Message string // error description from the API
+}
+
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("api: %d/%d: %s", e.Status, e.Code, e.Message)
+	}
+	return fmt.Sprintf("api: %d/%d", e.Status, e.Code)
+}

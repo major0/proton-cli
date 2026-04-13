@@ -24,12 +24,12 @@ func notImplemented(name string) func(*cobra.Command, []string) error {
 	}
 }
 
-var shareInfoCmd = &cobra.Command{
-	Use:   "info <share-name>",
+var shareShowCmd = &cobra.Command{
+	Use:   "show <share-name>",
 	Short: "Show detailed share information",
 	Long:  "Show detailed information about a share including members and invitations",
 	Args:  cobra.ExactArgs(1),
-	RunE:  notImplemented("share info"),
+	RunE:  notImplemented("share show"),
 }
 
 var shareInviteCmd = &cobra.Command{
@@ -50,7 +50,7 @@ var shareRevokeCmd = &cobra.Command{
 
 func init() {
 	cli.AddCommand(shareCmd)
-	shareCmd.AddCommand(shareInfoCmd)
+	shareCmd.AddCommand(shareShowCmd)
 	shareCmd.AddCommand(shareInviteCmd)
 	shareCmd.AddCommand(shareRevokeCmd)
 }

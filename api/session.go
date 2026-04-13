@@ -1,13 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -222,6 +226,79 @@ func (s *Session) AddDeauthHandler(handler proton.Handler) {
 // Stop closes the underlying API manager.
 func (s *Session) Stop() {
 	s.manager.Close()
+}
+
+// apiEnvelope is the standard Proton API response wrapper.
+type apiEnvelope struct {
+	Code  int    `json:"Code"`
+	Error string `json:"Error,omitempty"`
+}
+
+// DoJSON executes an authenticated JSON API request against the Proton API.
+// Method is "GET", "POST", "DELETE", etc. Path is relative to the API base
+// (e.g. "/drive/shares/{id}/members"). If body is non-nil it is JSON-encoded
+// as the request body. If result is non-nil the response body is JSON-decoded
+// into it. Returns an *APIError on non-success API responses.
+func (s *Session) DoJSON(ctx context.Context, method, path string, body, result any) error {
+	reqURL := path
+	if !strings.HasPrefix(path, "http") {
+		reqURL = proton.DefaultHostURL + path
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("doJSON: marshal body: %w", err)
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
+	if err != nil {
+		return fmt.Errorf("doJSON: new request: %w", err)
+	}
+
+	req.Header.Set("x-pm-uid", s.Auth.UID)
+	req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Accept", "application/json")
+
+	httpClient := &http.Client{Jar: s.cookieJar}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("doJSON: %s %s: %w", method, path, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("doJSON: read response: %w", err)
+	}
+
+	// Parse the envelope to check the API-level error code.
+	var envelope apiEnvelope
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		return fmt.Errorf("doJSON: unmarshal envelope: %w", err)
+	}
+
+	if envelope.Code != 1000 {
+		return &APIError{
+			Status:  resp.StatusCode,
+			Code:    envelope.Code,
+			Message: envelope.Error,
+		}
+	}
+
+	if result != nil {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("doJSON: unmarshal result: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // SessionRestore loads credentials from the store and creates an unlocked
