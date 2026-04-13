@@ -14,10 +14,11 @@ import (
 //
 // URI format: proton://<share>/<path>
 //
-//   - proton://Drive/Documents/file.txt → share="Drive", path="Documents/file.txt"
 //   - proton:///path/to/file            → share="" (empty → root share), path="path/to/file"
+//   - proton://Photos/2024/vacation.jpg → share="Photos", path="2024/vacation.jpg"
+//   - proton://root/Documents/file.txt  → share="root" (resolved by name), path="Documents/file.txt"
+//   - proton://{id}/path                → share="{id}" (resolved by share ID), path="path"
 //   - proton://                         → error: no share specified
-//   - proton://{id}/path                → share="{id}", path="path"
 //
 // The proton:// prefix is a cmd/ concern — the api/ layer never sees it.
 func parseProtonURI(rawPath string) (sharePart, pathPart string, err error) {
@@ -34,8 +35,12 @@ func parseProtonURI(rawPath string) (sharePart, pathPart string, err error) {
 	}
 
 	// Triple-slash: proton:///path → empty share (root), path starts after.
+	// proton:/// alone → root share, root directory (no sub-path).
 	if strings.HasPrefix(remainder, "/") {
 		pathPart = strings.TrimPrefix(remainder, "/")
+		if pathPart == "" {
+			return "", "", nil
+		}
 		normalized, err := drive.NormalizePath(pathPart)
 		if err != nil {
 			return "", "", err
@@ -84,11 +89,11 @@ func parsePath(rawPath string) string {
 // resolveShareComponent resolves the share part of a proton:// URI.
 //
 // Resolution priority:
-//  1. Empty string → root share (main volume share)
+//  1. Empty string → root share (main volume share) — from proton:///
 //  2. {id} brackets → resolve by share ID directly
-//  3. "Drive" → main volume share (ShareTypeMain)
-//  4. "Photos" → photos share (ShareTypePhotos)
-//  5. Otherwise → resolve by decrypted share root link name
+//  3. "Photos" → photos share (ShareTypePhotos)
+//  4. Otherwise → resolve by decrypted share root link name
+//     (includes "root" which resolves to the main share by name)
 func resolveShareComponent(ctx context.Context, dc *driveClient.Client, sharePart string) (*drive.Share, error) {
 	// Empty share → root share (triple-slash case).
 	if sharePart == "" {
@@ -101,11 +106,8 @@ func resolveShareComponent(ctx context.Context, dc *driveClient.Client, sharePar
 		return dc.GetShare(ctx, id)
 	}
 
-	// Well-known aliases (case-sensitive).
-	switch sharePart {
-	case "Drive":
-		return dc.ResolveShareByType(ctx, proton.ShareTypeMain)
-	case "Photos":
+	// Well-known alias (case-sensitive).
+	if sharePart == "Photos" {
 		return dc.ResolveShareByType(ctx, drive.ShareTypePhotos)
 	}
 
