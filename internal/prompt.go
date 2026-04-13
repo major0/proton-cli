@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"syscall"
 
 	"golang.org/x/term"
@@ -26,16 +27,13 @@ func UserPrompt(prompt string, password bool) (string, error) {
 			fmt.Println("")
 		} else {
 			input, err = reader.ReadString('\n')
+			input = strings.TrimRight(input, "\r\n")
 		}
 
 		if err != nil {
 			return "", err
 		}
 	}
-	if password {
-		slog.Debug("UserPrompt", prompt, "<hidden>")
-	} else {
-		slog.Debug("UserPrompt", prompt, input)
-	}
+	slog.Debug("UserPrompt", prompt, "<redacted>")
 	return input, nil
 }

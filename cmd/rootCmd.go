@@ -12,6 +12,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// rootParamsType holds the parsed root command flags.
+type rootParamsType struct {
+	Account     string
+	ConfigFile  string
+	MaxWorkers  int
+	SessionFile string
+	Verbose     int
+	Timeout     time.Duration
+}
+
 var (
 	// Timeout holds the global request timeout duration.
 	Timeout time.Duration
@@ -34,14 +44,7 @@ var (
 
 	// rootCmd parameter store. Only the results of Flags and our preRun
 	// flag cleanups should be stored here.
-	rootParams = struct {
-		Account     string
-		ConfigFile  string
-		MaxWorkers  int
-		SessionFile string
-		Verbose     int
-		Timeout     time.Duration
-	}{}
+	rootParams rootParamsType
 
 	rootCmd = &cobra.Command{
 		Use:   "proton [options] <command>",
@@ -126,12 +129,6 @@ func init() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, logopts))
 	slog.SetDefault(logger)
 	// proton.WithLogger(common.Logger)
-
-	ProtonOpts = []proton.Option{
-		proton.WithHostURL(APIHost),
-		proton.WithAppVersion(AppVersion),
-		proton.WithUserAgent(UserAgent),
-	}
 
 	rootCmd.PersistentFlags().CountVarP(&rootParams.Verbose, "verbose", "v", "Enable verbose output. Can be specified multiple times to increase verbosity.")
 	rootCmd.PersistentFlags().StringVarP(&rootParams.Account, "account", "a", "default", "Nickname of the account to use. This can be any string the user desires.")

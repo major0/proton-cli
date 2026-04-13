@@ -3,6 +3,7 @@ package driveCmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
@@ -57,10 +58,12 @@ func runDf(_ *cobra.Command, _ []string) error {
 	for _, v := range volumes {
 		share, err := dc.GetShare(ctx, v.ProtonVolume.Share.ShareID)
 		if err != nil {
+			slog.Debug("df: resolve share", "shareID", v.ProtonVolume.Share.ShareID, "error", err)
 			continue
 		}
 		name, err := share.GetName(ctx)
 		if err != nil {
+			slog.Debug("df: share name", "shareID", v.ProtonVolume.Share.ShareID, "error", err)
 			continue
 		}
 		nameIndex[v.ProtonVolume.VolumeID] = name
