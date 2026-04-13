@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/api/share"
@@ -41,8 +42,16 @@ func runShareShow(_ *cobra.Command, args []string) error {
 
 	printShareMetadata(ctx, resolved)
 
+	// Main volume and photos shares don't support member/invitation APIs.
+	meta := resolved.Metadata()
+	if meta.Type == proton.ShareTypeMain || meta.Type == drive.ShareTypePhotos {
+		fmt.Println("\nMembers:      -")
+		fmt.Println("Invitations:  -")
+		return nil
+	}
+
 	sc := shareClient.NewClient(session)
-	shareID := resolved.Metadata().ShareID
+	shareID := meta.ShareID
 
 	printMembers(ctx, sc, shareID)
 	printInvitations(ctx, sc, shareID)
