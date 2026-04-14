@@ -4,7 +4,7 @@ package cli
 // Application constants unique to proton-cli.
 const (
 	Version    = "0.0.1"
-	AppVersion = "windows-drive@1.20.2"
-	UserAgent  = "NoClient/0.0.1"
+	AppVersion = "web-drive@5.2.0"
+	UserAgent  = "ProtonDrive/5.2.0"
 	APIHost    = "https://drive-api.proton.me"
 )

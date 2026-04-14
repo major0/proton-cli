@@ -74,14 +74,39 @@ func GenerateShareCrypto(addrKR, linkNodeKR, parentKR *crypto.KeyRing,
 	passphraseB64 := base64.StdEncoding.EncodeToString(rawPassphrase)
 
 	// 2. Generate a new PGP key pair for the share.
-	shareKeyArmored, err := helper.GenerateKey("Share key", "noreply@protonmail.com", []byte(passphraseB64), "x25519", 0)
+	shareKeyArmored, err := helper.GenerateKey("Drive key", "", []byte(passphraseB64), "x25519", 0)
 	if err != nil {
 		return "", "", "", "", "", fmt.Errorf("generate share crypto: generate key: %w", err)
 	}
 
-	// 3. Encrypt the passphrase with [linkNodeKR, addrKR] (link node key first).
+	// 3. Build a combined encryption keyring with both linkNodeKR and addrKR.
+	// The share passphrase must be decryptable by both the link node key
+	// (for the owner) and the address key (for the share system).
+	combinedKR, err := crypto.NewKeyRing(nil)
+	if err != nil {
+		return "", "", "", "", "", fmt.Errorf("generate share crypto: combined keyring: %w", err)
+	}
+	for _, key := range linkNodeKR.GetKeys() {
+		if key.CanEncrypt() {
+			if err := combinedKR.AddKey(key); err != nil {
+				return "", "", "", "", "", fmt.Errorf("generate share crypto: add link node key: %w", err)
+			}
+		}
+	}
+	for _, key := range addrKR.GetKeys() {
+		if key.CanEncrypt() {
+			if err := combinedKR.AddKey(key); err != nil {
+				return "", "", "", "", "", fmt.Errorf("generate share crypto: add addr key: %w", err)
+			}
+		}
+	}
+	if !combinedKR.CanEncrypt() {
+		// Fallback: encrypt to linkNodeKR only if combined ring has no encryption keys.
+		combinedKR = linkNodeKR
+	}
+
 	plainPassphrase := crypto.NewPlainMessage([]byte(passphraseB64))
-	encPassphrase, err := linkNodeKR.Encrypt(plainPassphrase, addrKR)
+	encPassphrase, err := combinedKR.Encrypt(plainPassphrase, addrKR)
 	if err != nil {
 		return "", "", "", "", "", fmt.Errorf("generate share crypto: encrypt passphrase: %w", err)
 	}
