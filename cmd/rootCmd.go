@@ -8,6 +8,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +38,9 @@ var (
 
 	// Account holds the current --account flag value.
 	Account string
+
+	// ConfigVar holds the loaded application config. Available to all subcommands.
+	ConfigVar *common.Config
 
 	// Private variables below this point
 
@@ -87,6 +91,14 @@ var (
 
 			SessionStoreVar = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", internal.SystemKeyring{})
 
+			// Load application config.
+			cfg, err := common.LoadConfig(rootParams.ConfigFile)
+			if err != nil {
+				slog.Warn("config load failed, using defaults", "error", err)
+				cfg = common.DefaultConfig()
+			}
+			ConfigVar = cfg
+
 			return nil
 		},
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -110,6 +122,16 @@ func RestoreSession(ctx context.Context) (*common.Session, error) {
 	session.AppVersion = AppVersion
 	session.UserAgent = UserAgent
 	return session, nil
+}
+
+// NewDriveClient creates a drive client with the loaded config applied.
+func NewDriveClient(ctx context.Context, session *common.Session) (*driveClient.Client, error) {
+	dc, err := driveClient.NewClient(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	dc.Config = ConfigVar
+	return dc, nil
 }
 
 // Execute runs the root command and exits on error.
