@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	driveClient "github.com/major0/proton-cli/api/drive/client"
+	cli "github.com/major0/proton-cli/cmd"
 )
 
 func TestClassifyPath(t *testing.T) {
@@ -140,6 +142,7 @@ func TestArgSplitting(t *testing.T) {
 
 // resetFlags zeroes cpFlags so tests are independent.
 func resetFlags() {
+	cli.Timeout = 30 * time.Second
 	cpFlags = struct {
 		recursive   bool
 		archive     bool
@@ -380,4 +383,140 @@ func TestResolvedEndpointBasename(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConflictHandling(t *testing.T) {
+	t.Run("default overwrites existing file", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		if err := os.WriteFile(src, []byte("new-data"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dst, []byte("old-data-longer"), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := runCp(nil, []string{src, dst}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		got, err := os.ReadFile(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "new-data" {
+			t.Errorf("dst content = %q, want %q", got, "new-data")
+		}
+	})
+
+	t.Run("--remove-destination removes before copy", func(t *testing.T) {
+		resetFlags()
+		cpFlags.removeDest = true
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		if err := os.WriteFile(src, []byte("new"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dst, []byte("old-longer-content"), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := runCp(nil, []string{src, dst}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		got, err := os.ReadFile(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "new" {
+			t.Errorf("dst content = %q, want %q", got, "new")
+		}
+	})
+
+	t.Run("--backup renames existing to tilde suffix", func(t *testing.T) {
+		resetFlags()
+		cpFlags.backup = true
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		if err := os.WriteFile(src, []byte("new"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dst, []byte("old"), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := runCp(nil, []string{src, dst}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		// New content at dst.
+		got, err := os.ReadFile(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "new" {
+			t.Errorf("dst content = %q, want %q", got, "new")
+		}
+
+		// Old content at dst~.
+		backup, err := os.ReadFile(dst + "~")
+		if err != nil {
+			t.Fatalf("backup file missing: %v", err)
+		}
+		if string(backup) != "old" {
+			t.Errorf("backup content = %q, want %q", backup, "old")
+		}
+	})
+
+	t.Run("copy to non-existent dest (no conflict)", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "new.txt")
+		if err := os.WriteFile(src, []byte("data"), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := runCp(nil, []string{src, dst}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		got, err := os.ReadFile(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "data" {
+			t.Errorf("dst content = %q, want %q", got, "data")
+		}
+	})
+
+	t.Run("copy into existing directory preserves basename", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dstDir := filepath.Join(tmp, "destdir")
+		if err := os.WriteFile(src, []byte("hello"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(dstDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := runCp(nil, []string{src, dstDir}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		got, err := os.ReadFile(filepath.Join(dstDir, "src.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "hello" {
+			t.Errorf("dst content = %q, want %q", got, "hello")
+		}
+	})
 }

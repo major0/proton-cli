@@ -29,6 +29,7 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 			dstPath := filepath.Join(iterDir, "dst-good"+string(rune('a'+i))+".bin")
 			data := []byte("good-data")
 			_ = os.WriteFile(srcPath, data, 0600)
+			_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
 			jobs = append(jobs, CopyJob{
 				Src: NewLocalReader(srcPath, int64(len(data))),
 				Dst: NewLocalWriter(dstPath),
@@ -38,6 +39,7 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 		for i := 0; i < nBad; i++ {
 			srcPath := filepath.Join(iterDir, "nonexistent"+string(rune('a'+i))+".bin")
 			dstPath := filepath.Join(iterDir, "dst-bad"+string(rune('a'+i))+".bin")
+			_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
 			jobs = append(jobs, CopyJob{
 				Src: NewLocalReader(srcPath, 1024),
 				Dst: NewLocalWriter(dstPath),
@@ -82,6 +84,7 @@ func TestBulkCopy_AllSuccess(t *testing.T) {
 		srcPath := filepath.Join(dir, "src"+string(rune('a'+i))+".bin")
 		dstPath := filepath.Join(dir, "dst"+string(rune('a'+i))+".bin")
 		_ = os.WriteFile(srcPath, []byte("data"), 0600)
+		_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
 		jobs = append(jobs, CopyJob{
 			Src: NewLocalReader(srcPath, 4),
 			Dst: NewLocalWriter(dstPath),
@@ -100,6 +103,7 @@ func TestBulkCopy_AllFail(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		srcPath := filepath.Join(dir, "missing"+string(rune('a'+i))+".bin")
 		dstPath := filepath.Join(dir, "dst"+string(rune('a'+i))+".bin")
+		_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
 		jobs = append(jobs, CopyJob{
 			Src: NewLocalReader(srcPath, 1024),
 			Dst: NewLocalWriter(dstPath),

@@ -42,6 +42,13 @@ func TestPipeline_LocalToLocal(t *testing.T) {
 		t.Fatalf("write src: %v", err)
 	}
 
+	// Pre-create dest file — producer creates it before queuing the job.
+	f, err := os.Create(dstPath)
+	if err != nil {
+		t.Fatalf("create dst: %v", err)
+	}
+	_ = f.Close()
+
 	job := CopyJob{
 		Src: NewLocalReader(srcPath, int64(len(srcData))),
 		Dst: NewLocalWriter(dstPath),
@@ -82,6 +89,7 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 
 	srcData := make([]byte, drive.BlockSize*4)
 	_ = os.WriteFile(srcPath, srcData, 0600)
+	_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
 
 	job := CopyJob{
 		Src: NewLocalReader(srcPath, int64(len(srcData))),
@@ -108,6 +116,7 @@ func TestPipeline_MultipleFiles(t *testing.T) {
 			data[j] = byte(i + j%200)
 		}
 		_ = os.WriteFile(srcPath, data, 0600)
+		_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
 		jobs = append(jobs, CopyJob{
 			Src: NewLocalReader(srcPath, int64(len(data))),
 			Dst: NewLocalWriter(dstPath),

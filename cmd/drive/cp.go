@@ -205,6 +205,54 @@ func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*r
 	return ep, nil
 }
 
+// handleConflict handles destination file conflicts before copy.
+//
+// Default: local files are truncated (overwrite in place); Proton files
+// get a new revision (versioning — handled by CreateFile, no action here).
+// Directories are never removed — contents merge naturally.
+//
+// --remove-destination: local files are removed; Proton files are trashed
+// (disables versioning). Directories are skipped.
+//
+// --backup: local files are renamed to <name>~; Proton files are a no-op
+// (versioning is the default backup mechanism).
+func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEndpoint) error {
+	// Directories: never remove, merge contents.
+	if dst.isDir() {
+		return nil
+	}
+
+	switch dst.pathType {
+	case driveClient.PathLocal:
+		// No existing file → nothing to do.
+		if dst.localInfo == nil {
+			return nil
+		}
+		if cpFlags.backup {
+			return os.Rename(dst.localPath, dst.localPath+"~")
+		}
+		if cpFlags.removeDest {
+			return os.Remove(dst.localPath)
+		}
+		// Default: truncate existing file so overwrite is clean.
+		return os.Truncate(dst.localPath, 0)
+
+	case driveClient.PathProton:
+		// Non-existent Proton dest (link points to parent) → nothing to do.
+		if dst.link == nil {
+			return nil
+		}
+		// Only act on files, not directories.
+		if dst.link.Type() != proton.LinkTypeFolder {
+			if cpFlags.removeDest {
+				return dc.Remove(ctx, dst.share, dst.link, drive.RemoveOpts{})
+			}
+			// Default and --backup: Proton versioning handles it.
+		}
+	}
+	return nil
+}
+
 // buildCopyJob constructs a CopyJob from resolved source and destination
 // endpoints. For Proton endpoints, uses CreateFile/OpenFile to get the
 // FileHandle with revision, session key, and block info.
@@ -224,9 +272,17 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		job.Src = driveClient.NewProtonReader(fh.Link.LinkID(), fh.Blocks, fh.SessionKey, fh.FileSize, fh.BlockSizes, store)
 	}
 
-	// Build destination writer.
+	// Build destination writer. Pre-create local files so workers can
+	// write blocks at arbitrary offsets into an existing file.
 	switch dst.pathType {
 	case driveClient.PathLocal:
+		f, err := os.Create(dst.localPath)
+		if err != nil {
+			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
+		}
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
+		}
 		job.Dst = driveClient.NewLocalWriter(dst.localPath)
 	case driveClient.PathProton:
 		name := filepath.Base(dst.raw)
@@ -330,52 +386,47 @@ func runCp(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Dispatch.
-	if len(sources) == 1 {
-		return cpSingle(ctx, dc, sources[0], dstEp)
-	}
-	return cpMultiple(ctx, dc, sources, dstEp)
-}
-
-// cpSingle copies a single source to the destination.
-func cpSingle(ctx context.Context, dc *driveClient.Client, src pathArg, dst *resolvedEndpoint) error {
-	srcEp, err := resolveSource(ctx, dc, src)
-	if err != nil {
-		return err
-	}
-
-	// If dest is a directory, copy source into it (preserve basename).
-	if dst.isDir() {
-		dst = &resolvedEndpoint{
-			pathType:  dst.pathType,
-			raw:       dst.raw,
-			localPath: filepath.Join(dst.localPath, srcEp.basename()),
-			localInfo: nil, // new file
-			link:      dst.link,
-			share:     dst.share,
-		}
-	}
-
-	// Directory sources are handled by expandRecursive (Task 7).
-	if srcEp.isDir() {
-		return fmt.Errorf("cp: %s: is a directory (use -r to copy recursively)", srcEp.raw)
-	}
-
-	job, err := buildCopyJob(ctx, dc, srcEp, dst)
-	if err != nil {
-		return err
-	}
-
-	// All directions flow through the same pipeline.
-	return driveClient.RunPipeline(ctx, []driveClient.CopyJob{*job}, transferOpts())
-}
-
-// cpMultiple copies multiple sources into a directory destination.
-func cpMultiple(ctx context.Context, dc *driveClient.Client, srcs []pathArg, dst *resolvedEndpoint) error {
-	for _, src := range srcs {
-		if err := cpSingle(ctx, dc, src, dst); err != nil {
+	// Build CopyJobs for all source/dest pairs.
+	var jobs []driveClient.CopyJob
+	for _, src := range sources {
+		srcEp, err := resolveSource(ctx, dc, src)
+		if err != nil {
 			return err
 		}
+
+		// Compute the effective destination for this source.
+		fileDst := dstEp
+		if dstEp.isDir() {
+			fileDst = &resolvedEndpoint{
+				pathType:  dstEp.pathType,
+				raw:       dstEp.raw,
+				localPath: filepath.Join(dstEp.localPath, srcEp.basename()),
+				localInfo: nil,
+				link:      dstEp.link,
+				share:     dstEp.share,
+			}
+		}
+
+		// Directory sources are handled by expandRecursive (Task 7).
+		if srcEp.isDir() {
+			fmt.Fprintf(os.Stderr, "cp: %s: is a directory (use -r to copy recursively)\n", srcEp.raw)
+			continue
+		}
+
+		if err := handleConflict(ctx, dc, fileDst); err != nil {
+			return err
+		}
+
+		job, err := buildCopyJob(ctx, dc, srcEp, fileDst)
+		if err != nil {
+			return err
+		}
+		jobs = append(jobs, *job)
 	}
-	return nil
+
+	if len(jobs) == 0 {
+		return nil
+	}
+
+	return driveClient.RunPipeline(ctx, jobs, transferOpts())
 }

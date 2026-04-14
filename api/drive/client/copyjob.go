@@ -138,7 +138,7 @@ func NewLocalWriter(path string) *LocalWriter {
 
 // WriteBlock opens the file, writes data at the correct offset, and closes.
 func (w *LocalWriter) WriteBlock(_ context.Context, index int, data []byte) error {
-	f, err := os.OpenFile(w.Path, os.O_WRONLY|os.O_CREATE, 0600)
+	f, err := os.OpenFile(w.Path, os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
