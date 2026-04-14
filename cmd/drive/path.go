@@ -116,8 +116,8 @@ func resolveShareComponent(ctx context.Context, dc *driveClient.Client, sharePar
 	return dc.ResolveShare(ctx, sharePart, true)
 }
 
-// resolveProtonPath parses a proton:// URI and resolves it to a Link and Share.
-func resolveProtonPath(ctx context.Context, dc *driveClient.Client, rawPath string) (*drive.Link, *drive.Share, error) {
+// ResolveProtonPath parses a proton:// URI and resolves it to a Link and Share.
+func ResolveProtonPath(ctx context.Context, dc *driveClient.Client, rawPath string) (*drive.Link, *drive.Share, error) {
 	sharePart, pathPart, err := parseProtonURI(rawPath)
 	if err != nil {
 		return nil, nil, err

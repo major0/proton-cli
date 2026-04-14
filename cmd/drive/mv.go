@@ -59,13 +59,13 @@ func runMv(_ *cobra.Command, args []string) error {
 // If dest is an existing directory, move src into it.
 // If dest doesn't exist, rename src to dest (parent must exist).
 func mvSingle(ctx context.Context, dc *driveClient.Client, srcPath, destPath string) error {
-	src, srcShare, err := resolveProtonPath(ctx, dc, srcPath)
+	src, srcShare, err := ResolveProtonPath(ctx, dc, srcPath)
 	if err != nil {
 		return fmt.Errorf("mv: %s: %w", srcPath, err)
 	}
 
 	// Try to resolve dest as an existing path.
-	dest, destShare, destErr := resolveProtonPath(ctx, dc, destPath)
+	dest, destShare, destErr := ResolveProtonPath(ctx, dc, destPath)
 
 	if destErr == nil && dest.Type() == proton.LinkTypeFolder {
 		// Dest exists and is a directory — move src into it.
@@ -79,7 +79,7 @@ func mvSingle(ctx context.Context, dc *driveClient.Client, srcPath, destPath str
 	destDir := path.Dir(destParsed)
 	destName := path.Base(destParsed)
 
-	parent, parentShare, err := resolveProtonPath(ctx, dc, "proton://"+destDir)
+	parent, parentShare, err := ResolveProtonPath(ctx, dc, "proton://"+destDir)
 	if err != nil {
 		return fmt.Errorf("mv: %s: parent not found: %w", destPath, err)
 	}
@@ -91,7 +91,7 @@ func mvSingle(ctx context.Context, dc *driveClient.Client, srcPath, destPath str
 // mvMultiple handles: mv src1 src2 ... dest
 // Dest must be an existing directory.
 func mvMultiple(ctx context.Context, dc *driveClient.Client, srcPaths []string, destPath string) error {
-	dest, destShare, err := resolveProtonPath(ctx, dc, destPath)
+	dest, destShare, err := ResolveProtonPath(ctx, dc, destPath)
 	if err != nil {
 		return fmt.Errorf("mv: %s: %w", destPath, err)
 	}
@@ -101,7 +101,7 @@ func mvMultiple(ctx context.Context, dc *driveClient.Client, srcPaths []string, 
 	}
 
 	for _, srcPath := range srcPaths {
-		src, srcShare, err := resolveProtonPath(ctx, dc, srcPath)
+		src, srcShare, err := ResolveProtonPath(ctx, dc, srcPath)
 		if err != nil {
 			return fmt.Errorf("mv: %s: %w", srcPath, err)
 		}

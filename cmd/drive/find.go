@@ -160,7 +160,7 @@ func runFind(_ *cobra.Command, args []string) error {
 		rootPaths = append(rootPaths, name+"/")
 	} else {
 		for _, arg := range args {
-			link, _, err := resolveProtonPath(ctx, dc, arg)
+			link, _, err := ResolveProtonPath(ctx, dc, arg)
 			if err != nil {
 				return fmt.Errorf("find: %s: %w", arg, err)
 			}

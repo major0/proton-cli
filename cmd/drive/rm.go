@@ -69,7 +69,7 @@ func rmOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
 		return fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
 	}
 
-	link, share, err := resolveProtonPath(ctx, dc, rawPath)
+	link, share, err := ResolveProtonPath(ctx, dc, rawPath)
 	if err != nil {
 		return fmt.Errorf("rm: %s: %w", rawPath, err)
 	}

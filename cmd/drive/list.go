@@ -258,7 +258,7 @@ func resolveEntries(ctx context.Context, dc *driveClient.Client, args []string, 
 
 	var entries []listEntry
 	for _, arg := range args {
-		link, _, err := resolveProtonPath(ctx, dc, arg)
+		link, _, err := ResolveProtonPath(ctx, dc, arg)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", arg, err)
 		}
