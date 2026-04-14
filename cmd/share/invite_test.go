@@ -3,7 +3,7 @@ package shareCmd
 import (
 	"testing"
 
-	"github.com/major0/proton-cli/api/share"
+	"github.com/major0/proton-cli/api/drive"
 )
 
 func TestParsePermissions(t *testing.T) {
@@ -12,10 +12,10 @@ func TestParsePermissions(t *testing.T) {
 		want    int
 		wantErr bool
 	}{
-		{"read", share.PermViewer, false},
-		{"viewer", share.PermViewer, false},
-		{"write", share.PermEditor, false},
-		{"editor", share.PermEditor, false},
+		{"read", drive.PermViewer, false},
+		{"viewer", drive.PermViewer, false},
+		{"write", drive.PermEditor, false},
+		{"editor", drive.PermEditor, false},
 		{"admin", 0, true},
 		{"", 0, true},
 		{"rw", 0, true},

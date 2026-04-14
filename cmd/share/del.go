@@ -7,7 +7,6 @@ import (
 
 	"github.com/major0/proton-cli/api"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
-	shareClient "github.com/major0/proton-cli/api/share/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -52,8 +51,7 @@ func runShareDel(_ *cobra.Command, args []string) error {
 
 	shareID := resolved.Metadata().ShareID
 
-	sc := shareClient.NewClient(session)
-	if err := sc.DeleteShare(ctx, shareID, delFlags.force); err != nil {
+	if err := dc.DeleteShareByID(ctx, shareID, delFlags.force); err != nil {
 		return fmt.Errorf("share del: %s: %w", name, err)
 	}
 

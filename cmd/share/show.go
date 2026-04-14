@@ -9,8 +9,6 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
-	"github.com/major0/proton-cli/api/share"
-	shareClient "github.com/major0/proton-cli/api/share/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -42,7 +40,6 @@ func runShareShow(_ *cobra.Command, args []string) error {
 
 	printShareMetadata(ctx, resolved)
 
-	// Main volume and photos shares don't support member/invitation APIs.
 	meta := resolved.Metadata()
 	if meta.Type == proton.ShareTypeMain || meta.Type == drive.ShareTypePhotos {
 		fmt.Println("\nMembers:      -")
@@ -50,12 +47,10 @@ func runShareShow(_ *cobra.Command, args []string) error {
 		return nil
 	}
 
-	sc := shareClient.NewClient(session)
 	shareID := meta.ShareID
-
-	printMembers(ctx, sc, shareID)
-	printInvitations(ctx, sc, shareID)
-	printExternalInvitations(ctx, sc, shareID)
+	printMembers(ctx, dc, shareID)
+	printInvitations(ctx, dc, shareID)
+	printExternalInvitations(ctx, dc, shareID)
 
 	return nil
 }
@@ -70,8 +65,8 @@ func printShareMetadata(ctx context.Context, s *drive.Share) {
 	fmt.Printf("Created:  %s\n", fmtTime(meta.CreationTime))
 }
 
-func printMembers(ctx context.Context, sc *shareClient.Client, shareID string) {
-	members, err := sc.ListMembers(ctx, shareID)
+func printMembers(ctx context.Context, dc *driveClient.Client, shareID string) {
+	members, err := dc.ListMembers(ctx, shareID)
 	if err != nil {
 		slog.Error("share show: listing members", "error", err)
 		fmt.Fprintf(os.Stderr, "warning: failed to list members: %v\n", err)
@@ -86,14 +81,14 @@ func printMembers(ctx context.Context, sc *shareClient.Client, shareID string) {
 	for _, m := range members {
 		fmt.Printf("  %-30s  %-8s  %s\n",
 			m.Email,
-			share.FormatPermissions(m.Permissions),
+			drive.FormatPermissions(m.Permissions),
 			m.MemberID,
 		)
 	}
 }
 
-func printInvitations(ctx context.Context, sc *shareClient.Client, shareID string) {
-	invs, err := sc.ListInvitations(ctx, shareID)
+func printInvitations(ctx context.Context, dc *driveClient.Client, shareID string) {
+	invs, err := dc.ListInvitations(ctx, shareID)
 	if err != nil {
 		slog.Error("share show: listing invitations", "error", err)
 		fmt.Fprintf(os.Stderr, "warning: failed to list invitations: %v\n", err)
@@ -108,15 +103,15 @@ func printInvitations(ctx context.Context, sc *shareClient.Client, shareID strin
 	for _, inv := range invs {
 		fmt.Printf("  %-30s  %-8s  %s  %s\n",
 			inv.InviteeEmail,
-			share.FormatPermissions(inv.Permissions),
+			drive.FormatPermissions(inv.Permissions),
 			fmtTime(inv.CreateTime),
 			inv.InvitationID,
 		)
 	}
 }
 
-func printExternalInvitations(ctx context.Context, sc *shareClient.Client, shareID string) {
-	exts, err := sc.ListExternalInvitations(ctx, shareID)
+func printExternalInvitations(ctx context.Context, dc *driveClient.Client, shareID string) {
+	exts, err := dc.ListExternalInvitations(ctx, shareID)
 	if err != nil {
 		slog.Error("share show: listing external invitations", "error", err)
 		fmt.Fprintf(os.Stderr, "warning: failed to list external invitations: %v\n", err)
@@ -131,7 +126,7 @@ func printExternalInvitations(ctx context.Context, sc *shareClient.Client, share
 	for _, ext := range exts {
 		fmt.Printf("  %-30s  %-8s  %s  %s\n",
 			ext.InviteeEmail,
-			share.FormatPermissions(ext.Permissions),
+			drive.FormatPermissions(ext.Permissions),
 			fmtTime(ext.CreateTime),
 			ext.ExternalInvitationID,
 		)

@@ -5,9 +5,8 @@ import (
 	"fmt"
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
-	"github.com/major0/proton-cli/api/share"
-	shareClient "github.com/major0/proton-cli/api/share/client"
 	cli "github.com/major0/proton-cli/cmd"
 	driveCmd "github.com/major0/proton-cli/cmd/drive"
 	"github.com/spf13/cobra"
@@ -88,14 +87,14 @@ func runShareAdd(_ *cobra.Command, args []string) error {
 	linkPassphrase := link.ProtonLink().NodePassphrase
 	linkEncName := link.ProtonLink().Name
 
-	shareKey, sharePassphrase, sharePassphraseSig, ppKP, nameKP, err := share.GenerateShareCrypto(
+	shareKey, sharePassphrase, sharePassphraseSig, ppKP, nameKP, err := drive.GenerateShareCrypto(
 		addrKR, linkNodeKR, parentKR, linkPassphrase, linkEncName,
 	)
 	if err != nil {
 		return fmt.Errorf("share add: %s: %w", protonPath, err)
 	}
 
-	payload := share.CreateDriveSharePayload{
+	payload := drive.CreateDriveSharePayload{
 		AddressID:                addrID,
 		RootLinkID:               link.LinkID(),
 		ShareKey:                 shareKey,
@@ -105,10 +104,9 @@ func runShareAdd(_ *cobra.Command, args []string) error {
 		NameKeyPacket:            nameKP,
 	}
 
-	sc := shareClient.NewClient(session)
 	volumeID := link.VolumeID()
 
-	shareID, err := sc.CreateShare(ctx, volumeID, payload)
+	shareID, err := dc.CreateShareFromLink(ctx, volumeID, payload)
 	if err != nil {
 		return fmt.Errorf("share add: %s: %w", protonPath, err)
 	}

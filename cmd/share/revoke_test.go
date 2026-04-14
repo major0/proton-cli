@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/major0/proton-cli/api/share"
+	"github.com/major0/proton-cli/api/drive"
 	"pgregory.net/rapid"
 )
 
@@ -43,19 +43,19 @@ func TestFindRevokeTarget_UniqueMatch_Property(t *testing.T) {
 		allEmails := genDistinctIDs(t, total, "email")
 
 		idx := 0
-		members := make([]share.Member, nMembers)
+		members := make([]drive.Member, nMembers)
 		for i := range members {
-			members[i] = share.Member{MemberID: allIDs[idx], Email: allEmails[idx]}
+			members[i] = drive.Member{MemberID: allIDs[idx], Email: allEmails[idx]}
 			idx++
 		}
-		invs := make([]share.Invitation, nInvs)
+		invs := make([]drive.Invitation, nInvs)
 		for i := range invs {
-			invs[i] = share.Invitation{InvitationID: allIDs[idx], InviteeEmail: allEmails[idx]}
+			invs[i] = drive.Invitation{InvitationID: allIDs[idx], InviteeEmail: allEmails[idx]}
 			idx++
 		}
-		exts := make([]share.ExternalInvitation, nExts)
+		exts := make([]drive.ExternalInvitation, nExts)
 		for i := range exts {
-			exts[i] = share.ExternalInvitation{ExternalInvitationID: allIDs[idx], InviteeEmail: allEmails[idx]}
+			exts[i] = drive.ExternalInvitation{ExternalInvitationID: allIDs[idx], InviteeEmail: allEmails[idx]}
 			idx++
 		}
 
@@ -98,8 +98,8 @@ func TestFindRevokeTarget_Ambiguous_Property(t *testing.T) {
 		// Create a member and an invitation with the same email.
 		sharedEmail := fmt.Sprintf("shared-%s@test.local", rapid.StringMatching(`[a-z]{4}`).Draw(t, "email"))
 
-		members := []share.Member{{MemberID: "m1", Email: sharedEmail}}
-		invs := []share.Invitation{{InvitationID: "inv1", InviteeEmail: sharedEmail}}
+		members := []drive.Member{{MemberID: "m1", Email: sharedEmail}}
+		invs := []drive.Invitation{{InvitationID: "inv1", InviteeEmail: sharedEmail}}
 
 		_, err := findRevokeTarget(sharedEmail, members, invs, nil)
 		if err == nil {
@@ -114,7 +114,7 @@ func TestFindRevokeTarget_Ambiguous_Property(t *testing.T) {
 // TestFindRevokeTarget_NoMatch verifies that a non-matching argument
 // returns a "no matching" error.
 func TestFindRevokeTarget_NoMatch(t *testing.T) {
-	members := []share.Member{{MemberID: "m1", Email: "alice@test.local"}}
+	members := []drive.Member{{MemberID: "m1", Email: "alice@test.local"}}
 	_, err := findRevokeTarget("nobody@test.local", members, nil, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -126,7 +126,7 @@ func TestFindRevokeTarget_NoMatch(t *testing.T) {
 
 // TestFindRevokeTarget_ByID verifies lookup by ID (not email).
 func TestFindRevokeTarget_ByID(t *testing.T) {
-	members := []share.Member{{MemberID: "m1", Email: "alice@test.local"}}
+	members := []drive.Member{{MemberID: "m1", Email: "alice@test.local"}}
 	got, err := findRevokeTarget("m1", members, nil, nil)
 	if err != nil {
 		t.Fatalf("findRevokeTarget by ID: %v", err)
