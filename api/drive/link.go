@@ -65,6 +65,21 @@ func (l *Link) MIMEType() string { return l.protonLink.MIMEType }
 // LinkID returns the encrypted link ID without decryption.
 func (l *Link) LinkID() string { return l.protonLink.LinkID }
 
+// Stat returns file metadata without decrypting content. BlockSizes
+// is nil — it requires decrypting the revision XAttr which is a
+// client-layer operation.
+func (l *Link) Stat() FileInfo {
+	return FileInfo{
+		LinkID:     l.protonLink.LinkID,
+		Name:       l.Name,
+		Size:       l.Size(),
+		ModifyTime: l.ModifyTime(),
+		CreateTime: l.CreateTime(),
+		MIMEType:   l.protonLink.MIMEType,
+		IsDir:      l.protonLink.Type == proton.LinkTypeFolder,
+	}
+}
+
 // isTransient returns true for errors that may succeed on retry.
 func isTransient(err error) bool {
 	return errors.Is(err, context.Canceled) ||
