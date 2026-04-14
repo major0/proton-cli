@@ -1,24 +1,27 @@
 package driveCmd
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
 var cpFlags struct {
-	recursive       bool   // -r, -R, --recursive
-	archive         bool   // -a (implies -r -d --preserve=mode,timestamps)
-	dereference     bool   // -L, --dereference (follow symlinks)
-	noDeref         bool   // -d (skip symlinks; implied by -a)
-	verbose         bool   // -v, --verbose
-	progress        bool   // --progress
-	preserve        string // --preserve=mode,timestamps
-	workers         int    // --workers (override default 8)
-	targetDir       string // -t, --target-directory
-	removeDest      bool   // --remove-destination (trash Proton / remove local before copy)
-	backup          bool   // --backup (local: rename to <name>~; Proton: no-op)
+	recursive   bool   // -r, -R, --recursive
+	archive     bool   // -a (implies -r -d --preserve=mode,timestamps)
+	dereference bool   // -L, --dereference (follow symlinks)
+	noDeref     bool   // -d (skip symlinks; implied by -a)
+	verbose     bool   // -v, --verbose
+	progress    bool   // --progress
+	preserve    string // --preserve=mode,timestamps
+	workers     int    // --workers (override default 8)
+	targetDir   string // -t, --target-directory
+	removeDest  bool   // --remove-destination (trash Proton / remove local before copy)
+	backup      bool   // --backup (local: rename to <name>~; Proton: no-op)
 }
 
 var driveCpCmd = &cobra.Command{
@@ -52,6 +55,20 @@ func init() {
 	cli.BoolFlag(f, &cpFlags.backup, "backup", false, "Backup existing local files as <name>~")
 }
 
+// pathArg is a parsed command argument with its classified type.
+type pathArg struct {
+	raw      string
+	pathType driveClient.PathType
+}
+
+// classifyPath returns PathProton if arg starts with "proton://", PathLocal otherwise.
+func classifyPath(arg string) driveClient.PathType {
+	if strings.HasPrefix(arg, "proton://") {
+		return driveClient.PathProton
+	}
+	return driveClient.PathLocal
+}
+
 func runCp(_ *cobra.Command, args []string) error {
 	// Validate mutually exclusive flags.
 	if cpFlags.removeDest && cpFlags.backup {
@@ -75,6 +92,57 @@ func runCp(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("cp: missing source operand")
 	}
 
-	// TODO: session setup, path classification, dispatch
+	// Split args into sources and dest.
+	var sources []pathArg
+	var dest pathArg
+
+	if cpFlags.targetDir != "" {
+		// -t mode: all positional args are sources, -t value is dest.
+		dest = pathArg{raw: cpFlags.targetDir, pathType: classifyPath(cpFlags.targetDir)}
+		for _, a := range args {
+			sources = append(sources, pathArg{raw: a, pathType: classifyPath(a)})
+		}
+	} else {
+		// Default: last arg is dest, rest are sources.
+		dest = pathArg{raw: args[len(args)-1], pathType: classifyPath(args[len(args)-1])}
+		for _, a := range args[:len(args)-1] {
+			sources = append(sources, pathArg{raw: a, pathType: classifyPath(a)})
+		}
+	}
+
+	// Determine if any path is a Proton path — session setup is only
+	// needed when at least one endpoint is remote.
+	needSession := dest.pathType == driveClient.PathProton
+	if !needSession {
+		for _, s := range sources {
+			if s.pathType == driveClient.PathProton {
+				needSession = true
+				break
+			}
+		}
+	}
+
+	var dc *driveClient.Client
+	if needSession {
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+
+		session, err := cli.RestoreSession(ctx)
+		if err != nil {
+			return err
+		}
+
+		dc, err = driveClient.NewClient(ctx, session)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Suppress unused variable warning until Task 3 wires up dispatch.
+	_ = dc
+	_ = sources
+	_ = dest
+
+	// TODO: dispatch to cpSingle/cpMultiple (Task 3)
 	return fmt.Errorf("cp: not yet implemented")
 }
