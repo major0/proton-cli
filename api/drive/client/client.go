@@ -15,6 +15,7 @@ import (
 // Implements drive.LinkResolver.
 type Client struct {
 	Session         *api.Session
+	Config          *api.Config // loaded config for cache policy lookup; may be nil
 	addresses       map[string]proton.Address
 	addressKeyRings map[string]*crypto.KeyRing
 }

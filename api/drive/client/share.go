@@ -136,7 +136,43 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 	// Set the link on the share after construction to break the circular reference.
 	share.Link = link
 
+	// Apply per-share cache config.
+	c.applyShareConfig(share)
+
 	return share, nil
+}
+
+// applyShareConfig sets cache flags on a share based on the loaded config.
+// Root and photos shares are always forced to false. Looks up the share
+// by its decrypted root link name.
+func (c *Client) applyShareConfig(share *drive.Share) {
+	// Root and photos shares: caching prohibited.
+	st := share.ProtonShare().Type
+	if st == proton.ShareTypeMain || st == drive.ShareTypePhotos {
+		share.DirentCacheEnabled = false
+		share.MetadataCacheEnabled = false
+		share.DiskCacheEnabled = false
+		return
+	}
+
+	if c.Config == nil {
+		return
+	}
+
+	// Look up by decrypted name.
+	name, err := share.Link.Name()
+	if err != nil {
+		return
+	}
+
+	sc, ok := c.Config.Shares[name]
+	if !ok {
+		return // defaults to false
+	}
+
+	share.DirentCacheEnabled = sc.DirentCacheEnabled
+	share.MetadataCacheEnabled = sc.MetadataCacheEnabled
+	share.DiskCacheEnabled = sc.DiskCacheEnabled
 }
 
 // ResolveShareByType finds a share by its type (Main, Photos, etc.)

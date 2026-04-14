@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/major0/proton-cli/api/drive/client"
@@ -171,4 +172,47 @@ func TestBlockCache_InvalidDir(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid dir")
 	}
+}
+
+// TestCachePathLayout_Property verifies that block and link paths use
+// the {prefix}/{linkID}/ bucketing layout.
+//
+// **Property 4: Cache path layout uses prefix bucketing**
+// **Validates: Requirements 2.6**
+func TestCachePathLayout_Property(t *testing.T) {
+	dir := t.TempDir()
+	cache, err := client.ExportNewBlockCache(dir)
+	if err != nil {
+		t.Fatalf("newBlockCache: %v", err)
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate linkIDs with at least 2 chars.
+		linkID := rapid.StringMatching(`[a-zA-Z0-9_-]{2,32}`).Draw(t, "linkID")
+		index := rapid.IntRange(1, 100).Draw(t, "index")
+		data := []byte("test-block")
+
+		if err := cache.ExportPutBlock(linkID, index, data); err != nil {
+			t.Fatalf("putBlock: %v", err)
+		}
+
+		// Verify the prefix bucket directory exists.
+		prefix := linkID[:2]
+		prefixDir := filepath.Join(dir, prefix)
+		if _, err := os.Stat(prefixDir); err != nil {
+			t.Fatalf("prefix dir %q missing: %v", prefixDir, err)
+		}
+
+		// Verify the linkID directory exists under the prefix.
+		linkDir := filepath.Join(prefixDir, linkID)
+		if _, err := os.Stat(linkDir); err != nil {
+			t.Fatalf("link dir %q missing: %v", linkDir, err)
+		}
+
+		// Verify the block file exists.
+		blockFile := filepath.Join(linkDir, fmt.Sprintf("block.%d", index))
+		if _, err := os.Stat(blockFile); err != nil {
+			t.Fatalf("block file %q missing: %v", blockFile, err)
+		}
+	})
 }
