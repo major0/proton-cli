@@ -3,8 +3,12 @@ package driveCmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
+	proton "github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -69,6 +73,138 @@ func classifyPath(arg string) driveClient.PathType {
 	return driveClient.PathLocal
 }
 
+// resolvedEndpoint holds the result of resolving a source or destination path.
+// Exactly one variant is populated based on pathType.
+type resolvedEndpoint struct {
+	pathType driveClient.PathType
+	raw      string // original argument string
+
+	// Local path resolution (pathType == PathLocal)
+	localPath string      // cleaned absolute path
+	localInfo os.FileInfo // from os.Stat
+
+	// Proton path resolution (pathType == PathProton)
+	link  *drive.Link
+	share *drive.Share
+}
+
+// isDir returns true if the resolved endpoint is a directory.
+func (r *resolvedEndpoint) isDir() bool {
+	if r.pathType == driveClient.PathLocal {
+		return r.localInfo != nil && r.localInfo.IsDir()
+	}
+	return r.link != nil && r.link.Type() == proton.LinkTypeFolder
+}
+
+// basename returns the name of the resolved endpoint.
+func (r *resolvedEndpoint) basename() string {
+	if r.pathType == driveClient.PathLocal {
+		return filepath.Base(r.localPath)
+	}
+	if r.link != nil {
+		name, err := r.link.Name()
+		if err != nil {
+			return filepath.Base(r.raw)
+		}
+		return name
+	}
+	return filepath.Base(r.raw)
+}
+
+// resolveDest resolves the destination path with coreutils cp semantics.
+// For existing paths, returns the resolved endpoint directly. For
+// non-existent paths, verifies the parent exists and returns an endpoint
+// with the parent info (localPath set but localInfo nil for local;
+// link pointing to parent for Proton).
+func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multiSource bool) (*resolvedEndpoint, error) {
+	ep := &resolvedEndpoint{pathType: arg.pathType, raw: arg.raw}
+
+	switch arg.pathType {
+	case driveClient.PathLocal:
+		info, err := os.Stat(arg.raw)
+		if err == nil {
+			// Dest exists.
+			ep.localPath = arg.raw
+			ep.localInfo = info
+			if multiSource && !info.IsDir() {
+				return nil, fmt.Errorf("cp: %s: not a directory", arg.raw)
+			}
+			return ep, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
+		}
+		// Dest doesn't exist — parent must exist.
+		if multiSource {
+			return nil, fmt.Errorf("cp: %s: no such file or directory", arg.raw)
+		}
+		parent := filepath.Dir(arg.raw)
+		pInfo, pErr := os.Stat(parent)
+		if pErr != nil {
+			return nil, fmt.Errorf("cp: %s: %w", arg.raw, pErr)
+		}
+		if !pInfo.IsDir() {
+			return nil, fmt.Errorf("cp: %s: not a directory", parent)
+		}
+		// localPath set but localInfo nil signals "create new file at this path".
+		ep.localPath = arg.raw
+		return ep, nil
+
+	case driveClient.PathProton:
+		link, share, err := ResolveProtonPath(ctx, dc, arg.raw)
+		if err == nil {
+			// Dest exists.
+			ep.link = link
+			ep.share = share
+			if multiSource && link.Type() != proton.LinkTypeFolder {
+				return nil, fmt.Errorf("cp: %s: not a directory", arg.raw)
+			}
+			return ep, nil
+		}
+		// Dest doesn't exist — resolve parent.
+		if multiSource {
+			return nil, fmt.Errorf("cp: %s: no such file or directory", arg.raw)
+		}
+		parsed := parsePath(arg.raw)
+		parentPath := filepath.Dir(parsed)
+		parentURI := "proton:///" + parentPath
+		parentLink, parentShare, pErr := ResolveProtonPath(ctx, dc, parentURI)
+		if pErr != nil {
+			return nil, fmt.Errorf("cp: %s: %w", arg.raw, pErr)
+		}
+		if parentLink.Type() != proton.LinkTypeFolder {
+			return nil, fmt.Errorf("cp: %s: not a directory", parentPath)
+		}
+		ep.link = parentLink
+		ep.share = parentShare
+		return ep, nil
+	}
+
+	return ep, nil
+}
+
+// resolveSource resolves a source path argument to a resolvedEndpoint.
+func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*resolvedEndpoint, error) {
+	ep := &resolvedEndpoint{pathType: arg.pathType, raw: arg.raw}
+	switch arg.pathType {
+	case driveClient.PathProton:
+		link, share, err := ResolveProtonPath(ctx, dc, arg.raw)
+		if err != nil {
+			return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
+		}
+		ep.link = link
+		ep.share = share
+	case driveClient.PathLocal:
+		info, err := os.Stat(arg.raw)
+		if err != nil {
+			return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
+		}
+		ep.localPath = arg.raw
+		ep.localInfo = info
+	}
+	return ep, nil
+}
+
 func runCp(_ *cobra.Command, args []string) error {
 	// Validate mutually exclusive flags.
 	if cpFlags.removeDest && cpFlags.backup {
@@ -122,11 +258,12 @@ func runCp(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	// Create context — timeout applies to the entire operation.
+	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	defer cancel()
+
 	var dc *driveClient.Client
 	if needSession {
-		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
-		defer cancel()
-
 		session, err := cli.RestoreSession(ctx)
 		if err != nil {
 			return err
@@ -138,11 +275,49 @@ func runCp(_ *cobra.Command, args []string) error {
 		}
 	}
 
-	// Suppress unused variable warning until Task 3 wires up dispatch.
-	_ = dc
-	_ = sources
-	_ = dest
+	// Resolve destination.
+	dstEp, err := resolveDest(ctx, dc, dest, len(sources) > 1)
+	if err != nil {
+		return err
+	}
 
-	// TODO: dispatch to cpSingle/cpMultiple (Task 3)
+	// Dispatch.
+	if len(sources) == 1 {
+		return cpSingle(ctx, dc, sources[0], dstEp)
+	}
+	return cpMultiple(ctx, dc, sources, dstEp)
+}
+
+// cpSingle copies a single source to the destination.
+func cpSingle(ctx context.Context, dc *driveClient.Client, src pathArg, dst *resolvedEndpoint) error {
+	srcEp, err := resolveSource(ctx, dc, src)
+	if err != nil {
+		return err
+	}
+
+	// If dest is a directory, copy source into it (preserve basename).
+	if dst.isDir() {
+		dst = &resolvedEndpoint{
+			pathType:  dst.pathType,
+			raw:       dst.raw,
+			localPath: filepath.Join(dst.localPath, srcEp.basename()),
+			localInfo: nil, // new file
+			link:      dst.link,
+			share:     dst.share,
+		}
+	}
+
+	// TODO: buildCopyJob and execute transfer (Task 4)
+	_ = srcEp
 	return fmt.Errorf("cp: not yet implemented")
+}
+
+// cpMultiple copies multiple sources into a directory destination.
+func cpMultiple(ctx context.Context, dc *driveClient.Client, srcs []pathArg, dst *resolvedEndpoint) error {
+	for _, src := range srcs {
+		if err := cpSingle(ctx, dc, src, dst); err != nil {
+			return err
+		}
+	}
+	return nil
 }
