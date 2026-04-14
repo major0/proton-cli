@@ -1,12 +1,15 @@
 package client
 
 import (
-	"github.com/ProtonMail/go-proton-api"
-	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"context"
+	"errors"
+	"io"
+	"os"
+
 	"github.com/major0/proton-cli/api/drive"
 )
 
-// DefaultWorkers is the default number of reader/writer goroutines.
+// DefaultWorkers is the default number of concurrent block workers.
 const DefaultWorkers = 8
 
 // PathType distinguishes local filesystem paths from Proton Drive paths.
@@ -19,36 +22,36 @@ const (
 	PathProton
 )
 
-// CopyEndpoint describes one side of a copy operation.
-type CopyEndpoint struct {
-	Type       PathType
-	LocalPath  string             // set when Type == PathLocal
-	Link       *drive.Link        // set when Type == PathProton
-	Share      *drive.Share       // set when Type == PathProton
-	RevisionID string             // Proton source: from GetRevisionAllBlocks; Proton dest: from CreateFile/CreateRevision
-	Blocks     []proton.Block     // Proton source: block list from revision
-	SessionKey *crypto.SessionKey // Proton source: for decrypt; Proton dest: for encrypt
-	FileSize   int64              // total file size in bytes
-	BlockSizes []int64            // per-block sizes from XAttr or computed from FileSize
+// BlockReader reads blocks from a source. Implementations carry their
+// own state (file path, link, session key, etc.).
+type BlockReader interface {
+	// ReadBlock reads block at index (0-based) into buf. Returns bytes read.
+	ReadBlock(ctx context.Context, index int, buf []byte) (int, error)
+	// BlockCount returns the total number of blocks.
+	BlockCount() int
+	// BlockSize returns the size of block at index (0-based).
+	BlockSize(index int) int64
+	// Describe returns a human-readable name for error messages.
+	Describe() string
+	// Close releases resources.
+	Close() error
 }
 
-// CopyJob is a fully resolved source/destination pair. All context
-// needed for block transfer is resolved upfront — workers do no
-// additional lookups during transfer.
+// BlockWriter writes blocks to a destination. Implementations carry
+// their own state (file path, link, session key, etc.).
+type BlockWriter interface {
+	// WriteBlock writes data as block at index (0-based).
+	WriteBlock(ctx context.Context, index int, data []byte) error
+	// Describe returns a human-readable name for error messages.
+	Describe() string
+	// Close releases resources.
+	Close() error
+}
+
+// CopyJob is a fully resolved source/destination pair.
 type CopyJob struct {
-	Src CopyEndpoint
-	Dst CopyEndpoint
-}
-
-// BlockJob is a single block work item flowing through the
-// reader→writer channel. Buf is a slice into the worker's owned
-// buffer — not a separate allocation.
-type BlockJob struct {
-	Job    *CopyJob
-	Index  int   // 1-based block index
-	Offset int64 // byte offset in the file
-	Size   int64 // block size in bytes
-	Buf    []byte
+	Src BlockReader
+	Dst BlockWriter
 }
 
 // TransferOpts configures bulk transfer behavior.
@@ -66,37 +69,116 @@ func (o TransferOpts) workers() int {
 	return o.Workers
 }
 
-// expandBlocks generates BlockJob items from a CopyJob. For Proton
-// sources, block sizes come from the source endpoint's BlockSizes.
-// For local sources, blocks are computed from FileSize / BlockSize.
-// Indices are 1-based, offsets are cumulative.
-func expandBlocks(job *CopyJob) []BlockJob {
-	sizes := job.Src.BlockSizes
-	if len(sizes) == 0 && job.Src.FileSize > 0 {
-		// Compute block sizes from file size.
-		n := drive.BlockCount(job.Src.FileSize)
-		sizes = make([]int64, n)
-		remaining := job.Src.FileSize
-		for i := range sizes {
-			if remaining >= drive.BlockSize {
-				sizes[i] = drive.BlockSize
-			} else {
-				sizes[i] = remaining
-			}
-			remaining -= sizes[i]
-		}
-	}
+// LocalReader reads blocks from a local file. Each ReadBlock call
+// opens its own file descriptor so concurrent workers don't interfere.
+type LocalReader struct {
+	Path    string
+	Size    int64
+	nBlocks int
+}
 
-	jobs := make([]BlockJob, len(sizes))
-	var offset int64
-	for i, sz := range sizes {
-		jobs[i] = BlockJob{
-			Job:    job,
-			Index:  i + 1, // 1-based
-			Offset: offset,
-			Size:   sz,
-		}
-		offset += sz
+// NewLocalReader creates a BlockReader for a local file.
+func NewLocalReader(path string, size int64) *LocalReader {
+	return &LocalReader{
+		Path:    path,
+		Size:    size,
+		nBlocks: drive.BlockCount(size),
 	}
-	return jobs
+}
+
+// ReadBlock opens the file, reads block at index into buf, and closes.
+func (r *LocalReader) ReadBlock(_ context.Context, index int, buf []byte) (int, error) {
+	f, err := os.Open(r.Path)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = f.Close() }()
+
+	offset := int64(index) * drive.BlockSize
+	sz := r.BlockSize(index)
+	n, err := f.ReadAt(buf[:sz], offset)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return 0, err
+	}
+	return n, nil
+}
+
+// BlockCount returns the total number of blocks.
+func (r *LocalReader) BlockCount() int { return r.nBlocks }
+
+// BlockSize returns the size of block at index.
+func (r *LocalReader) BlockSize(index int) int64 {
+	offset := int64(index) * drive.BlockSize
+	remaining := r.Size - offset
+	if remaining <= 0 {
+		return 0
+	}
+	if remaining > drive.BlockSize {
+		return drive.BlockSize
+	}
+	return remaining
+}
+
+// Describe returns the file path.
+func (r *LocalReader) Describe() string { return r.Path }
+
+// Close is a no-op — FDs are per-call.
+func (r *LocalReader) Close() error { return nil }
+
+// LocalWriter writes blocks to a local file. Each WriteBlock call
+// opens its own file descriptor so concurrent workers don't interfere.
+type LocalWriter struct {
+	Path string
+}
+
+// NewLocalWriter creates a BlockWriter for a local file.
+func NewLocalWriter(path string) *LocalWriter {
+	return &LocalWriter{Path: path}
+}
+
+// WriteBlock opens the file, writes data at the correct offset, and closes.
+func (w *LocalWriter) WriteBlock(_ context.Context, index int, data []byte) error {
+	f, err := os.OpenFile(w.Path, os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	offset := int64(index) * drive.BlockSize
+	_, err = f.WriteAt(data, offset)
+	return err
+}
+
+// Describe returns the file path.
+func (w *LocalWriter) Describe() string { return w.Path }
+
+// Close is a no-op — FDs are per-call.
+func (w *LocalWriter) Close() error { return nil }
+
+// blockMap tracks which blocks of a job have been claimed by workers.
+type blockMap struct {
+	job     *CopyJob
+	pending []bool // true = not yet claimed
+}
+
+// newBlockMap creates a blockMap for a CopyJob.
+func newBlockMap(job *CopyJob) *blockMap {
+	n := job.Src.BlockCount()
+	pending := make([]bool, n)
+	for i := range pending {
+		pending[i] = true
+	}
+	return &blockMap{job: job, pending: pending}
+}
+
+// claim returns the index of the next unclaimed block, or -1 if all
+// blocks have been claimed. Caller must hold the pipeline mutex.
+func (m *blockMap) claim() int {
+	for i, p := range m.pending {
+		if p {
+			m.pending[i] = false
+			return i
+		}
+	}
+	return -1
 }

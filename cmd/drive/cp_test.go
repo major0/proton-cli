@@ -78,17 +78,17 @@ func TestArgSplitting(t *testing.T) {
 		name    string
 		args    []string
 		setup   func() // optional flag setup before calling runCp
-		wantErr string // substring expected in error
+		wantErr string // substring expected in error; empty means expect success
 	}{
 		{
 			name:    "default mode valid args",
 			args:    []string{srcFile, dstFile},
-			wantErr: "not yet implemented",
+			wantErr: "",
 		},
 		{
 			name:    "default mode multiple sources",
 			args:    []string{srcA, srcB, destDir},
-			wantErr: "not yet implemented",
+			wantErr: "",
 		},
 		{
 			name: "target-directory mode",
@@ -96,7 +96,7 @@ func TestArgSplitting(t *testing.T) {
 			setup: func() {
 				cpFlags.targetDir = destDir
 			},
-			wantErr: "not yet implemented",
+			wantErr: "",
 		},
 		{
 			name:    "fewer than 2 args without -t",
@@ -122,6 +122,12 @@ func TestArgSplitting(t *testing.T) {
 			}
 
 			err := runCp(nil, tt.args)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("runCp() returned error %q, want nil", err)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatal("runCp() returned nil, want error")
 			}
@@ -193,22 +199,22 @@ func TestDestSemantics(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    []string
-		wantErr string
+		wantErr string // empty means expect success
 	}{
 		{
 			name:    "single source to existing directory",
 			args:    []string{srcFile, destDir},
-			wantErr: "not yet implemented",
+			wantErr: "",
 		},
 		{
 			name:    "single source to non-existent path (parent exists)",
 			args:    []string{srcFile, newDst},
-			wantErr: "not yet implemented",
+			wantErr: "",
 		},
 		{
 			name:    "multi-source to existing directory",
 			args:    []string{srcA, srcB, destDir},
-			wantErr: "not yet implemented",
+			wantErr: "",
 		},
 		{
 			name:    "multi-source to non-existent path",
@@ -236,6 +242,12 @@ func TestDestSemantics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resetFlags()
 			err := runCp(nil, tt.args)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("runCp() returned error %q, want nil", err)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatal("runCp() returned nil, want error")
 			}

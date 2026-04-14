@@ -11,46 +11,16 @@ import (
 )
 
 // DownloadFile downloads a Proton Drive file to a local path using the
-// block pipeline. Retrieves the revision block list, builds a CopyJob,
-// and feeds it through the transferPipeline.
+// block pipeline. Retrieves the revision block list, builds a CopyJob
+// with ProtonReader and LocalWriter, and feeds it through RunPipeline.
 func (c *Client) DownloadFile(ctx context.Context, link *drive.Link, localPath string, opts TransferOpts) error {
 	if link.Type() != proton.LinkTypeFile {
 		return fmt.Errorf("drive.DownloadFile: %s: not a file", link.LinkID())
 	}
 
-	pLink := link.ProtonLink()
-	if pLink.FileProperties == nil {
-		return fmt.Errorf("drive.DownloadFile: %s: no file properties", link.LinkID())
-	}
-
-	shareID := link.Share().ProtonShare().ShareID
-	revisionID := pLink.FileProperties.ActiveRevision.ID
-
-	// Fetch the full revision with block list.
-	revision, err := c.Session.Client.GetRevisionAllBlocks(ctx, shareID, link.LinkID(), revisionID)
+	fh, err := c.OpenFile(ctx, link)
 	if err != nil {
-		return fmt.Errorf("drive.DownloadFile: %s: get revision: %w", link.LinkID(), err)
-	}
-
-	// Derive the session key for decryption.
-	nodeKR, err := link.KeyRing()
-	if err != nil {
-		return fmt.Errorf("drive.DownloadFile: %s: keyring: %w", link.LinkID(), err)
-	}
-
-	sessionKey, err := pLink.GetSessionKey(nodeKR)
-	if err != nil {
-		return fmt.Errorf("drive.DownloadFile: %s: session key: %w", link.LinkID(), err)
-	}
-
-	// Compute block sizes from revision XAttr if available.
-	var blockSizes []int64
-	addrKR, err := c.addrKRForLink(link)
-	if err == nil {
-		xattr, err := revision.GetDecXAttrString(addrKR, nodeKR)
-		if err == nil && xattr != nil {
-			blockSizes = xattr.BlockSizes
-		}
+		return fmt.Errorf("drive.DownloadFile: %w", err)
 	}
 
 	// Pre-create the destination file.
@@ -60,56 +30,32 @@ func (c *Client) DownloadFile(ctx context.Context, link *drive.Link, localPath s
 	}
 	f.Close()
 
-	// Build the CopyJob.
+	store := NewBlockStore(c.Session, nil)
 	job := CopyJob{
-		Src: CopyEndpoint{
-			Type:       PathProton,
-			Link:       link,
-			Share:      link.Share(),
-			RevisionID: revisionID,
-			Blocks:     revision.Blocks,
-			SessionKey: sessionKey,
-			FileSize:   pLink.FileProperties.ActiveRevision.Size,
-			BlockSizes: blockSizes,
-		},
-		Dst: CopyEndpoint{
-			Type:      PathLocal,
-			LocalPath: localPath,
-		},
+		Src: NewProtonReader(link.LinkID(), fh.Blocks, fh.SessionKey, fh.FileSize, fh.BlockSizes, store),
+		Dst: NewLocalWriter(localPath),
 	}
 
-	// If we don't have block sizes from XAttr, compute from file size.
-	if len(job.Src.BlockSizes) == 0 {
-		n := drive.BlockCount(job.Src.FileSize)
-		job.Src.BlockSizes = make([]int64, n)
-		remaining := job.Src.FileSize
-		for i := range job.Src.BlockSizes {
-			if remaining >= drive.BlockSize {
-				job.Src.BlockSizes[i] = drive.BlockSize
-			} else {
-				job.Src.BlockSizes[i] = remaining
-			}
-			remaining -= job.Src.BlockSizes[i]
-		}
-	}
-
-	store := NewBlockStore(c.Session, nil) // TODO: wire cache from share config
-	pipe := &transferPipeline{
-		workers: opts.workers(),
-		store:   store,
-		client:  c,
-	}
-
-	if err := pipe.run(ctx, []CopyJob{job}); err != nil {
+	if err := RunPipeline(ctx, []CopyJob{job}, opts); err != nil {
 		return fmt.Errorf("drive.DownloadFile: %s: %w", link.LinkID(), err)
 	}
 
 	// Preserve mtime from XAttr if available.
-	if addrKR != nil {
-		xattr, err := revision.GetDecXAttrString(addrKR, nodeKR)
-		if err == nil && xattr != nil && xattr.ModificationTime != "" {
-			if mt, err := time.Parse(time.RFC3339, xattr.ModificationTime); err == nil {
-				_ = os.Chtimes(localPath, mt, mt)
+	addrKR, aErr := c.addrKRForLink(link)
+	if aErr == nil {
+		pLink := link.ProtonLink()
+		shareID := link.Share().ProtonShare().ShareID
+		revisionID := pLink.FileProperties.ActiveRevision.ID
+		revision, rErr := c.Session.Client.GetRevisionAllBlocks(ctx, shareID, link.LinkID(), revisionID)
+		if rErr == nil {
+			nodeKR, kErr := link.KeyRing()
+			if kErr == nil {
+				xattr, xErr := revision.GetDecXAttrString(addrKR, nodeKR)
+				if xErr == nil && xattr != nil && xattr.ModificationTime != "" {
+					if mt, tErr := time.Parse(time.RFC3339, xattr.ModificationTime); tErr == nil {
+						_ = os.Chtimes(localPath, mt, mt)
+					}
+				}
 			}
 		}
 	}

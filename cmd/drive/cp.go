@@ -205,6 +205,55 @@ func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*r
 	return ep, nil
 }
 
+// buildCopyJob constructs a CopyJob from resolved source and destination
+// endpoints. For Proton endpoints, uses CreateFile/OpenFile to get the
+// FileHandle with revision, session key, and block info.
+func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolvedEndpoint) (*driveClient.CopyJob, error) {
+	var job driveClient.CopyJob
+
+	// Build source reader.
+	switch src.pathType {
+	case driveClient.PathLocal:
+		job.Src = driveClient.NewLocalReader(src.localPath, src.localInfo.Size())
+	case driveClient.PathProton:
+		fh, err := dc.OpenFile(ctx, src.link)
+		if err != nil {
+			return nil, fmt.Errorf("cp: %s: %w", src.raw, err)
+		}
+		store := driveClient.NewBlockStore(dc.Session, nil)
+		job.Src = driveClient.NewProtonReader(fh.Link.LinkID(), fh.Blocks, fh.SessionKey, fh.FileSize, fh.BlockSizes, store)
+	}
+
+	// Build destination writer.
+	switch dst.pathType {
+	case driveClient.PathLocal:
+		job.Dst = driveClient.NewLocalWriter(dst.localPath)
+	case driveClient.PathProton:
+		name := filepath.Base(dst.raw)
+		if src.pathType == driveClient.PathLocal {
+			name = filepath.Base(src.localPath)
+		}
+		fh, err := dc.CreateFile(ctx, dst.share, dst.link, name)
+		if err != nil {
+			return nil, fmt.Errorf("cp: %s: %w", dst.raw, err)
+		}
+		store := driveClient.NewBlockStore(dc.Session, nil)
+		job.Dst = driveClient.NewProtonWriter(fh.Link.LinkID(), fh.RevisionID, fh.SessionKey, store)
+	}
+
+	return &job, nil
+}
+
+// transferOpts builds TransferOpts from the current flag values.
+func transferOpts() driveClient.TransferOpts {
+	opts := driveClient.TransferOpts{}
+	if cpFlags.workers > 0 {
+		opts.Workers = cpFlags.workers
+	}
+	// Progress and verbose callbacks wired in Task 11.
+	return opts
+}
+
 func runCp(_ *cobra.Command, args []string) error {
 	// Validate mutually exclusive flags.
 	if cpFlags.removeDest && cpFlags.backup {
@@ -307,9 +356,18 @@ func cpSingle(ctx context.Context, dc *driveClient.Client, src pathArg, dst *res
 		}
 	}
 
-	// TODO: buildCopyJob and execute transfer (Task 4)
-	_ = srcEp
-	return fmt.Errorf("cp: not yet implemented")
+	// Directory sources are handled by expandRecursive (Task 7).
+	if srcEp.isDir() {
+		return fmt.Errorf("cp: %s: is a directory (use -r to copy recursively)", srcEp.raw)
+	}
+
+	job, err := buildCopyJob(ctx, dc, srcEp, dst)
+	if err != nil {
+		return err
+	}
+
+	// All directions flow through the same pipeline.
+	return driveClient.RunPipeline(ctx, []driveClient.CopyJob{*job}, transferOpts())
 }
 
 // cpMultiple copies multiple sources into a directory destination.
