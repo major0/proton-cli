@@ -104,3 +104,23 @@ type ExternalInvitationsResponse struct {
 	Code                int                  `json:"Code"`
 	ExternalInvitations []ExternalInvitation `json:"ExternalInvitations"`
 }
+
+// CreateDriveSharePayload is the request body for POST /drive/volumes/{volumeID}/shares.
+// Matches the WebClients CreateDriveShare interface.
+type CreateDriveSharePayload struct {
+	AddressID                string `json:"AddressID"`
+	RootLinkID               string `json:"RootLinkID"`
+	ShareKey                 string `json:"ShareKey"`
+	SharePassphrase          string `json:"SharePassphrase"`
+	SharePassphraseSignature string `json:"SharePassphraseSignature"`
+	PassphraseKeyPacket      string `json:"PassphraseKeyPacket"`
+	NameKeyPacket            string `json:"NameKeyPacket"`
+}
+
+// CreateShareResponse wraps the create-share API response.
+type CreateShareResponse struct {
+	Code  int `json:"Code"`
+	Share struct {
+		ID string `json:"ID"`
+	} `json:"Share"`
+}

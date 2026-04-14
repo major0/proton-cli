@@ -121,3 +121,28 @@ func TestFormatPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateDriveSharePayloadJSONRoundTrip_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		orig := CreateDriveSharePayload{
+			AddressID:                rapid.String().Draw(t, "AddressID"),
+			RootLinkID:               rapid.String().Draw(t, "RootLinkID"),
+			ShareKey:                 rapid.String().Draw(t, "ShareKey"),
+			SharePassphrase:          rapid.String().Draw(t, "SharePassphrase"),
+			SharePassphraseSignature: rapid.String().Draw(t, "SharePassphraseSignature"),
+			PassphraseKeyPacket:      rapid.String().Draw(t, "PassphraseKeyPacket"),
+			NameKeyPacket:            rapid.String().Draw(t, "NameKeyPacket"),
+		}
+		data, err := json.Marshal(orig)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		var got CreateDriveSharePayload
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if !reflect.DeepEqual(orig, got) {
+			t.Fatalf("round-trip mismatch:\norig: %+v\ngot:  %+v", orig, got)
+		}
+	})
+}
