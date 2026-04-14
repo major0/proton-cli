@@ -18,3 +18,8 @@ var driveCmd = &cobra.Command{
 func init() {
 	cli.AddCommand(driveCmd)
 }
+
+// AddCommand registers a subcommand under the drive command group.
+func AddCommand(cmd *cobra.Command) {
+	driveCmd.AddCommand(cmd)
+}
