@@ -44,6 +44,15 @@ type Share struct {
 	// the decrypted name on the entry. Disabled by default — opt-in
 	// per share via config-store.
 	DirentCacheEnabled bool
+
+	// MetadataCacheEnabled controls whether Link.Stat() caches the
+	// FileInfo result. Disabled by default — opt-in per share.
+	MetadataCacheEnabled bool
+
+	// DiskCacheEnabled controls whether the BlockStore writes encrypted
+	// blocks and link metadata to disk. Disabled by default — opt-in
+	// per share. Handled in api/drive/client/.
+	DiskCacheEnabled bool
 }
 
 // GetName returns the decrypted name of the share's root link.

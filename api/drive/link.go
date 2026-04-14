@@ -28,6 +28,10 @@ type Link struct {
 	// testName overrides Name() when non-empty. Set only by
 	// NewTestLink to avoid needing real crypto in tests.
 	testName string
+
+	// cachedStat caches the FileInfo result when the share's
+	// MetadataCacheEnabled is true. Nil when caching is disabled.
+	cachedStat *FileInfo
 }
 
 // Type returns the link type (file or folder) without decryption.
@@ -65,11 +69,16 @@ func (l *Link) MIMEType() string { return l.protonLink.MIMEType }
 // LinkID returns the encrypted link ID without decryption.
 func (l *Link) LinkID() string { return l.protonLink.LinkID }
 
-// Stat returns file metadata without decrypting content. BlockSizes
-// is nil — it requires decrypting the revision XAttr which is a
-// client-layer operation.
+// Stat returns file metadata without decrypting content. When the share's
+// MetadataCacheEnabled is true, the result is cached for subsequent calls.
+// BlockSizes is nil — it requires decrypting the revision XAttr which is
+// a client-layer operation.
 func (l *Link) Stat() FileInfo {
-	return FileInfo{
+	if l.cachedStat != nil {
+		return *l.cachedStat
+	}
+
+	fi := FileInfo{
 		LinkID:     l.protonLink.LinkID,
 		Name:       l.Name,
 		Size:       l.Size(),
@@ -78,6 +87,12 @@ func (l *Link) Stat() FileInfo {
 		MIMEType:   l.protonLink.MIMEType,
 		IsDir:      l.protonLink.Type == proton.LinkTypeFolder,
 	}
+
+	if l.share != nil && l.share.MetadataCacheEnabled {
+		l.cachedStat = &fi
+	}
+
+	return fi
 }
 
 // isTransient returns true for errors that may succeed on retry.
