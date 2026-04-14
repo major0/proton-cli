@@ -95,3 +95,28 @@ func (c *Client) DeleteExternalInvitation(ctx context.Context, shareID, external
 	}
 	return nil
 }
+
+// CreateShare creates a new share via POST /drive/volumes/{volumeID}/shares.
+// Returns the new share ID.
+func (c *Client) CreateShare(ctx context.Context, volumeID string, payload share.CreateDriveSharePayload) (string, error) {
+	path := fmt.Sprintf("/drive/volumes/%s/shares", volumeID)
+	var resp share.CreateShareResponse
+	if err := c.Session.DoJSON(ctx, "POST", path, payload, &resp); err != nil {
+		return "", fmt.Errorf("share.CreateShare %s: %w", volumeID, err)
+	}
+	return resp.Share.ID, nil
+}
+
+// DeleteShare deletes a share via DELETE /drive/shares/{shareID}.
+// When force is true, passes Force=1 to delete even if members exist.
+func (c *Client) DeleteShare(ctx context.Context, shareID string, force bool) error {
+	forceVal := "0"
+	if force {
+		forceVal = "1"
+	}
+	path := fmt.Sprintf("/drive/shares/%s?Force=%s", shareID, forceVal)
+	if err := c.Session.DoJSON(ctx, "DELETE", path, nil, nil); err != nil {
+		return fmt.Errorf("share.DeleteShare %s: %w", shareID, err)
+	}
+	return nil
+}

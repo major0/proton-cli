@@ -203,3 +203,69 @@ func TestAPIErrorPropagation(t *testing.T) {
 		t.Fatalf("error should contain API code: %v", err)
 	}
 }
+
+func TestCreateShare(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/drive/volumes/vol-1/shares") {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), "root-link-id") {
+			t.Fatalf("body missing RootLinkID: %s", body)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"Code":  1000,
+			"Share": map[string]string{"ID": "new-share-id"},
+		})
+	})
+	c, srv := newTestClient(t, h)
+	defer srv.Close()
+
+	payload := share.CreateDriveSharePayload{
+		RootLinkID: "root-link-id",
+		AddressID:  "addr-1",
+	}
+	id, err := c.CreateShare(context.Background(), "vol-1", payload)
+	if err != nil {
+		t.Fatalf("CreateShare: %v", err)
+	}
+	if id != "new-share-id" {
+		t.Fatalf("share ID = %q, want %q", id, "new-share-id")
+	}
+}
+
+func TestDeleteShare(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "DELETE" {
+			t.Fatalf("method = %s, want DELETE", r.Method)
+		}
+		if !strings.Contains(r.URL.Path, "/drive/shares/share-1") {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(map[string]int{"Code": 1000})
+	})
+	c, srv := newTestClient(t, h)
+	defer srv.Close()
+
+	if err := c.DeleteShare(context.Background(), "share-1", false); err != nil {
+		t.Fatalf("DeleteShare: %v", err)
+	}
+}
+
+func TestDeleteShareForce(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.RawQuery, "Force=1") {
+			t.Fatalf("expected Force=1 in query, got %s", r.URL.RawQuery)
+		}
+		json.NewEncoder(w).Encode(map[string]int{"Code": 1000})
+	})
+	c, srv := newTestClient(t, h)
+	defer srv.Close()
+
+	if err := c.DeleteShare(context.Background(), "share-1", true); err != nil {
+		t.Fatalf("DeleteShare force: %v", err)
+	}
+}
