@@ -141,6 +141,11 @@ func Execute() {
 	}
 }
 
+// ConfigFilePath returns the resolved config file path.
+func ConfigFilePath() string {
+	return rootParams.ConfigFile
+}
+
 func init() {
 	// cobra.OnInitialize(initConfig) // TODO
 	logopts := &slog.HandlerOptions{
