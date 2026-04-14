@@ -83,6 +83,7 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 				if err := job.Dst.WriteBlock(ctx, idx, buf[:n]); err != nil {
 					addErr(fmt.Errorf("write %s block %d: %w", job.Dst.Describe(), idx, err))
 				}
+				clear(buf[:n])
 			}
 		}()
 	}
