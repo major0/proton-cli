@@ -116,7 +116,7 @@ func TestBlockCache_RoundTrip_Property(t *testing.T) {
 		size := rapid.IntRange(1, 64*1024).Draw(t, "size") // cap at 64KB for test speed
 		data := make([]byte, size)
 		for i := range data {
-			data[i] = byte(rapid.IntRange(0, 255).Draw(t, fmt.Sprintf("b%d", i)))
+			data[i] = byte(rapid.IntRange(0, 255).Draw(t, fmt.Sprintf("b%d", i))) //nolint:gosec // bounded 0-255
 		}
 
 		if err := cache.ExportPutBlock(linkID, index, data); err != nil {

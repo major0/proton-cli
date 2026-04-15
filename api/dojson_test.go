@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -14,7 +15,7 @@ import (
 
 // testSession creates a minimal Session pointing at the given test server.
 // It overrides proton.DefaultHostURL for the duration of the test.
-func testSession(t *testing.T, serverURL string) *Session {
+func testSession(t *testing.T, _ string) *Session {
 	t.Helper()
 	jar, _ := cookiejar.New(nil)
 	return &Session{
@@ -43,7 +44,7 @@ func TestDoJSON_SuccessGet(t *testing.T) {
 			t.Fatalf("missing Authorization header")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"Code": 1000,
 			"Name": "test-share",
 			"ID":   42,
@@ -83,7 +84,7 @@ func TestDoJSON_SuccessPost(t *testing.T) {
 			t.Fatalf("unexpected email: %s", req.Email)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 	}))
 	defer srv.Close()
 
@@ -97,7 +98,7 @@ func TestDoJSON_SuccessPost(t *testing.T) {
 func TestDoJSON_APIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"Code":  2011,
 			"Error": "Share not found",
 		})
@@ -110,9 +111,9 @@ func TestDoJSON_APIError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	apiErr, ok := err.(*APIError)
-	if !ok {
-		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	var apiErr *Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *Error, got %T: %v", err, err)
 	}
 	if apiErr.Status != http.StatusUnprocessableEntity {
 		t.Fatalf("expected status 422, got %d", apiErr.Status)
@@ -131,7 +132,7 @@ func TestDoJSON_AuthHeaders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUID = r.Header.Get("x-pm-uid")
 		gotAuth = r.Header.Get("Authorization")
-		json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 	}))
 	defer srv.Close()
 
@@ -163,7 +164,7 @@ func TestDoJSON_CookiesAttached(t *testing.T) {
 				gotCookie = c.Value
 			}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 	}))
 	defer srv.Close()
 
@@ -190,7 +191,7 @@ func TestDoJSON_NilBody(t *testing.T) {
 		if r.Header.Get("Content-Type") != "" {
 			t.Fatalf("Content-Type should not be set for nil body, got %q", r.Header.Get("Content-Type"))
 		}
-		json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 	}))
 	defer srv.Close()
 
@@ -206,7 +207,7 @@ func TestDoJSON_Delete(t *testing.T) {
 		if r.Method != http.MethodDelete {
 			t.Fatalf("expected DELETE, got %s", r.Method)
 		}
-		json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 	}))
 	defer srv.Close()
 

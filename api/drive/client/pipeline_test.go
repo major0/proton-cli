@@ -16,7 +16,7 @@ func TestBufferZeroed_Property(t *testing.T) {
 		size := rapid.IntRange(1, 64*1024).Draw(t, "size")
 		buf := make([]byte, size)
 		for i := range buf {
-			buf[i] = byte(rapid.IntRange(1, 255).Draw(t, "byte"))
+			buf[i] = byte(rapid.IntRange(1, 255).Draw(t, "byte")) //nolint:gosec // bounded 0-255
 		}
 		clear(buf)
 		for i, b := range buf {
@@ -43,7 +43,7 @@ func TestPipeline_LocalToLocal(t *testing.T) {
 	}
 
 	// Pre-create dest file — producer creates it before queuing the job.
-	f, err := os.Create(dstPath)
+	f, err := os.Create(dstPath) //nolint:gosec // test temp path
 	if err != nil {
 		t.Fatalf("create dst: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestPipeline_LocalToLocal(t *testing.T) {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
-	dstData, err := os.ReadFile(dstPath)
+	dstData, err := os.ReadFile(dstPath) //nolint:gosec // test temp path
 	if err != nil {
 		t.Fatalf("read dst: %v", err)
 	}

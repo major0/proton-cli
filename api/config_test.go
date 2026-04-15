@@ -25,7 +25,7 @@ func TestLoadConfig_MissingFile(t *testing.T) {
 func TestLoadConfig_MalformedYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	os.WriteFile(path, []byte("{{invalid yaml"), 0600)
+	_ = os.WriteFile(path, []byte("{{invalid yaml"), 0600)
 
 	_, err := LoadConfig(path)
 	if err == nil {

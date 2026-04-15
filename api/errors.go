@@ -18,14 +18,14 @@ var (
 	ErrNotLoggedIn = errors.New("not logged in")
 )
 
-// APIError represents a non-success response from the Proton API.
-type APIError struct {
+// Error represents a non-success response from the Proton API.
+type Error struct {
 	Status  int    // HTTP status code
 	Code    int    // Proton API error code
 	Message string // error description from the API
 }
 
-func (e *APIError) Error() string {
+func (e *Error) Error() string {
 	if e.Message != "" {
 		return fmt.Sprintf("api: %d/%d: %s", e.Status, e.Code, e.Message)
 	}

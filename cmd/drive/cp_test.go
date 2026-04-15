@@ -403,7 +403,7 @@ func TestConflictHandling(t *testing.T) {
 			t.Fatalf("runCp: %v", err)
 		}
 
-		got, err := os.ReadFile(dst)
+		got, err := os.ReadFile(dst) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -429,7 +429,7 @@ func TestConflictHandling(t *testing.T) {
 			t.Fatalf("runCp: %v", err)
 		}
 
-		got, err := os.ReadFile(dst)
+		got, err := os.ReadFile(dst) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -456,7 +456,7 @@ func TestConflictHandling(t *testing.T) {
 		}
 
 		// New content at dst.
-		got, err := os.ReadFile(dst)
+		got, err := os.ReadFile(dst) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -465,7 +465,7 @@ func TestConflictHandling(t *testing.T) {
 		}
 
 		// Old content at dst~.
-		backup, err := os.ReadFile(dst + "~")
+		backup, err := os.ReadFile(dst + "~") //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatalf("backup file missing: %v", err)
 		}
@@ -487,7 +487,7 @@ func TestConflictHandling(t *testing.T) {
 			t.Fatalf("runCp: %v", err)
 		}
 
-		got, err := os.ReadFile(dst)
+		got, err := os.ReadFile(dst) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -512,7 +512,7 @@ func TestConflictHandling(t *testing.T) {
 			t.Fatalf("runCp: %v", err)
 		}
 
-		got, err := os.ReadFile(filepath.Join(dstDir, "src.txt"))
+		got, err := os.ReadFile(filepath.Join(dstDir, "src.txt")) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -551,7 +551,7 @@ func TestRecursiveCopy(t *testing.T) {
 			{filepath.Join(dstDir, "src", "sub", "b.txt"), "bbb"},
 			{filepath.Join(dstDir, "src", "sub", "deep", "c.txt"), "ccc"},
 		} {
-			got, err := os.ReadFile(tc.path)
+			got, err := os.ReadFile(tc.path) //nolint:gosec // test temp path
 			if err != nil {
 				t.Errorf("missing %s: %v", tc.path, err)
 				continue
@@ -600,7 +600,7 @@ func TestRecursiveCopy(t *testing.T) {
 			t.Fatalf("runCp: %v", err)
 		}
 
-		got, err := os.ReadFile(filepath.Join(dstDir, "src", "good.txt"))
+		got, err := os.ReadFile(filepath.Join(dstDir, "src", "good.txt")) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatalf("missing good.txt: %v", err)
 		}
@@ -674,7 +674,7 @@ func TestSymlinkHandling(t *testing.T) {
 			t.Fatalf("runCp: %v", err)
 		}
 
-		got, err := os.ReadFile(dst)
+		got, err := os.ReadFile(dst) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatalf("read dst: %v", err)
 		}
@@ -705,7 +705,7 @@ func TestSymlinkHandling(t *testing.T) {
 		}
 
 		// real.txt should be copied.
-		got, err := os.ReadFile(filepath.Join(dstDir, "src", "real.txt"))
+		got, err := os.ReadFile(filepath.Join(dstDir, "src", "real.txt")) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatalf("missing real.txt: %v", err)
 		}
@@ -741,7 +741,7 @@ func TestSymlinkHandling(t *testing.T) {
 		}
 
 		// link.txt should be copied (symlink followed).
-		got, err := os.ReadFile(filepath.Join(dstDir, "src", "link.txt"))
+		got, err := os.ReadFile(filepath.Join(dstDir, "src", "link.txt")) //nolint:gosec // test temp path
 		if err != nil {
 			t.Fatalf("missing link.txt: %v", err)
 		}
@@ -759,7 +759,7 @@ func TestPreservation(t *testing.T) {
 		src := filepath.Join(tmp, "src.txt")
 		dst := filepath.Join(tmp, "dst.txt")
 		_ = os.WriteFile(src, []byte("data"), 0600)
-		_ = os.Chmod(src, 0755)
+		_ = os.Chmod(src, 0755) //nolint:gosec // testing mode preservation
 
 		if err := runCp(nil, []string{src, dst}); err != nil {
 			t.Fatalf("runCp: %v", err)
@@ -805,7 +805,7 @@ func TestPreservation(t *testing.T) {
 		_ = os.Mkdir(srcDir, 0700)
 		src := filepath.Join(srcDir, "file.txt")
 		_ = os.WriteFile(src, []byte("data"), 0600)
-		_ = os.Chmod(src, 0754)
+		_ = os.Chmod(src, 0754) //nolint:gosec // testing mode preservation
 		past := time.Date(2019, 3, 10, 8, 30, 0, 0, time.UTC)
 		_ = os.Chtimes(src, past, past)
 
@@ -835,7 +835,7 @@ func TestPreservation(t *testing.T) {
 		src := filepath.Join(tmp, "src.txt")
 		dst := filepath.Join(tmp, "dst.txt")
 		_ = os.WriteFile(src, []byte("data"), 0600)
-		_ = os.Chmod(src, 0755)
+		_ = os.Chmod(src, 0755) //nolint:gosec // testing mode preservation
 
 		if err := runCp(nil, []string{src, dst}); err != nil {
 			t.Fatalf("runCp: %v", err)

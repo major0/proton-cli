@@ -62,16 +62,17 @@ func TestFindRevokeTarget_UniqueMatch_Property(t *testing.T) {
 		// Pick a random entity and search by its email.
 		pickIdx := rapid.IntRange(0, total-1).Draw(t, "pickIdx")
 		var searchArg, wantKind, wantID string
-		if pickIdx < nMembers {
+		switch {
+		case pickIdx < nMembers:
 			searchArg = members[pickIdx].Email
 			wantKind = "member"
 			wantID = members[pickIdx].MemberID
-		} else if pickIdx < nMembers+nInvs {
+		case pickIdx < nMembers+nInvs:
 			i := pickIdx - nMembers
 			searchArg = invs[i].InviteeEmail
 			wantKind = "invitation"
 			wantID = invs[i].InvitationID
-		} else {
+		default:
 			i := pickIdx - nMembers - nInvs
 			searchArg = exts[i].InviteeEmail
 			wantKind = "external-invitation"

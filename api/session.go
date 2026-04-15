@@ -241,7 +241,7 @@ type apiEnvelope struct {
 // Method is "GET", "POST", "DELETE", etc. Path is relative to the API base
 // (e.g. "/drive/shares/{id}/members"). If body is non-nil it is JSON-encoded
 // as the request body. If result is non-nil the response body is JSON-decoded
-// into it. Returns an *APIError on non-success API responses.
+// into it. Returns an *Error on non-success API responses.
 func (s *Session) DoJSON(ctx context.Context, method, path string, body, result any) error {
 	reqURL := path
 	if !strings.HasPrefix(path, "http") {
@@ -284,7 +284,7 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	if err != nil {
 		return fmt.Errorf("doJSON: %s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -298,7 +298,7 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	}
 
 	if envelope.Code != 1000 {
-		return &APIError{
+		return &Error{
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,

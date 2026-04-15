@@ -24,7 +24,7 @@ func TestBlockFromProton_Property(t *testing.T) {
 		// Generate random hash bytes (32 bytes like SHA-256).
 		hashBytes := make([]byte, 32)
 		for i := range hashBytes {
-			hashBytes[i] = byte(rapid.IntRange(0, 255).Draw(t, fmt.Sprintf("hash-%d", i)))
+			hashBytes[i] = byte(rapid.IntRange(0, 255).Draw(t, fmt.Sprintf("hash-%d", i))) //nolint:gosec // bounded 0-255
 		}
 		hashB64 := base64.StdEncoding.EncodeToString(hashBytes)
 

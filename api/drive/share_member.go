@@ -1,6 +1,5 @@
-// Package share defines types for Proton Drive share membership and
-// invitation management. This is the types layer — it does not make
-// API calls. HTTP operations live in api/share/client/.
+// Package drive defines types for Proton Drive share membership and
+// invitation management.
 package drive
 
 // Permission bitmask values for share members.

@@ -59,7 +59,7 @@ func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int,
 	if err != nil {
 		return nil, fmt.Errorf("blockstore.GetBlock %s block %d: %w", linkID, index, err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	data, err := io.ReadAll(rc)
 	if err != nil {

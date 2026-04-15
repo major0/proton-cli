@@ -23,7 +23,7 @@ func (c *Client) DownloadFile(ctx context.Context, link *drive.Link, localPath s
 	}
 
 	// Pre-create the destination file.
-	f, err := os.Create(localPath)
+	f, err := os.Create(localPath) //nolint:gosec // path from caller, pre-creation before pipeline
 	if err != nil {
 		return fmt.Errorf("drive.DownloadFile: create %s: %w", localPath, err)
 	}

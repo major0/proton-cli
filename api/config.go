@@ -45,7 +45,7 @@ func (c *Config) DefaultAccount(service string) string {
 // LoadConfig reads a YAML config file. Returns DefaultConfig if the file
 // does not exist. Returns an error only for I/O or parse failures.
 func LoadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path from user config, not tainted input
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return DefaultConfig(), nil
@@ -89,7 +89,7 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("config: rename %s: %w", path, err)
 	}
 

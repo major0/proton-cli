@@ -36,7 +36,7 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 		n := jobs[i].Src.BlockCount()
 		totalBlocks += n
 		for b := 0; b < n; b++ {
-			totalBytes += jobs[i].Src.BlockSize(b)
+			totalBytes += jobs[i].Src.BlockSize(b) //nolint:gosec // b < n, guarded by loop
 		}
 	}
 

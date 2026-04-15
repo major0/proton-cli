@@ -61,7 +61,7 @@ func TestGenerateKeyPacketRoundTrip_Property(t *testing.T) {
 		passphraseLen := rapid.IntRange(8, 64).Draw(t, "passphraseLen")
 		passphrase := make([]byte, passphraseLen)
 		for i := range passphrase {
-			passphrase[i] = byte(rapid.IntRange(0, 255).Draw(t, "byte"))
+			passphrase[i] = byte(rapid.IntRange(0, 255).Draw(t, "byte")) //nolint:gosec // bounded 0-255
 		}
 
 		// Encrypt the passphrase with the share keyring (simulates stored share passphrase).
