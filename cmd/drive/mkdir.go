@@ -132,4 +132,3 @@ func mkdirSingle(ctx context.Context, dc *driveClient.Client, share *drive.Share
 	_ = newDir
 	return nil
 }
-

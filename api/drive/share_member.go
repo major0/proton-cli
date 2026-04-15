@@ -9,8 +9,8 @@ const (
 	PermWrite = 2
 	PermAdmin = 16
 
-	PermViewer = PermRead              // 4
-	PermEditor = PermRead | PermWrite  // 6
+	PermViewer = PermRead             // 4
+	PermEditor = PermRead | PermWrite // 6
 )
 
 // FormatPermissions returns a human-readable label for a permission bitmask.

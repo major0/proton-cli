@@ -13,12 +13,12 @@ import (
 )
 
 var cacheFlags struct {
-	enableDirent   bool
-	disableDirent  bool
-	enableMetadata bool
+	enableDirent    bool
+	disableDirent   bool
+	enableMetadata  bool
 	disableMetadata bool
-	enableOnDisk   bool
-	disableOnDisk  bool
+	enableOnDisk    bool
+	disableOnDisk   bool
 }
 
 var shareCacheCmd = &cobra.Command{
