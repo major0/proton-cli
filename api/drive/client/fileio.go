@@ -20,7 +20,6 @@ type FileHandle struct {
 	Blocks     []proton.Block     // populated by OpenFile (source)
 	SessionKey *crypto.SessionKey // for encrypt (dest) or decrypt (source)
 	FileSize   int64              // populated by OpenFile (source)
-	BlockSizes []int64            // populated by OpenFile (source)
 	ModTime    time.Time          // populated by OpenFile from XAttr (zero if unavailable)
 }
 
@@ -126,14 +125,12 @@ func (c *Client) OpenFile(ctx context.Context, link *drive.Link) (*FileHandle, e
 		return nil, fmt.Errorf("drive.OpenFile: %s: session key: %w", link.LinkID(), err)
 	}
 
-	// Compute block sizes and mtime from revision XAttr if available.
-	var blockSizes []int64
+	// Extract mtime from revision XAttr if available.
 	var modTime time.Time
 	addrKR, err := c.addrKRForLink(link)
 	if err == nil {
 		xattr, xErr := revision.GetDecXAttrString(addrKR, nodeKR)
 		if xErr == nil && xattr != nil {
-			blockSizes = xattr.BlockSizes
 			if xattr.ModificationTime != "" {
 				if mt, tErr := time.Parse(time.RFC3339, xattr.ModificationTime); tErr == nil {
 					modTime = mt
@@ -144,21 +141,6 @@ func (c *Client) OpenFile(ctx context.Context, link *drive.Link) (*FileHandle, e
 
 	fileSize := pLink.FileProperties.ActiveRevision.Size
 
-	// Fall back to computing block sizes from file size.
-	if len(blockSizes) == 0 && fileSize > 0 {
-		n := drive.BlockCount(fileSize)
-		blockSizes = make([]int64, n)
-		remaining := fileSize
-		for i := range blockSizes {
-			if remaining >= drive.BlockSize {
-				blockSizes[i] = drive.BlockSize
-			} else {
-				blockSizes[i] = remaining
-			}
-			remaining -= blockSizes[i]
-		}
-	}
-
 	return &FileHandle{
 		Link:       link,
 		Share:      link.Share(),
@@ -166,7 +148,6 @@ func (c *Client) OpenFile(ctx context.Context, link *drive.Link) (*FileHandle, e
 		Blocks:     revision.Blocks,
 		SessionKey: sessionKey,
 		FileSize:   fileSize,
-		BlockSizes: blockSizes,
 		ModTime:    modTime,
 	}, nil
 }

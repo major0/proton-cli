@@ -33,7 +33,7 @@ func (c *Client) DownloadFile(ctx context.Context, link *drive.Link, localPath s
 
 	store := NewBlockStore(c.Session, nil)
 	job := CopyJob{
-		Src: NewProtonReader(link.LinkID(), fh.Blocks, fh.SessionKey, fh.FileSize, fh.BlockSizes, store),
+		Src: NewProtonReader(link.LinkID(), fh.Blocks, fh.SessionKey, fh.FileSize, nil, store),
 		Dst: NewLocalWriter(localPath),
 	}
 

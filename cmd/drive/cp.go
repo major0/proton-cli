@@ -232,7 +232,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 			return nil, fmt.Errorf("cp: %s: %w", src.raw, err)
 		}
 		store := driveClient.NewBlockStore(dc.Session, nil)
-		job.Src = driveClient.NewProtonReader(fh.Link.LinkID(), fh.Blocks, fh.SessionKey, fh.FileSize, fh.BlockSizes, store)
+		job.Src = driveClient.NewProtonReader(fh.Link.LinkID(), fh.Blocks, fh.SessionKey, fh.FileSize, nil, store)
 	}
 
 	// Build destination writer. Pre-create local files so workers can
