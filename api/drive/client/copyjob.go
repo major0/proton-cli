@@ -145,34 +145,27 @@ func (w *LocalWriter) Describe() string { return w.Path }
 // Close is a no-op — FDs are per-call.
 func (w *LocalWriter) Close() error { return nil }
 
-// blockMap tracks which blocks of a job have been claimed by workers.
+// blockMap tracks block assignment for a single CopyJob. Workers claim
+// blocks sequentially via an advancing counter — no bitmap needed since
+// blocks are never released or reordered.
 type blockMap struct {
-	job      *CopyJob
-	pending  []bool // true = not yet claimed
-	nextFree int    // cursor for O(1) amortized claim
+	job   *CopyJob
+	total int
+	next  int // next block to claim; caller holds pipeline mutex
 }
 
 // newBlockMap creates a blockMap for a CopyJob.
 func newBlockMap(job *CopyJob) *blockMap {
-	n := job.Src.BlockCount()
-	pending := make([]bool, n)
-	for i := range pending {
-		pending[i] = true
-	}
-	return &blockMap{job: job, pending: pending}
+	return &blockMap{job: job, total: job.Src.BlockCount()}
 }
 
 // claim returns the index of the next unclaimed block, or -1 if all
 // blocks have been claimed. Caller must hold the pipeline mutex.
 func (m *blockMap) claim() int {
-	for m.nextFree < len(m.pending) {
-		if m.pending[m.nextFree] {
-			idx := m.nextFree
-			m.pending[idx] = false
-			m.nextFree++
-			return idx
-		}
-		m.nextFree++
+	if m.next >= m.total {
+		return -1
 	}
-	return -1
+	idx := m.next
+	m.next++
+	return idx
 }
