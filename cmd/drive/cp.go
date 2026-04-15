@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	proton "github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
@@ -273,30 +274,31 @@ func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEn
 // files. Destination subdirectories are created as encountered (breadth-
 // first for Proton sources, natural walk order for local). Directories
 // never become CopyJobs — only files with block data do.
-func expandRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, error) {
+func expandRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, []preserveEntry, error) {
 	switch src.pathType {
 	case driveClient.PathLocal:
 		return expandLocalRecursive(ctx, dc, src, dstBase)
 	case driveClient.PathProton:
 		return expandProtonRecursive(ctx, dc, src, dstBase)
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 // expandLocalRecursive walks a local source directory tree.
-func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, error) {
+func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, []preserveEntry, error) {
 	var jobs []driveClient.CopyJob
+	var preserves []preserveEntry
 	srcRoot := src.localPath
 
 	// Create the top-level dest directory.
 	switch dstBase.pathType {
 	case driveClient.PathLocal:
 		if err := os.MkdirAll(dstBase.localPath, 0700); err != nil {
-			return nil, fmt.Errorf("cp: mkdir %s: %w", dstBase.localPath, err)
+			return nil, nil, fmt.Errorf("cp: mkdir %s: %w", dstBase.localPath, err)
 		}
 	case driveClient.PathProton:
 		if _, err := dc.MkDirAll(ctx, dstBase.share, dstBase.link, filepath.Base(dstBase.raw)); err != nil {
-			return nil, fmt.Errorf("cp: mkdir %s: %w", dstBase.raw, err)
+			return nil, nil, fmt.Errorf("cp: mkdir %s: %w", dstBase.raw, err)
 		}
 	}
 
@@ -388,18 +390,28 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 			return nil
 		}
 		jobs = append(jobs, *job)
+
+		// Collect preservation metadata for local→local.
+		if fileDst.pathType == driveClient.PathLocal {
+			preserves = append(preserves, preserveEntry{
+				dstPath: fileDst.localPath,
+				mode:    info.Mode().Perm(),
+				mtime:   info.ModTime(),
+			})
+		}
+
 		return nil
 	})
 
 	if err != nil {
-		return jobs, err
+		return jobs, preserves, err
 	}
-	return jobs, nil
+	return jobs, preserves, nil
 }
 
 // expandProtonRecursive walks a Proton source directory tree using
 // breadth-first TreeWalk.
-func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, error) {
+func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, []preserveEntry, error) {
 	var jobs []driveClient.CopyJob
 
 	results := make(chan driveClient.WalkEntry, 64)
@@ -411,7 +423,7 @@ func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dst
 
 	for entry := range results {
 		if ctx.Err() != nil {
-			return jobs, ctx.Err()
+			return jobs, nil, ctx.Err()
 		}
 
 		// Skip the root itself.
@@ -474,9 +486,9 @@ func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dst
 	}
 
 	if walkErr != nil {
-		return jobs, walkErr
+		return jobs, nil, walkErr
 	}
-	return jobs, nil
+	return jobs, nil, nil
 }
 
 // buildCopyJob constructs a CopyJob from resolved source and destination
@@ -614,6 +626,7 @@ func runCp(_ *cobra.Command, args []string) error {
 
 	// Build CopyJobs for all source/dest pairs.
 	var jobs []driveClient.CopyJob
+	var preserves []preserveEntry
 	for _, src := range sources {
 		srcEp, err := resolveSource(ctx, dc, src)
 		if err != nil {
@@ -643,11 +656,12 @@ func runCp(_ *cobra.Command, args []string) error {
 				fmt.Fprintf(os.Stderr, "cp: %s: is a directory (use -r to copy recursively)\n", srcEp.raw)
 				continue
 			}
-			expanded, err := expandRecursive(ctx, dc, srcEp, fileDst)
+			expanded, preserveExpanded, err := expandRecursive(ctx, dc, srcEp, fileDst)
 			if err != nil {
 				return err
 			}
 			jobs = append(jobs, expanded...)
+			preserves = append(preserves, preserveExpanded...)
 			continue
 		}
 
@@ -660,11 +674,73 @@ func runCp(_ *cobra.Command, args []string) error {
 			return err
 		}
 		jobs = append(jobs, *job)
+
+		// Collect preservation metadata for local destinations.
+		if fileDst.pathType == driveClient.PathLocal && srcEp.pathType == driveClient.PathLocal && srcEp.localInfo != nil {
+			preserves = append(preserves, preserveEntry{
+				dstPath: fileDst.localPath,
+				mode:    srcEp.localInfo.Mode().Perm(),
+				mtime:   srcEp.localInfo.ModTime(),
+			})
+		}
 	}
 
 	if len(jobs) == 0 {
 		return nil
 	}
 
-	return driveClient.RunPipeline(ctx, jobs, transferOpts())
+	if err := driveClient.RunPipeline(ctx, jobs, transferOpts()); err != nil {
+		return err
+	}
+
+	// Apply preserved attributes after all blocks are written.
+	return applyPreserve(preserves)
+}
+
+// preserveEntry tracks metadata to apply after copy completes.
+type preserveEntry struct {
+	dstPath string
+	mode    os.FileMode
+	mtime   time.Time
+}
+
+// applyPreserve applies preserved mode and mtime to destination files.
+func applyPreserve(entries []preserveEntry) error {
+	preserve := parsePreserve()
+	if !preserve.mode && !preserve.timestamps {
+		return nil
+	}
+	for _, e := range entries {
+		if preserve.mode {
+			if err := os.Chmod(e.dstPath, e.mode); err != nil {
+				fmt.Fprintf(os.Stderr, "cp: preserve mode %s: %v\n", e.dstPath, err)
+			}
+		}
+		if preserve.timestamps {
+			if err := os.Chtimes(e.dstPath, e.mtime, e.mtime); err != nil {
+				fmt.Fprintf(os.Stderr, "cp: preserve timestamps %s: %v\n", e.dstPath, err)
+			}
+		}
+	}
+	return nil
+}
+
+// preserveFlags holds parsed --preserve flag values.
+type preserveFlags struct {
+	mode       bool
+	timestamps bool
+}
+
+// parsePreserve parses the --preserve flag value.
+func parsePreserve() preserveFlags {
+	var pf preserveFlags
+	for _, s := range strings.Split(cpFlags.preserve, ",") {
+		switch strings.TrimSpace(s) {
+		case "mode":
+			pf.mode = true
+		case "timestamps":
+			pf.timestamps = true
+		}
+	}
+	return pf
 }

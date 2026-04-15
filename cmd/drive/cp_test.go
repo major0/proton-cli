@@ -750,3 +750,105 @@ func TestSymlinkHandling(t *testing.T) {
 		}
 	})
 }
+
+func TestPreservation(t *testing.T) {
+	t.Run("preserve mode", func(t *testing.T) {
+		resetFlags()
+		cpFlags.preserve = "mode"
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		_ = os.WriteFile(src, []byte("data"), 0600)
+		_ = os.Chmod(src, 0755)
+
+		if err := runCp(nil, []string{src, dst}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		info, err := os.Stat(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0755 {
+			t.Errorf("mode = %o, want %o", info.Mode().Perm(), 0755)
+		}
+	})
+
+	t.Run("preserve timestamps", func(t *testing.T) {
+		resetFlags()
+		cpFlags.preserve = "timestamps"
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		_ = os.WriteFile(src, []byte("data"), 0600)
+		past := time.Date(2020, 6, 15, 12, 0, 0, 0, time.UTC)
+		_ = os.Chtimes(src, past, past)
+
+		if err := runCp(nil, []string{src, dst}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		info, err := os.Stat(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.ModTime().Equal(past) {
+			t.Errorf("mtime = %v, want %v", info.ModTime(), past)
+		}
+	})
+
+	t.Run("-a preserves mode and timestamps", func(t *testing.T) {
+		resetFlags()
+		cpFlags.archive = true
+		tmp := t.TempDir()
+		srcDir := filepath.Join(tmp, "src")
+		_ = os.Mkdir(srcDir, 0700)
+		src := filepath.Join(srcDir, "file.txt")
+		_ = os.WriteFile(src, []byte("data"), 0600)
+		_ = os.Chmod(src, 0754)
+		past := time.Date(2019, 3, 10, 8, 30, 0, 0, time.UTC)
+		_ = os.Chtimes(src, past, past)
+
+		dstDir := filepath.Join(tmp, "dst")
+		_ = os.Mkdir(dstDir, 0700)
+
+		if err := runCp(nil, []string{srcDir, dstDir}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		dstFile := filepath.Join(dstDir, "src", "file.txt")
+		info, err := os.Stat(dstFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0754 {
+			t.Errorf("mode = %o, want %o", info.Mode().Perm(), 0754)
+		}
+		if !info.ModTime().Equal(past) {
+			t.Errorf("mtime = %v, want %v", info.ModTime(), past)
+		}
+	})
+
+	t.Run("no preserve flag leaves default mode", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		_ = os.WriteFile(src, []byte("data"), 0600)
+		_ = os.Chmod(src, 0755)
+
+		if err := runCp(nil, []string{src, dst}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		info, err := os.Stat(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Without --preserve=mode, dest gets default permissions from os.Create
+		// (0666 masked by umask). Just verify it's NOT 0755 (the source mode).
+		if info.Mode().Perm() == 0755 {
+			t.Error("mode should not be preserved without --preserve=mode")
+		}
+	})
+}
