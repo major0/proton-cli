@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/major0/proton-cli/api/drive"
 )
@@ -27,13 +29,25 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 
 	// Build block maps for all jobs upfront.
 	maps := make([]*blockMap, len(jobs))
+	totalBlocks := 0
+	var totalBytes int64
 	for i := range jobs {
 		maps[i] = newBlockMap(&jobs[i])
+		n := jobs[i].Src.BlockCount()
+		totalBlocks += n
+		for b := 0; b < n; b++ {
+			totalBytes += jobs[i].Src.BlockSize(b)
+		}
 	}
 
 	// Shared state: current job index and its block map.
 	var mu sync.Mutex
 	jobIdx := 0
+
+	// Progress tracking.
+	var blocksDone int
+	var bytesDone int64
+	startTime := time.Now()
 
 	// Error collection.
 	var errMu sync.Mutex
@@ -44,21 +58,50 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 		errMu.Unlock()
 	}
 
-	// claim returns the next block to process: the CopyJob, block index,
-	// and block size. Returns nil job when all jobs are exhausted.
-	claim := func() (*CopyJob, int, int64) {
+	// blockDone is called after each successful block write.
+	blockDone := func(job *CopyJob, blockBytes int64) {
+		mu.Lock()
+		blocksDone++
+		bytesDone += blockBytes
+		bd := blocksDone
+		byd := bytesDone
+		mu.Unlock()
+
+		if opts.Progress != nil {
+			elapsed := time.Since(startTime).Seconds()
+			var rate float64
+			if elapsed > 0 {
+				rate = float64(byd) / elapsed
+			}
+			// completed/total here is blocks, not files.
+			opts.Progress(bd, totalBlocks, byd, rate)
+		}
+	}
+
+	// jobDone tracks per-job block completion for verbose output.
+	jobDoneCount := make([]int32, len(jobs))
+	jobComplete := func(jobIndex int, job *CopyJob) {
+		if opts.Verbose != nil {
+			opts.Verbose(job.Src.Describe(), job.Dst.Describe())
+		}
+	}
+
+	// claim returns the next block to process: the job index, CopyJob,
+	// block index, and block size. Returns -1 job index when exhausted.
+	claim := func() (int, *CopyJob, int, int64) {
 		mu.Lock()
 		defer mu.Unlock()
 		for jobIdx < len(maps) {
 			idx := maps[jobIdx].claim()
 			if idx >= 0 {
+				ji := jobIdx
 				job := maps[jobIdx].job
-				return job, idx, job.Src.BlockSize(idx)
+				return ji, job, idx, job.Src.BlockSize(idx)
 			}
 			// Current job exhausted — advance.
 			jobIdx++
 		}
-		return nil, 0, 0
+		return -1, nil, 0, 0
 	}
 
 	var wg sync.WaitGroup
@@ -71,7 +114,7 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 				if ctx.Err() != nil {
 					return
 				}
-				job, idx, sz := claim()
+				ji, job, idx, sz := claim()
 				if job == nil {
 					return
 				}
@@ -82,6 +125,11 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 				}
 				if err := job.Dst.WriteBlock(ctx, idx, buf[:n]); err != nil {
 					addErr(fmt.Errorf("write %s block %d: %w", job.Dst.Describe(), idx, err))
+				} else {
+					blockDone(job, int64(n))
+					if int(atomic.AddInt32(&jobDoneCount[ji], 1)) == job.Src.BlockCount() {
+						jobComplete(ji, job)
+					}
 				}
 				clear(buf[:n])
 			}
