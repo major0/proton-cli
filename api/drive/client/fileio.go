@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
@@ -20,6 +21,7 @@ type FileHandle struct {
 	SessionKey *crypto.SessionKey // for encrypt (dest) or decrypt (source)
 	FileSize   int64              // populated by OpenFile (source)
 	BlockSizes []int64            // populated by OpenFile (source)
+	ModTime    time.Time          // populated by OpenFile from XAttr (zero if unavailable)
 }
 
 // CreateFile creates a file draft in Proton Drive and returns a
@@ -124,13 +126,19 @@ func (c *Client) OpenFile(ctx context.Context, link *drive.Link) (*FileHandle, e
 		return nil, fmt.Errorf("drive.OpenFile: %s: session key: %w", link.LinkID(), err)
 	}
 
-	// Compute block sizes from revision XAttr if available.
+	// Compute block sizes and mtime from revision XAttr if available.
 	var blockSizes []int64
+	var modTime time.Time
 	addrKR, err := c.addrKRForLink(link)
 	if err == nil {
 		xattr, xErr := revision.GetDecXAttrString(addrKR, nodeKR)
 		if xErr == nil && xattr != nil {
 			blockSizes = xattr.BlockSizes
+			if xattr.ModificationTime != "" {
+				if mt, tErr := time.Parse(time.RFC3339, xattr.ModificationTime); tErr == nil {
+					modTime = mt
+				}
+			}
 		}
 	}
 
@@ -159,5 +167,6 @@ func (c *Client) OpenFile(ctx context.Context, link *drive.Link) (*FileHandle, e
 		SessionKey: sessionKey,
 		FileSize:   fileSize,
 		BlockSizes: blockSizes,
+		ModTime:    modTime,
 	}, nil
 }

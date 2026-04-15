@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 )
 
@@ -17,16 +16,16 @@ func TestClassifyPath(t *testing.T) {
 	tests := []struct {
 		name string
 		arg  string
-		want driveClient.PathType
+		want PathType
 	}{
-		{"proton triple-slash", "proton:///Documents/file.txt", driveClient.PathProton},
-		{"proton double-slash", "proton://Photos/vacation.jpg", driveClient.PathProton},
-		{"proton bare prefix", "proton://", driveClient.PathProton},
-		{"absolute local", "/home/user/file.txt", driveClient.PathLocal},
-		{"relative local", "./relative/path", driveClient.PathLocal},
-		{"bare filename", "file.txt", driveClient.PathLocal},
-		{"empty string", "", driveClient.PathLocal},
-		{"uppercase prefix", "PROTON://uppercase", driveClient.PathLocal},
+		{"proton triple-slash", "proton:///Documents/file.txt", PathProton},
+		{"proton double-slash", "proton://Photos/vacation.jpg", PathProton},
+		{"proton bare prefix", "proton://", PathProton},
+		{"absolute local", "/home/user/file.txt", PathLocal},
+		{"relative local", "./relative/path", PathLocal},
+		{"bare filename", "file.txt", PathLocal},
+		{"empty string", "", PathLocal},
+		{"uppercase prefix", "PROTON://uppercase", PathLocal},
 	}
 
 	for _, tt := range tests {
@@ -288,7 +287,7 @@ func TestResolvedEndpointIsDir(t *testing.T) {
 		{
 			name: "file endpoint",
 			ep: resolvedEndpoint{
-				pathType:  driveClient.PathLocal,
+				pathType:  PathLocal,
 				localPath: file,
 				localInfo: fileInfo,
 			},
@@ -297,7 +296,7 @@ func TestResolvedEndpointIsDir(t *testing.T) {
 		{
 			name: "dir endpoint",
 			ep: resolvedEndpoint{
-				pathType:  driveClient.PathLocal,
+				pathType:  PathLocal,
 				localPath: tmp,
 				localInfo: dirInfo,
 			},
@@ -306,7 +305,7 @@ func TestResolvedEndpointIsDir(t *testing.T) {
 		{
 			name: "nil localInfo (non-existent dest)",
 			ep: resolvedEndpoint{
-				pathType:  driveClient.PathLocal,
+				pathType:  PathLocal,
 				localPath: filepath.Join(tmp, "nope"),
 				localInfo: nil,
 			},
@@ -352,7 +351,7 @@ func TestResolvedEndpointBasename(t *testing.T) {
 		{
 			name: "file endpoint",
 			ep: resolvedEndpoint{
-				pathType:  driveClient.PathLocal,
+				pathType:  PathLocal,
 				localPath: file,
 				localInfo: fileInfo,
 			},
@@ -361,7 +360,7 @@ func TestResolvedEndpointBasename(t *testing.T) {
 		{
 			name: "dir endpoint",
 			ep: resolvedEndpoint{
-				pathType:  driveClient.PathLocal,
+				pathType:  PathLocal,
 				localPath: sub,
 				localInfo: dirInfo,
 			},
@@ -370,7 +369,7 @@ func TestResolvedEndpointBasename(t *testing.T) {
 		{
 			name: "nil localInfo with localPath set",
 			ep: resolvedEndpoint{
-				pathType:  driveClient.PathLocal,
+				pathType:  PathLocal,
 				localPath: "/some/path/newfile.dat",
 				localInfo: nil,
 			},

@@ -62,24 +62,34 @@ func init() {
 	cli.BoolFlag(f, &cpFlags.backup, "backup", false, "Backup existing local files as <name>~")
 }
 
+// PathType distinguishes local filesystem paths from Proton Drive paths.
+type PathType int
+
+const (
+	// PathLocal is a local filesystem path.
+	PathLocal PathType = iota
+	// PathProton is a Proton Drive path (proton:// URI).
+	PathProton
+)
+
 // pathArg is a parsed command argument with its classified type.
 type pathArg struct {
 	raw      string
-	pathType driveClient.PathType
+	pathType PathType
 }
 
 // classifyPath returns PathProton if arg starts with "proton://", PathLocal otherwise.
-func classifyPath(arg string) driveClient.PathType {
+func classifyPath(arg string) PathType {
 	if strings.HasPrefix(arg, "proton://") {
-		return driveClient.PathProton
+		return PathProton
 	}
-	return driveClient.PathLocal
+	return PathLocal
 }
 
 // resolvedEndpoint holds the result of resolving a source or destination path.
 // Exactly one variant is populated based on pathType.
 type resolvedEndpoint struct {
-	pathType driveClient.PathType
+	pathType PathType
 	raw      string // original argument string
 
 	// Local path resolution (pathType == PathLocal)
@@ -93,7 +103,7 @@ type resolvedEndpoint struct {
 
 // isDir returns true if the resolved endpoint is a directory.
 func (r *resolvedEndpoint) isDir() bool {
-	if r.pathType == driveClient.PathLocal {
+	if r.pathType == PathLocal {
 		return r.localInfo != nil && r.localInfo.IsDir()
 	}
 	return r.link != nil && r.link.Type() == proton.LinkTypeFolder
@@ -101,7 +111,7 @@ func (r *resolvedEndpoint) isDir() bool {
 
 // basename returns the name of the resolved endpoint.
 func (r *resolvedEndpoint) basename() string {
-	if r.pathType == driveClient.PathLocal {
+	if r.pathType == PathLocal {
 		return filepath.Base(r.localPath)
 	}
 	if r.link != nil {
@@ -123,7 +133,7 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 	ep := &resolvedEndpoint{pathType: arg.pathType, raw: arg.raw}
 
 	switch arg.pathType {
-	case driveClient.PathLocal:
+	case PathLocal:
 		info, err := os.Stat(arg.raw)
 		if err == nil {
 			// Dest exists.
@@ -153,7 +163,7 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 		ep.localPath = arg.raw
 		return ep, nil
 
-	case driveClient.PathProton:
+	case PathProton:
 		link, share, err := ResolveProtonPath(ctx, dc, arg.raw)
 		if err == nil {
 			// Dest exists.
@@ -187,7 +197,7 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 }
 
 // errSkipSymlink signals that a symlink source should be skipped.
-var errSkipSymlink = fmt.Errorf("skipping symbolic link")
+var errSkipSymlink = errors.New("skipping symbolic link")
 
 // resolveSource resolves a source path argument to a resolvedEndpoint.
 // For local paths, uses os.Lstat to detect symlinks. With -L, follows
@@ -195,14 +205,14 @@ var errSkipSymlink = fmt.Errorf("skipping symbolic link")
 func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*resolvedEndpoint, error) {
 	ep := &resolvedEndpoint{pathType: arg.pathType, raw: arg.raw}
 	switch arg.pathType {
-	case driveClient.PathProton:
+	case PathProton:
 		link, share, err := ResolveProtonPath(ctx, dc, arg.raw)
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
 		}
 		ep.link = link
 		ep.share = share
-	case driveClient.PathLocal:
+	case PathLocal:
 		info, err := os.Lstat(arg.raw)
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
@@ -224,48 +234,67 @@ func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*r
 }
 
 // handleConflict handles destination file conflicts before copy.
-//
-// Default: local files are truncated (overwrite in place); Proton files
-// get a new revision (versioning — handled by CreateFile, no action here).
-// Directories are never removed — contents merge naturally.
-//
-// --remove-destination: local files are removed; Proton files are trashed
-// (disables versioning). Directories are skipped.
-//
-// --backup: local files are renamed to <name>~; Proton files are a no-op
-// (versioning is the default backup mechanism).
-func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEndpoint) error {
-	// Directories: never remove, merge contents.
+// Default: truncate local, version Proton. Directories merge.
+func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEndpoint, removeDest, backup bool) error {
 	if dst.isDir() {
 		return nil
 	}
 
 	switch dst.pathType {
-	case driveClient.PathLocal:
-		// No existing file → nothing to do.
+	case PathLocal:
 		if dst.localInfo == nil {
 			return nil
 		}
-		if cpFlags.backup {
+		if backup {
 			return os.Rename(dst.localPath, dst.localPath+"~")
 		}
-		if cpFlags.removeDest {
+		if removeDest {
 			return os.Remove(dst.localPath)
 		}
-		// Default: truncate existing file so overwrite is clean.
 		return os.Truncate(dst.localPath, 0)
 
-	case driveClient.PathProton:
-		// Non-existent Proton dest (link points to parent) → nothing to do.
+	case PathProton:
 		if dst.link == nil {
 			return nil
 		}
-		// Only act on files, not directories.
-		if dst.link.Type() != proton.LinkTypeFolder {
-			if cpFlags.removeDest {
-				return dc.Remove(ctx, dst.share, dst.link, drive.RemoveOpts{})
-			}
-			// Default and --backup: Proton versioning handles it.
+		if dst.link.Type() != proton.LinkTypeFolder && removeDest {
+			return dc.Remove(ctx, dst.share, dst.link, drive.RemoveOpts{})
+		}
+	}
+	return nil
+}
+
+// ensureDestDir creates a destination subdirectory at relPath under dstBase.
+func ensureDestDir(ctx context.Context, dc *driveClient.Client, dstBase *resolvedEndpoint, relPath string) {
+	switch dstBase.pathType {
+	case PathLocal:
+		dstDir := filepath.Join(dstBase.localPath, relPath)
+		if err := os.MkdirAll(dstDir, 0700); err != nil {
+			fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", dstDir, err)
+		}
+	case PathProton:
+		if _, err := dc.MkDirAll(ctx, dstBase.share, dstBase.link, relPath); err != nil {
+			fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", relPath, err)
+		}
+	}
+}
+
+// makeFileDst constructs a resolved destination endpoint for a file at
+// relPath under dstBase.
+func makeFileDst(dstBase *resolvedEndpoint, relPath string) *resolvedEndpoint {
+	switch dstBase.pathType {
+	case PathLocal:
+		return &resolvedEndpoint{
+			pathType:  PathLocal,
+			raw:       filepath.Join(dstBase.localPath, relPath),
+			localPath: filepath.Join(dstBase.localPath, relPath),
+		}
+	case PathProton:
+		return &resolvedEndpoint{
+			pathType: PathProton,
+			raw:      relPath,
+			link:     dstBase.link,
+			share:    dstBase.share,
 		}
 	}
 	return nil
@@ -277,9 +306,9 @@ func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEn
 // never become CopyJobs — only files with block data do.
 func expandRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, []preserveEntry, error) {
 	switch src.pathType {
-	case driveClient.PathLocal:
+	case PathLocal:
 		return expandLocalRecursive(ctx, dc, src, dstBase)
-	case driveClient.PathProton:
+	case PathProton:
 		return expandProtonRecursive(ctx, dc, src, dstBase)
 	}
 	return nil, nil, nil
@@ -293,11 +322,11 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 
 	// Create the top-level dest directory.
 	switch dstBase.pathType {
-	case driveClient.PathLocal:
+	case PathLocal:
 		if err := os.MkdirAll(dstBase.localPath, 0700); err != nil {
 			return nil, nil, fmt.Errorf("cp: mkdir %s: %w", dstBase.localPath, err)
 		}
-	case driveClient.PathProton:
+	case PathProton:
 		if _, err := dc.MkDirAll(ctx, dstBase.share, dstBase.link, filepath.Base(dstBase.raw)); err != nil {
 			return nil, nil, fmt.Errorf("cp: mkdir %s: %w", dstBase.raw, err)
 		}
@@ -334,18 +363,7 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 		}
 
 		if d.IsDir() {
-			// Create dest subdirectory.
-			switch dstBase.pathType {
-			case driveClient.PathLocal:
-				dstDir := filepath.Join(dstBase.localPath, rel)
-				if err := os.MkdirAll(dstDir, 0700); err != nil {
-					fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", dstDir, err)
-				}
-			case driveClient.PathProton:
-				if _, err := dc.MkDirAll(ctx, dstBase.share, dstBase.link, rel); err != nil {
-					fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", rel, err)
-				}
-			}
+			ensureDestDir(ctx, dc, dstBase, rel)
 			return nil
 		}
 
@@ -357,30 +375,15 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 		}
 
 		fileSrc := &resolvedEndpoint{
-			pathType:  driveClient.PathLocal,
+			pathType:  PathLocal,
 			raw:       path,
 			localPath: path,
 			localInfo: info,
 		}
 
-		var fileDst *resolvedEndpoint
-		switch dstBase.pathType {
-		case driveClient.PathLocal:
-			fileDst = &resolvedEndpoint{
-				pathType:  driveClient.PathLocal,
-				raw:       filepath.Join(dstBase.localPath, rel),
-				localPath: filepath.Join(dstBase.localPath, rel),
-			}
-		case driveClient.PathProton:
-			fileDst = &resolvedEndpoint{
-				pathType: driveClient.PathProton,
-				raw:      rel,
-				link:     dstBase.link,
-				share:    dstBase.share,
-			}
-		}
+		fileDst := makeFileDst(dstBase, rel)
 
-		if err := handleConflict(ctx, dc, fileDst); err != nil {
+		if err := handleConflict(ctx, dc, fileDst, cpFlags.removeDest, cpFlags.backup); err != nil {
 			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, err)
 			return nil
 		}
@@ -393,7 +396,7 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 		jobs = append(jobs, *job)
 
 		// Collect preservation metadata for local→local.
-		if fileDst.pathType == driveClient.PathLocal {
+		if fileDst.pathType == PathLocal {
 			preserves = append(preserves, preserveEntry{
 				dstPath: fileDst.localPath,
 				mode:    info.Mode().Perm(),
@@ -433,47 +436,21 @@ func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dst
 		}
 
 		if entry.Link.Type() == proton.LinkTypeFolder {
-			// Create dest subdirectory.
-			switch dstBase.pathType {
-			case driveClient.PathLocal:
-				dstDir := filepath.Join(dstBase.localPath, entry.Path)
-				if err := os.MkdirAll(dstDir, 0700); err != nil {
-					fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", dstDir, err)
-				}
-			case driveClient.PathProton:
-				if _, err := dc.MkDirAll(ctx, dstBase.share, dstBase.link, entry.Path); err != nil {
-					fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", entry.Path, err)
-				}
-			}
+			ensureDestDir(ctx, dc, dstBase, entry.Path)
 			continue
 		}
 
 		// Regular file — build a CopyJob.
 		fileSrc := &resolvedEndpoint{
-			pathType: driveClient.PathProton,
+			pathType: PathProton,
 			raw:      entry.Path,
 			link:     entry.Link,
 			share:    src.share,
 		}
 
-		var fileDst *resolvedEndpoint
-		switch dstBase.pathType {
-		case driveClient.PathLocal:
-			fileDst = &resolvedEndpoint{
-				pathType:  driveClient.PathLocal,
-				raw:       filepath.Join(dstBase.localPath, entry.Path),
-				localPath: filepath.Join(dstBase.localPath, entry.Path),
-			}
-		case driveClient.PathProton:
-			fileDst = &resolvedEndpoint{
-				pathType: driveClient.PathProton,
-				raw:      entry.Path,
-				link:     dstBase.link,
-				share:    dstBase.share,
-			}
-		}
+		fileDst := makeFileDst(dstBase, entry.Path)
 
-		if err := handleConflict(ctx, dc, fileDst); err != nil {
+		if err := handleConflict(ctx, dc, fileDst, cpFlags.removeDest, cpFlags.backup); err != nil {
 			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", entry.Path, err)
 			continue
 		}
@@ -497,10 +474,10 @@ func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dst
 // FileHandle with revision, session key, and block info.
 func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolvedEndpoint) (*driveClient.CopyJob, error) {
 	// Check for same source and destination.
-	if src.pathType == driveClient.PathLocal && dst.pathType == driveClient.PathLocal && src.localPath == dst.localPath {
+	if src.pathType == PathLocal && dst.pathType == PathLocal && src.localPath == dst.localPath {
 		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
 	}
-	if src.pathType == driveClient.PathProton && dst.pathType == driveClient.PathProton &&
+	if src.pathType == PathProton && dst.pathType == PathProton &&
 		src.link != nil && dst.link != nil && src.link.LinkID() == dst.link.LinkID() {
 		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
 	}
@@ -509,9 +486,9 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 
 	// Build source reader.
 	switch src.pathType {
-	case driveClient.PathLocal:
+	case PathLocal:
 		job.Src = driveClient.NewLocalReader(src.localPath, src.localInfo.Size())
-	case driveClient.PathProton:
+	case PathProton:
 		fh, err := dc.OpenFile(ctx, src.link)
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", src.raw, err)
@@ -523,7 +500,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 	// Build destination writer. Pre-create local files so workers can
 	// write blocks at arbitrary offsets into an existing file.
 	switch dst.pathType {
-	case driveClient.PathLocal:
+	case PathLocal:
 		f, err := os.Create(dst.localPath)
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
@@ -532,9 +509,9 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
 		}
 		job.Dst = driveClient.NewLocalWriter(dst.localPath)
-	case driveClient.PathProton:
+	case PathProton:
 		name := filepath.Base(dst.raw)
-		if src.pathType == driveClient.PathLocal {
+		if src.pathType == PathLocal {
 			name = filepath.Base(src.localPath)
 		}
 		fh, err := dc.CreateFile(ctx, dst.share, dst.link, name)
@@ -643,10 +620,10 @@ func runCp(_ *cobra.Command, args []string) error {
 
 	// Determine if any path is a Proton path — session setup is only
 	// needed when at least one endpoint is remote.
-	needSession := dest.pathType == driveClient.PathProton
+	needSession := dest.pathType == PathProton
 	if !needSession {
 		for _, s := range sources {
-			if s.pathType == driveClient.PathProton {
+			if s.pathType == PathProton {
 				needSession = true
 				break
 			}
@@ -717,7 +694,7 @@ func runCp(_ *cobra.Command, args []string) error {
 			continue
 		}
 
-		if err := handleConflict(ctx, dc, fileDst); err != nil {
+		if err := handleConflict(ctx, dc, fileDst, cpFlags.removeDest, cpFlags.backup); err != nil {
 			return err
 		}
 
@@ -728,7 +705,7 @@ func runCp(_ *cobra.Command, args []string) error {
 		jobs = append(jobs, *job)
 
 		// Collect preservation metadata for local destinations.
-		if fileDst.pathType == driveClient.PathLocal && srcEp.pathType == driveClient.PathLocal && srcEp.localInfo != nil {
+		if fileDst.pathType == PathLocal && srcEp.pathType == PathLocal && srcEp.localInfo != nil {
 			preserves = append(preserves, preserveEntry{
 				dstPath: fileDst.localPath,
 				mode:    srcEp.localInfo.Mode().Perm(),

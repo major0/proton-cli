@@ -12,16 +12,6 @@ import (
 // DefaultWorkers is the default number of concurrent block workers.
 const DefaultWorkers = 8
 
-// PathType distinguishes local filesystem paths from Proton Drive paths.
-type PathType int
-
-const (
-	// PathLocal is a local filesystem path.
-	PathLocal PathType = iota
-	// PathProton is a Proton Drive path (proton:// URI).
-	PathProton
-)
-
 // BlockReader reads blocks from a source. Implementations carry their
 // own state (file path, link, session key, etc.).
 type BlockReader interface {
@@ -157,8 +147,9 @@ func (w *LocalWriter) Close() error { return nil }
 
 // blockMap tracks which blocks of a job have been claimed by workers.
 type blockMap struct {
-	job     *CopyJob
-	pending []bool // true = not yet claimed
+	job      *CopyJob
+	pending  []bool // true = not yet claimed
+	nextFree int    // cursor for O(1) amortized claim
 }
 
 // newBlockMap creates a blockMap for a CopyJob.
@@ -174,11 +165,14 @@ func newBlockMap(job *CopyJob) *blockMap {
 // claim returns the index of the next unclaimed block, or -1 if all
 // blocks have been claimed. Caller must hold the pipeline mutex.
 func (m *blockMap) claim() int {
-	for i, p := range m.pending {
-		if p {
-			m.pending[i] = false
-			return i
+	for m.nextFree < len(m.pending) {
+		if m.pending[m.nextFree] {
+			idx := m.nextFree
+			m.pending[idx] = false
+			m.nextFree++
+			return idx
 		}
+		m.nextFree++
 	}
 	return -1
 }
