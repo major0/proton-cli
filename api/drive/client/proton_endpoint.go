@@ -76,6 +76,9 @@ func (r *ProtonReader) BlockSize(index int) int64 {
 // Describe returns the link ID.
 func (r *ProtonReader) Describe() string { return r.linkID }
 
+// TotalSize returns the file size.
+func (r *ProtonReader) TotalSize() int64 { return r.fileSize }
+
 // Close is a no-op.
 func (r *ProtonReader) Close() error { return nil }
 

@@ -21,6 +21,8 @@ type BlockReader interface {
 	BlockCount() int
 	// BlockSize returns the size of block at index (0-based).
 	BlockSize(index int) int64
+	// TotalSize returns the total file size in bytes.
+	TotalSize() int64
 	// Describe returns a human-readable name for error messages.
 	Describe() string
 	// Close releases resources.
@@ -111,6 +113,9 @@ func (r *LocalReader) BlockSize(index int) int64 {
 
 // Describe returns the file path.
 func (r *LocalReader) Describe() string { return r.Path }
+
+// TotalSize returns the file size.
+func (r *LocalReader) TotalSize() int64 { return r.Size }
 
 // Close is a no-op — FDs are per-call.
 func (r *LocalReader) Close() error { return nil }

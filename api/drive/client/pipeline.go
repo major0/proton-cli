@@ -33,11 +33,8 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 	var totalBytes int64
 	for i := range jobs {
 		maps[i] = newBlockMap(&jobs[i])
-		n := jobs[i].Src.BlockCount()
-		totalBlocks += n
-		for b := 0; b < n; b++ {
-			totalBytes += jobs[i].Src.BlockSize(b) //nolint:gosec // b < n, guarded by loop
-		}
+		totalBlocks += jobs[i].Src.BlockCount()
+		totalBytes += jobs[i].Src.TotalSize()
 	}
 
 	// Shared state: current job index and its block map.
