@@ -253,6 +253,205 @@ func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEn
 	return nil
 }
 
+// expandRecursive walks a source directory and returns CopyJobs for all
+// files. Destination subdirectories are created as encountered (breadth-
+// first for Proton sources, natural walk order for local). Directories
+// never become CopyJobs — only files with block data do.
+func expandRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, error) {
+	switch src.pathType {
+	case driveClient.PathLocal:
+		return expandLocalRecursive(ctx, dc, src, dstBase)
+	case driveClient.PathProton:
+		return expandProtonRecursive(ctx, dc, src, dstBase)
+	}
+	return nil, nil
+}
+
+// expandLocalRecursive walks a local source directory tree.
+func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, error) {
+	var jobs []driveClient.CopyJob
+	srcRoot := src.localPath
+
+	// Create the top-level dest directory.
+	switch dstBase.pathType {
+	case driveClient.PathLocal:
+		if err := os.MkdirAll(dstBase.localPath, 0700); err != nil {
+			return nil, fmt.Errorf("cp: mkdir %s: %w", dstBase.localPath, err)
+		}
+	case driveClient.PathProton:
+		if _, err := dc.MkDirAll(ctx, dstBase.share, dstBase.link, filepath.Base(dstBase.raw)); err != nil {
+			return nil, fmt.Errorf("cp: mkdir %s: %w", dstBase.raw, err)
+		}
+	}
+
+	err := filepath.WalkDir(srcRoot, func(path string, d os.DirEntry, walkErr error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if walkErr != nil {
+			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, walkErr)
+			return nil // continue on error
+		}
+
+		// Compute relative path from source root.
+		rel, err := filepath.Rel(srcRoot, path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, err)
+			return nil
+		}
+		if rel == "." {
+			return nil // skip the root itself
+		}
+
+		if d.IsDir() {
+			// Create dest subdirectory.
+			switch dstBase.pathType {
+			case driveClient.PathLocal:
+				dstDir := filepath.Join(dstBase.localPath, rel)
+				if err := os.MkdirAll(dstDir, 0700); err != nil {
+					fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", dstDir, err)
+				}
+			case driveClient.PathProton:
+				if _, err := dc.MkDirAll(ctx, dstBase.share, dstBase.link, rel); err != nil {
+					fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", rel, err)
+				}
+			}
+			return nil
+		}
+
+		// Regular file — build a CopyJob.
+		info, err := d.Info()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, err)
+			return nil
+		}
+
+		fileSrc := &resolvedEndpoint{
+			pathType:  driveClient.PathLocal,
+			raw:       path,
+			localPath: path,
+			localInfo: info,
+		}
+
+		var fileDst *resolvedEndpoint
+		switch dstBase.pathType {
+		case driveClient.PathLocal:
+			fileDst = &resolvedEndpoint{
+				pathType:  driveClient.PathLocal,
+				raw:       filepath.Join(dstBase.localPath, rel),
+				localPath: filepath.Join(dstBase.localPath, rel),
+			}
+		case driveClient.PathProton:
+			fileDst = &resolvedEndpoint{
+				pathType: driveClient.PathProton,
+				raw:      rel,
+				link:     dstBase.link,
+				share:    dstBase.share,
+			}
+		}
+
+		if err := handleConflict(ctx, dc, fileDst); err != nil {
+			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, err)
+			return nil
+		}
+
+		job, err := buildCopyJob(ctx, dc, fileSrc, fileDst)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, err)
+			return nil
+		}
+		jobs = append(jobs, *job)
+		return nil
+	})
+
+	if err != nil {
+		return jobs, err
+	}
+	return jobs, nil
+}
+
+// expandProtonRecursive walks a Proton source directory tree using
+// breadth-first TreeWalk.
+func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint) ([]driveClient.CopyJob, error) {
+	var jobs []driveClient.CopyJob
+
+	results := make(chan driveClient.WalkEntry, 64)
+	var walkErr error
+	go func() {
+		defer close(results)
+		walkErr = dc.TreeWalk(ctx, src.link, "", drive.BreadthFirst, results)
+	}()
+
+	for entry := range results {
+		if ctx.Err() != nil {
+			return jobs, ctx.Err()
+		}
+
+		// Skip the root itself.
+		if entry.Depth == 0 {
+			continue
+		}
+
+		if entry.Link.Type() == proton.LinkTypeFolder {
+			// Create dest subdirectory.
+			switch dstBase.pathType {
+			case driveClient.PathLocal:
+				dstDir := filepath.Join(dstBase.localPath, entry.Path)
+				if err := os.MkdirAll(dstDir, 0700); err != nil {
+					fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", dstDir, err)
+				}
+			case driveClient.PathProton:
+				if _, err := dc.MkDirAll(ctx, dstBase.share, dstBase.link, entry.Path); err != nil {
+					fmt.Fprintf(os.Stderr, "cp: mkdir %s: %v\n", entry.Path, err)
+				}
+			}
+			continue
+		}
+
+		// Regular file — build a CopyJob.
+		fileSrc := &resolvedEndpoint{
+			pathType: driveClient.PathProton,
+			raw:      entry.Path,
+			link:     entry.Link,
+			share:    src.share,
+		}
+
+		var fileDst *resolvedEndpoint
+		switch dstBase.pathType {
+		case driveClient.PathLocal:
+			fileDst = &resolvedEndpoint{
+				pathType:  driveClient.PathLocal,
+				raw:       filepath.Join(dstBase.localPath, entry.Path),
+				localPath: filepath.Join(dstBase.localPath, entry.Path),
+			}
+		case driveClient.PathProton:
+			fileDst = &resolvedEndpoint{
+				pathType: driveClient.PathProton,
+				raw:      entry.Path,
+				link:     dstBase.link,
+				share:    dstBase.share,
+			}
+		}
+
+		if err := handleConflict(ctx, dc, fileDst); err != nil {
+			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", entry.Path, err)
+			continue
+		}
+
+		job, err := buildCopyJob(ctx, dc, fileSrc, fileDst)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", entry.Path, err)
+			continue
+		}
+		jobs = append(jobs, *job)
+	}
+
+	if walkErr != nil {
+		return jobs, walkErr
+	}
+	return jobs, nil
+}
+
 // buildCopyJob constructs a CopyJob from resolved source and destination
 // endpoints. For Proton endpoints, uses CreateFile/OpenFile to get the
 // FileHandle with revision, session key, and block info.
@@ -407,9 +606,17 @@ func runCp(_ *cobra.Command, args []string) error {
 			}
 		}
 
-		// Directory sources are handled by expandRecursive (Task 7).
+		// Directory sources: expand recursively or skip.
 		if srcEp.isDir() {
-			fmt.Fprintf(os.Stderr, "cp: %s: is a directory (use -r to copy recursively)\n", srcEp.raw)
+			if !cpFlags.recursive {
+				fmt.Fprintf(os.Stderr, "cp: %s: is a directory (use -r to copy recursively)\n", srcEp.raw)
+				continue
+			}
+			expanded, err := expandRecursive(ctx, dc, srcEp, fileDst)
+			if err != nil {
+				return err
+			}
+			jobs = append(jobs, expanded...)
 			continue
 		}
 

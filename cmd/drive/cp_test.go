@@ -520,3 +520,116 @@ func TestConflictHandling(t *testing.T) {
 		}
 	})
 }
+
+func TestRecursiveCopy(t *testing.T) {
+	t.Run("local to local recursive", func(t *testing.T) {
+		resetFlags()
+		cpFlags.recursive = true
+		tmp := t.TempDir()
+
+		// Build source tree: src/{a.txt, sub/{b.txt, deep/{c.txt}}}
+		srcDir := filepath.Join(tmp, "src")
+		_ = os.MkdirAll(filepath.Join(srcDir, "sub", "deep"), 0700)
+		_ = os.WriteFile(filepath.Join(srcDir, "a.txt"), []byte("aaa"), 0600)
+		_ = os.WriteFile(filepath.Join(srcDir, "sub", "b.txt"), []byte("bbb"), 0600)
+		_ = os.WriteFile(filepath.Join(srcDir, "sub", "deep", "c.txt"), []byte("ccc"), 0600)
+
+		dstDir := filepath.Join(tmp, "dst")
+		_ = os.Mkdir(dstDir, 0700)
+
+		if err := runCp(nil, []string{srcDir, dstDir}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		// Dest should have: dst/src/{a.txt, sub/{b.txt, deep/{c.txt}}}
+		for _, tc := range []struct {
+			path    string
+			content string
+		}{
+			{filepath.Join(dstDir, "src", "a.txt"), "aaa"},
+			{filepath.Join(dstDir, "src", "sub", "b.txt"), "bbb"},
+			{filepath.Join(dstDir, "src", "sub", "deep", "c.txt"), "ccc"},
+		} {
+			got, err := os.ReadFile(tc.path)
+			if err != nil {
+				t.Errorf("missing %s: %v", tc.path, err)
+				continue
+			}
+			if string(got) != tc.content {
+				t.Errorf("%s: got %q, want %q", tc.path, got, tc.content)
+			}
+		}
+	})
+
+	t.Run("non-recursive directory skipped", func(t *testing.T) {
+		resetFlags()
+		// recursive NOT set
+		tmp := t.TempDir()
+		srcDir := filepath.Join(tmp, "src")
+		_ = os.Mkdir(srcDir, 0700)
+		_ = os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0600)
+		dstDir := filepath.Join(tmp, "dst")
+		_ = os.Mkdir(dstDir, 0700)
+
+		// Should succeed (skip the dir, no error) but not copy anything.
+		if err := runCp(nil, []string{srcDir, dstDir}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		// dst/src should not exist.
+		if _, err := os.Stat(filepath.Join(dstDir, "src")); err == nil {
+			t.Error("expected dst/src to not exist (dir should be skipped)")
+		}
+	})
+
+	t.Run("recursive with missing source file continues", func(t *testing.T) {
+		resetFlags()
+		cpFlags.recursive = true
+		tmp := t.TempDir()
+
+		srcDir := filepath.Join(tmp, "src")
+		_ = os.Mkdir(srcDir, 0700)
+		_ = os.WriteFile(filepath.Join(srcDir, "good.txt"), []byte("ok"), 0600)
+
+		dstDir := filepath.Join(tmp, "dst")
+		_ = os.Mkdir(dstDir, 0700)
+
+		// Should copy good.txt even if other errors occur.
+		if err := runCp(nil, []string{srcDir, dstDir}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		got, err := os.ReadFile(filepath.Join(dstDir, "src", "good.txt"))
+		if err != nil {
+			t.Fatalf("missing good.txt: %v", err)
+		}
+		if string(got) != "ok" {
+			t.Errorf("good.txt: got %q, want %q", got, "ok")
+		}
+	})
+
+	t.Run("empty directory creates dest dir", func(t *testing.T) {
+		resetFlags()
+		cpFlags.recursive = true
+		tmp := t.TempDir()
+
+		srcDir := filepath.Join(tmp, "empty")
+		_ = os.Mkdir(srcDir, 0700)
+
+		dstDir := filepath.Join(tmp, "dst")
+		_ = os.Mkdir(dstDir, 0700)
+
+		if err := runCp(nil, []string{srcDir, dstDir}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		// dst/empty should exist as a directory (created by dest-is-dir logic).
+		info, err := os.Stat(filepath.Join(dstDir, "empty"))
+		if err != nil {
+			t.Fatalf("dst/empty missing: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("dst/empty should be a directory")
+		}
+	})
+}
