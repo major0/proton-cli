@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	proton "github.com/ProtonMail/go-proton-api"
+	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
