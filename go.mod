@@ -5,13 +5,17 @@ go 1.26.1
 require (
 	github.com/ProtonMail/go-proton-api v0.4.0
 	github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton
+	github.com/chromedp/chromedp v0.15.1
 	github.com/docker/go-units v0.5.0
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/google/uuid v1.6.0
 	github.com/jedib0t/go-pretty/v6 v6.6.5
 	github.com/spf13/cobra v1.8.1
+	github.com/spf13/pflag v1.0.5
 	github.com/zalando/go-keyring v0.2.8
+	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.41.0
+	gopkg.in/yaml.v3 v3.0.1
 	pgregory.net/rapid v1.2.0
 )
 
@@ -25,7 +29,6 @@ require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/bradenaw/juniper v0.15.3 // indirect
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
-	github.com/chromedp/chromedp v0.15.1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/cronokirby/saferith v0.33.0 // indirect
@@ -38,21 +41,18 @@ require (
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/major0/optargs v0.4.2 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6 // indirect
 	gitlab.com/c0b/go-ordered-json v0.0.0-20201030195603-febf46534d5a // indirect
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace (

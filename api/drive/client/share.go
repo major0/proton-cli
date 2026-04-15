@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 )
@@ -59,53 +61,33 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 	slog.Debug("client.ListShares", "shares", len(pshares))
 	slog.Debug("client.ListShares", "volumeID", volumeID)
 
-	var wg sync.WaitGroup
-	idQueue := make(chan string)
-	shareQueue := make(chan *drive.Share)
-	for i := 0; i < min(c.Session.MaxWorkers, len(pshares)); i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for id := range idQueue {
-				share, err := c.GetShare(ctx, id)
-				if err != nil {
-					slog.Error("worker", "shareID", id, "error", err)
-					continue
-				}
-				shareQueue <- share
-			}
-		}()
-	}
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(c.Session.MaxWorkers)
 
-	// Spawn a producer to feed the idQueue, respecting cancellation.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer close(idQueue)
-		for _, s := range pshares {
-			if volumeID != "" && volumeID != s.VolumeID {
-				continue
-			}
-			select {
-			case idQueue <- s.ShareID:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	// Wait for all workers to finish, then close the shareQueue to
-	// signal the main goroutine.
-	go func() {
-		wg.Wait()
-		close(shareQueue)
-	}()
-
+	var mu sync.Mutex
 	shares := make([]drive.Share, 0, len(pshares))
-	for share := range shareQueue {
-		shares = append(shares, *share)
+
+	for _, s := range pshares {
+		if volumeID != "" && volumeID != s.VolumeID {
+			continue
+		}
+		shareID := s.ShareID
+		g.Go(func() error {
+			share, err := c.GetShare(ctx, shareID)
+			if err != nil {
+				slog.Error("worker", "shareID", shareID, "error", err)
+				return nil
+			}
+			mu.Lock()
+			shares = append(shares, *share)
+			mu.Unlock()
+			return nil
+		})
 	}
 
+	if err := g.Wait(); err != nil {
+		return shares, err
+	}
 	return shares, nil
 }
 
