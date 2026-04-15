@@ -723,7 +723,8 @@ func runCp(_ *cobra.Command, args []string) error {
 	}
 
 	// Apply preserved attributes after all blocks are written.
-	return applyPreserve(preserves)
+	applyPreserve(preserves)
+	return nil
 }
 
 // preserveEntry tracks metadata to apply after copy completes.
@@ -734,10 +735,10 @@ type preserveEntry struct {
 }
 
 // applyPreserve applies preserved mode and mtime to destination files.
-func applyPreserve(entries []preserveEntry) error {
+func applyPreserve(entries []preserveEntry) {
 	preserve := parsePreserve()
 	if !preserve.mode && !preserve.timestamps {
-		return nil
+		return
 	}
 	for _, e := range entries {
 		if preserve.mode {
@@ -751,7 +752,6 @@ func applyPreserve(entries []preserveEntry) error {
 			}
 		}
 	}
-	return nil
 }
 
 // preserveFlags holds parsed --preserve flag values.

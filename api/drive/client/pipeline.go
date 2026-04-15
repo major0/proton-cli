@@ -59,7 +59,7 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 	}
 
 	// blockDone is called after each successful block write.
-	blockDone := func(job *CopyJob, blockBytes int64) {
+	blockDone := func(_ *CopyJob, blockBytes int64) {
 		mu.Lock()
 		blocksDone++
 		bytesDone += blockBytes
@@ -80,7 +80,7 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 
 	// jobDone tracks per-job block completion for verbose output.
 	jobDoneCount := make([]int32, len(jobs))
-	jobComplete := func(jobIndex int, job *CopyJob) {
+	jobComplete := func(_ int, job *CopyJob) {
 		if opts.Verbose != nil {
 			opts.Verbose(job.Src.Describe(), job.Dst.Describe())
 		}

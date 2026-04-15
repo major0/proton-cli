@@ -639,11 +639,11 @@ func TestSymlinkHandling(t *testing.T) {
 	t.Run("default skips symlink", func(t *testing.T) {
 		resetFlags()
 		tmp := t.TempDir()
-		real := filepath.Join(tmp, "real.txt")
+		target := filepath.Join(tmp, "real.txt")
 		link := filepath.Join(tmp, "link.txt")
 		dst := filepath.Join(tmp, "dst.txt")
-		_ = os.WriteFile(real, []byte("data"), 0600)
-		if err := os.Symlink(real, link); err != nil {
+		_ = os.WriteFile(target, []byte("data"), 0600)
+		if err := os.Symlink(target, link); err != nil {
 			t.Skip("symlinks not supported")
 		}
 
@@ -662,11 +662,11 @@ func TestSymlinkHandling(t *testing.T) {
 		resetFlags()
 		cpFlags.dereference = true
 		tmp := t.TempDir()
-		real := filepath.Join(tmp, "real.txt")
+		target := filepath.Join(tmp, "real.txt")
 		link := filepath.Join(tmp, "link.txt")
 		dst := filepath.Join(tmp, "dst.txt")
-		_ = os.WriteFile(real, []byte("followed"), 0600)
-		if err := os.Symlink(real, link); err != nil {
+		_ = os.WriteFile(target, []byte("followed"), 0600)
+		if err := os.Symlink(target, link); err != nil {
 			t.Skip("symlinks not supported")
 		}
 
@@ -910,7 +910,7 @@ func TestVerboseOutput(t *testing.T) {
 func TestProgressRateLimit(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
-	pf := func(completed, total int, _ int64, _ float64) {
+	pf := func(_, _ int, _ int64, _ float64) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
