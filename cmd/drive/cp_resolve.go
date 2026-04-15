@@ -89,7 +89,7 @@ var errSkipSymlink = errors.New("skipping symbolic link")
 // resolveSource resolves a source path argument to a resolvedEndpoint.
 // For local paths, uses os.Lstat to detect symlinks. With -L, follows
 // symlinks via os.Stat. Without -L, returns errSkipSymlink.
-func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*resolvedEndpoint, error) {
+func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg, opts cpOptions) (*resolvedEndpoint, error) {
 	ep := &resolvedEndpoint{pathType: arg.pathType, raw: arg.raw}
 	switch arg.pathType {
 	case PathProton:
@@ -105,7 +105,7 @@ func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*r
 			return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			if !cpFlags.dereference {
+			if !opts.dereference {
 				return nil, fmt.Errorf("cp: %s: %w", arg.raw, errSkipSymlink)
 			}
 			// -L: follow the symlink.

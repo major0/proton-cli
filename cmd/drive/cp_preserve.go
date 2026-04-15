@@ -21,8 +21,8 @@ type preserveFlags struct {
 }
 
 // applyPreserve applies preserved mode and mtime to destination files.
-func applyPreserve(entries []preserveEntry) {
-	preserve := parsePreserve()
+func applyPreserve(entries []preserveEntry, opts cpOptions) {
+	preserve := parsePreserve(opts)
 	if !preserve.mode && !preserve.timestamps {
 		return
 	}
@@ -40,10 +40,10 @@ func applyPreserve(entries []preserveEntry) {
 	}
 }
 
-// parsePreserve parses the --preserve flag value.
-func parsePreserve() preserveFlags {
+// parsePreserve parses the --preserve flag value from opts.
+func parsePreserve(opts cpOptions) preserveFlags {
 	var pf preserveFlags
-	for _, s := range strings.Split(cpFlags.preserve, ",") {
+	for _, s := range strings.Split(opts.preserve, ",") {
 		switch strings.TrimSpace(s) {
 		case "mode":
 			pf.mode = true

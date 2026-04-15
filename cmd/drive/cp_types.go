@@ -9,6 +9,20 @@ import (
 	"github.com/major0/proton-cli/api/drive"
 )
 
+// cpOptions holds the resolved copy options, constructed once in runCp
+// from cpFlags. All sub-functions receive this struct instead of reading
+// the package-level cpFlags global directly.
+type cpOptions struct {
+	recursive   bool
+	dereference bool
+	removeDest  bool
+	backup      bool
+	preserve    string
+	workers     int
+	verbose     bool
+	progress    bool
+}
+
 // PathType distinguishes local filesystem paths from Proton Drive paths.
 type PathType int
 

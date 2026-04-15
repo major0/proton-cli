@@ -72,6 +72,19 @@ func runCp(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	// Construct cpOptions from cpFlags — all sub-functions read from
+	// opts, not cpFlags.
+	opts := cpOptions{
+		recursive:   cpFlags.recursive,
+		dereference: cpFlags.dereference,
+		removeDest:  cpFlags.removeDest,
+		backup:      cpFlags.backup,
+		preserve:    cpFlags.preserve,
+		workers:     cpFlags.workers,
+		verbose:     cpFlags.verbose,
+		progress:    cpFlags.progress,
+	}
+
 	// Validate argument count.
 	if cpFlags.targetDir == "" && len(args) < 2 {
 		return fmt.Errorf("cp: missing destination operand after %q", args[0])
@@ -137,7 +150,7 @@ func runCp(_ *cobra.Command, args []string) error {
 	var jobs []driveClient.CopyJob
 	var preserves []preserveEntry
 	for _, src := range sources {
-		srcEp, err := resolveSource(ctx, dc, src)
+		srcEp, err := resolveSource(ctx, dc, src, opts)
 		if err != nil {
 			if errors.Is(err, errSkipSymlink) {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -161,11 +174,11 @@ func runCp(_ *cobra.Command, args []string) error {
 
 		// Directory sources: expand recursively or skip.
 		if srcEp.isDir() {
-			if !cpFlags.recursive {
+			if !opts.recursive {
 				fmt.Fprintf(os.Stderr, "cp: %s: is a directory (use -r to copy recursively)\n", srcEp.raw)
 				continue
 			}
-			expanded, preserveExpanded, err := expandRecursive(ctx, dc, srcEp, fileDst)
+			expanded, preserveExpanded, err := expandRecursive(ctx, dc, srcEp, fileDst, opts)
 			if err != nil {
 				return err
 			}
@@ -174,7 +187,7 @@ func runCp(_ *cobra.Command, args []string) error {
 			continue
 		}
 
-		if err := handleConflict(ctx, dc, fileDst, cpFlags.removeDest, cpFlags.backup); err != nil {
+		if err := handleConflict(ctx, dc, fileDst, opts.removeDest, opts.backup); err != nil {
 			return err
 		}
 
@@ -198,12 +211,12 @@ func runCp(_ *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := driveClient.RunPipeline(ctx, jobs, transferOpts()); err != nil {
+	if err := driveClient.RunPipeline(ctx, jobs, transferOpts(opts)); err != nil {
 		return err
 	}
 
 	// Apply preserved attributes after all blocks are written.
-	applyPreserve(preserves)
+	applyPreserve(preserves, opts)
 	return nil
 }
 

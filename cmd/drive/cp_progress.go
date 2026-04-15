@@ -9,21 +9,21 @@ import (
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 )
 
-// transferOpts builds TransferOpts from the current flag values.
-func transferOpts() driveClient.TransferOpts {
-	opts := driveClient.TransferOpts{}
-	if cpFlags.workers > 0 {
-		opts.Workers = cpFlags.workers
+// transferOpts builds TransferOpts from the resolved copy options.
+func transferOpts(opts cpOptions) driveClient.TransferOpts {
+	topts := driveClient.TransferOpts{}
+	if opts.workers > 0 {
+		topts.Workers = opts.workers
 	}
-	if cpFlags.progress {
-		opts.Progress = makeProgressFunc()
+	if opts.progress {
+		topts.Progress = makeProgressFunc()
 	}
-	if cpFlags.verbose {
-		opts.Verbose = func(src, dst string) {
+	if opts.verbose {
+		topts.Verbose = func(src, dst string) {
 			fmt.Fprintf(os.Stderr, "'%s' -> '%s'\n", src, dst)
 		}
 	}
-	return opts
+	return topts
 }
 
 // makeProgressFunc returns a Progress callback that rate-limits output
