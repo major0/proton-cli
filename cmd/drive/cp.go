@@ -2,6 +2,7 @@ package driveCmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -183,7 +184,12 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 	return ep, nil
 }
 
+// errSkipSymlink signals that a symlink source should be skipped.
+var errSkipSymlink = fmt.Errorf("skipping symbolic link")
+
 // resolveSource resolves a source path argument to a resolvedEndpoint.
+// For local paths, uses os.Lstat to detect symlinks. With -L, follows
+// symlinks via os.Stat. Without -L, returns errSkipSymlink.
 func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*resolvedEndpoint, error) {
 	ep := &resolvedEndpoint{pathType: arg.pathType, raw: arg.raw}
 	switch arg.pathType {
@@ -195,9 +201,19 @@ func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg) (*r
 		ep.link = link
 		ep.share = share
 	case driveClient.PathLocal:
-		info, err := os.Stat(arg.raw)
+		info, err := os.Lstat(arg.raw)
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			if !cpFlags.dereference {
+				return nil, fmt.Errorf("cp: %s: %w", arg.raw, errSkipSymlink)
+			}
+			// -L: follow the symlink.
+			info, err = os.Stat(arg.raw)
+			if err != nil {
+				return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
+			}
 		}
 		ep.localPath = arg.raw
 		ep.localInfo = info
@@ -301,6 +317,17 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 		}
 		if rel == "." {
 			return nil // skip the root itself
+		}
+
+		// Symlink handling.
+		if d.Type()&os.ModeSymlink != 0 {
+			if !cpFlags.dereference {
+				fmt.Fprintf(os.Stderr, "cp: %s: skipping symbolic link\n", path)
+				return nil
+			}
+			// -L: follow the symlink — re-stat to get the target info.
+			// WalkDir won't descend into symlinked dirs, so we only
+			// handle symlinked files here.
 		}
 
 		if d.IsDir() {
@@ -590,6 +617,10 @@ func runCp(_ *cobra.Command, args []string) error {
 	for _, src := range sources {
 		srcEp, err := resolveSource(ctx, dc, src)
 		if err != nil {
+			if errors.Is(err, errSkipSymlink) {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				continue
+			}
 			return err
 		}
 

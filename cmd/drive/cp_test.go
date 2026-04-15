@@ -1,6 +1,7 @@
 package driveCmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -630,6 +631,122 @@ func TestRecursiveCopy(t *testing.T) {
 		}
 		if !info.IsDir() {
 			t.Error("dst/empty should be a directory")
+		}
+	})
+}
+
+func TestSymlinkHandling(t *testing.T) {
+	t.Run("default skips symlink", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		real := filepath.Join(tmp, "real.txt")
+		link := filepath.Join(tmp, "link.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		_ = os.WriteFile(real, []byte("data"), 0600)
+		if err := os.Symlink(real, link); err != nil {
+			t.Skip("symlinks not supported")
+		}
+
+		err := runCp(nil, []string{link, dst})
+		// Should not fail — just skip with diagnostic.
+		if err != nil && !errors.Is(err, errSkipSymlink) {
+			t.Fatalf("runCp: %v", err)
+		}
+		// dst should not exist.
+		if _, err := os.Stat(dst); err == nil {
+			t.Error("expected dst to not exist (symlink should be skipped)")
+		}
+	})
+
+	t.Run("-L follows symlink", func(t *testing.T) {
+		resetFlags()
+		cpFlags.dereference = true
+		tmp := t.TempDir()
+		real := filepath.Join(tmp, "real.txt")
+		link := filepath.Join(tmp, "link.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		_ = os.WriteFile(real, []byte("followed"), 0600)
+		if err := os.Symlink(real, link); err != nil {
+			t.Skip("symlinks not supported")
+		}
+
+		if err := runCp(nil, []string{link, dst}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		got, err := os.ReadFile(dst)
+		if err != nil {
+			t.Fatalf("read dst: %v", err)
+		}
+		if string(got) != "followed" {
+			t.Errorf("dst content = %q, want %q", got, "followed")
+		}
+	})
+
+	t.Run("recursive skips symlinks in tree", func(t *testing.T) {
+		resetFlags()
+		cpFlags.recursive = true
+		tmp := t.TempDir()
+
+		srcDir := filepath.Join(tmp, "src")
+		_ = os.Mkdir(srcDir, 0700)
+		_ = os.WriteFile(filepath.Join(srcDir, "real.txt"), []byte("ok"), 0600)
+		target := filepath.Join(tmp, "target.txt")
+		_ = os.WriteFile(target, []byte("linked"), 0600)
+		if err := os.Symlink(target, filepath.Join(srcDir, "link.txt")); err != nil {
+			t.Skip("symlinks not supported")
+		}
+
+		dstDir := filepath.Join(tmp, "dst")
+		_ = os.Mkdir(dstDir, 0700)
+
+		if err := runCp(nil, []string{srcDir, dstDir}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		// real.txt should be copied.
+		got, err := os.ReadFile(filepath.Join(dstDir, "src", "real.txt"))
+		if err != nil {
+			t.Fatalf("missing real.txt: %v", err)
+		}
+		if string(got) != "ok" {
+			t.Errorf("real.txt: got %q, want %q", got, "ok")
+		}
+
+		// link.txt should NOT be copied (symlink skipped).
+		if _, err := os.Stat(filepath.Join(dstDir, "src", "link.txt")); err == nil {
+			t.Error("expected link.txt to not exist (symlink should be skipped)")
+		}
+	})
+
+	t.Run("recursive -L follows symlinks in tree", func(t *testing.T) {
+		resetFlags()
+		cpFlags.recursive = true
+		cpFlags.dereference = true
+		tmp := t.TempDir()
+
+		srcDir := filepath.Join(tmp, "src")
+		_ = os.Mkdir(srcDir, 0700)
+		target := filepath.Join(tmp, "target.txt")
+		_ = os.WriteFile(target, []byte("linked-data"), 0600)
+		if err := os.Symlink(target, filepath.Join(srcDir, "link.txt")); err != nil {
+			t.Skip("symlinks not supported")
+		}
+
+		dstDir := filepath.Join(tmp, "dst")
+		_ = os.Mkdir(dstDir, 0700)
+
+		if err := runCp(nil, []string{srcDir, dstDir}); err != nil {
+			t.Fatalf("runCp: %v", err)
+		}
+
+		// link.txt should be copied (symlink followed).
+		got, err := os.ReadFile(filepath.Join(dstDir, "src", "link.txt"))
+		if err != nil {
+			t.Fatalf("missing link.txt: %v", err)
+		}
+		if string(got) != "linked-data" {
+			t.Errorf("link.txt: got %q, want %q", got, "linked-data")
 		}
 	})
 }
