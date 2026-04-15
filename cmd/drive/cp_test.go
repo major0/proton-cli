@@ -930,3 +930,86 @@ func TestProgressRateLimit(t *testing.T) {
 	}
 	mu.Unlock()
 }
+
+func TestErrorDiagnostics(t *testing.T) {
+	t.Run("missing source", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		dst := filepath.Join(tmp, "dst.txt")
+		err := runCp(nil, []string{filepath.Join(tmp, "ghost.txt"), dst})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "no such file or directory") {
+			t.Errorf("error = %q, want 'no such file or directory'", err)
+		}
+	})
+
+	t.Run("dest not a directory for multi-source", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		a := filepath.Join(tmp, "a.txt")
+		b := filepath.Join(tmp, "b.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		_ = os.WriteFile(a, []byte("a"), 0600)
+		_ = os.WriteFile(b, []byte("b"), 0600)
+		_ = os.WriteFile(dst, []byte("x"), 0600)
+
+		err := runCp(nil, []string{a, b, dst})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "not a directory") {
+			t.Errorf("error = %q, want 'not a directory'", err)
+		}
+	})
+
+	t.Run("same source and dest local", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		f := filepath.Join(tmp, "file.txt")
+		_ = os.WriteFile(f, []byte("data"), 0600)
+
+		err := runCp(nil, []string{f, f})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "source and destination are the same") {
+			t.Errorf("error = %q, want 'source and destination are the same'", err)
+		}
+	})
+
+	t.Run("missing destination parent", func(t *testing.T) {
+		resetFlags()
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		_ = os.WriteFile(src, []byte("data"), 0600)
+		dst := filepath.Join(tmp, "no", "such", "dir", "dst.txt")
+
+		err := runCp(nil, []string{src, dst})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "no such file or directory") {
+			t.Errorf("error = %q, want 'no such file or directory'", err)
+		}
+	})
+
+	t.Run("mutually exclusive flags", func(t *testing.T) {
+		resetFlags()
+		cpFlags.removeDest = true
+		cpFlags.backup = true
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		_ = os.WriteFile(src, []byte("data"), 0600)
+
+		err := runCp(nil, []string{src, dst})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("error = %q, want 'mutually exclusive'", err)
+		}
+	})
+}

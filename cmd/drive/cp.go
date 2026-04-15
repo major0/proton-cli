@@ -496,6 +496,15 @@ func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dst
 // endpoints. For Proton endpoints, uses CreateFile/OpenFile to get the
 // FileHandle with revision, session key, and block info.
 func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolvedEndpoint) (*driveClient.CopyJob, error) {
+	// Check for same source and destination.
+	if src.pathType == driveClient.PathLocal && dst.pathType == driveClient.PathLocal && src.localPath == dst.localPath {
+		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
+	}
+	if src.pathType == driveClient.PathProton && dst.pathType == driveClient.PathProton &&
+		src.link != nil && dst.link != nil && src.link.LinkID() == dst.link.LinkID() {
+		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
+	}
+
 	var job driveClient.CopyJob
 
 	// Build source reader.
