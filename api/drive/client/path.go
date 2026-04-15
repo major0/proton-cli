@@ -5,8 +5,36 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 )
+
+// ResolveShareComponent resolves the share part of a proton:// URI.
+// Resolution priority:
+//  1. Empty string → root share (main volume share)
+//  2. {id} brackets → resolve by share ID directly
+//  3. "Photos" → photos share (ShareTypePhotos)
+//  4. Otherwise → resolve by decrypted share root link name
+func (c *Client) ResolveShareComponent(ctx context.Context, sharePart string) (*drive.Share, error) {
+	// Empty share → root share (triple-slash case).
+	if sharePart == "" {
+		return c.ResolveShareByType(ctx, proton.ShareTypeMain)
+	}
+
+	// Direct share ID: {ABC123DEF-456}
+	if strings.HasPrefix(sharePart, "{") && strings.HasSuffix(sharePart, "}") {
+		id := sharePart[1 : len(sharePart)-1]
+		return c.GetShare(ctx, id)
+	}
+
+	// Well-known alias (case-sensitive).
+	if sharePart == "Photos" {
+		return c.ResolveShareByType(ctx, drive.ShareTypePhotos)
+	}
+
+	// Resolve by decrypted share root link name.
+	return c.ResolveShare(ctx, sharePart, true)
+}
 
 // ResolveDrivePath resolves a normalized drive path to its Link and Share.
 // The path format is "sharename/relative/path". The proton:// prefix must
@@ -18,9 +46,8 @@ func (c *Client) ResolveDrivePath(ctx context.Context, rawPath string) (*drive.L
 	}
 
 	parts := strings.SplitN(path, "/", 2)
-	shareName := parts[0]
 
-	share, err := c.ResolveShare(ctx, shareName, true)
+	share, err := c.ResolveShareComponent(ctx, parts[0])
 	if err != nil {
 		return nil, nil, err
 	}
