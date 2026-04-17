@@ -33,4 +33,4 @@ go.work.sum
 *.wip
 
 # Empty placeholder directories
-foo/
+tmp/

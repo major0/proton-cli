@@ -84,3 +84,55 @@ func TestSignatureAddress_Empty_Property(t *testing.T) {
 		}
 	})
 }
+
+// TestAddrKRForLink_Match verifies that addrKRForLink returns the correct
+// keyring when the link's SignatureEmail matches an address.
+func TestAddrKRForLink_Match(t *testing.T) {
+	kr := &crypto.KeyRing{}
+	c := &Client{
+		addresses: map[string]proton.Address{
+			"user@example.com": {ID: "addr-1", Email: "user@example.com"},
+		},
+		addressKeyRings: map[string]*crypto.KeyRing{
+			"addr-1": kr,
+		},
+	}
+
+	pLink := &proton.Link{LinkID: "test-link", SignatureEmail: "user@example.com"}
+	link := drive.NewLink(pLink, nil, nil, nil)
+
+	got, err := c.addrKRForLink(link)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != kr {
+		t.Fatal("returned wrong keyring")
+	}
+}
+
+// TestSignatureAddress_NonEmpty verifies that signatureAddress returns
+// the email when it's set on the link.
+func TestSignatureAddress_NonEmpty(t *testing.T) {
+	tests := []struct {
+		name  string
+		email string
+	}{
+		{"normal", "user@example.com"},
+		{"special chars", "user+tag@sub.example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{}
+			pLink := &proton.Link{LinkID: "test-link", SignatureEmail: tt.email}
+			link := drive.NewLink(pLink, nil, nil, nil)
+
+			got, err := c.signatureAddress(link)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.email {
+				t.Fatalf("got %q, want %q", got, tt.email)
+			}
+		})
+	}
+}
