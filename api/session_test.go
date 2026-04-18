@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/cookiejar"
 	"testing"
 	"time"
 
+	"github.com/ProtonMail/go-proton-api"
+	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"pgregory.net/rapid"
 )
 
@@ -317,5 +320,418 @@ func TestReadySessionNotLoggedIn(t *testing.T) {
 	_, err := ReadySession(context.Background(), nil, store, nil)
 	if !errors.Is(err, ErrNotLoggedIn) {
 		t.Fatalf("expected ErrNotLoggedIn, got %v", err)
+	}
+}
+
+// --- SessionFromCredentials error path tests (2.1) ---
+
+// TestSessionFromCredentials verifies that SessionFromCredentials rejects
+// configs with missing credential fields and accepts valid configs (which
+// fail at the network layer since there's no real API server).
+func TestSessionFromCredentials(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  *SessionConfig
+		wantErr string
+	}{
+		{
+			name:    "missing UID",
+			config:  &SessionConfig{AccessToken: "a", RefreshToken: "r"},
+			wantErr: "missing UID",
+		},
+		{
+			name:    "missing access token",
+			config:  &SessionConfig{UID: "u", RefreshToken: "r"},
+			wantErr: "missing access token",
+		},
+		{
+			name:    "missing refresh token",
+			config:  &SessionConfig{UID: "u", AccessToken: "a"},
+			wantErr: "missing refresh token",
+		},
+		{
+			name:    "all fields empty",
+			config:  &SessionConfig{},
+			wantErr: "missing UID",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := SessionFromCredentials(context.Background(), nil, tt.config, nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !errors.Is(err, errForMessage(tt.wantErr)) {
+				t.Fatalf("error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// errForMessage maps error message substrings to sentinel errors.
+func errForMessage(msg string) error {
+	switch msg {
+	case "missing UID":
+		return ErrMissingUID
+	case "missing access token":
+		return ErrMissingAccessToken
+	case "missing refresh token":
+		return ErrMissingRefreshToken
+	default:
+		return fmt.Errorf("%s", msg)
+	}
+}
+
+// --- SessionRestore staleness detection tests (2.2) ---
+
+// configStore is a SessionStore backed by a single in-memory SessionConfig.
+type configStore struct {
+	config *SessionConfig
+}
+
+func (s *configStore) Load() (*SessionConfig, error) {
+	if s.config == nil {
+		return nil, ErrKeyNotFound
+	}
+	cfg := *s.config
+	return &cfg, nil
+}
+func (s *configStore) Save(*SessionConfig) error { return nil }
+func (s *configStore) Delete() error             { return nil }
+func (s *configStore) List() ([]string, error)   { return nil, nil }
+func (s *configStore) Switch(string) error       { return nil }
+
+// TestSessionRestoreStaleness verifies that SessionRestore propagates
+// ErrNotLoggedIn for missing sessions and returns errors for configs
+// with missing credentials (staleness logging is exercised but not
+// directly asserted — the important thing is the function doesn't panic).
+func TestSessionRestoreStaleness(t *testing.T) {
+	tests := []struct {
+		name    string
+		store   SessionStore
+		wantErr string
+	}{
+		{
+			name:    "no session stored",
+			store:   &errStore{err: ErrKeyNotFound},
+			wantErr: "not logged in",
+		},
+		{
+			name:    "store load error",
+			store:   &errStore{err: errors.New("disk failure")},
+			wantErr: "disk failure",
+		},
+		{
+			name: "stale tokens warn path",
+			store: &configStore{config: &SessionConfig{
+				UID:          "u",
+				AccessToken:  "a",
+				RefreshToken: "r",
+				LastRefresh:  time.Now().Add(-21 * time.Hour),
+			}},
+			// Will fail at GetUser (no real server), but exercises the warn path.
+			wantErr: "", // any non-nil error from network
+		},
+		{
+			name: "expired tokens path",
+			store: &configStore{config: &SessionConfig{
+				UID:          "u",
+				AccessToken:  "a",
+				RefreshToken: "r",
+				LastRefresh:  time.Now().Add(-25 * time.Hour),
+			}},
+			wantErr: "", // any non-nil error from network
+		},
+		{
+			name: "zero LastRefresh skips staleness check",
+			store: &configStore{config: &SessionConfig{
+				UID:          "u",
+				AccessToken:  "a",
+				RefreshToken: "r",
+			}},
+			wantErr: "", // any non-nil error from network
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := SessionRestore(context.Background(), nil, tt.store, nil)
+			if err == nil {
+				t.Fatal("expected error (no real API server)")
+			}
+			if tt.wantErr != "" {
+				if !containsError(err, tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
+// containsError checks if err's chain contains the given substring.
+func containsError(err error, substr string) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if contains(e.Error(), substr) {
+			return true
+		}
+	}
+	return contains(err.Error(), substr)
+}
+
+// contains is a simple substring check.
+func contains(s, substr string) bool {
+	return len(substr) == 0 || len(s) >= len(substr) && containsAt(s, substr)
+}
+
+func containsAt(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// --- SessionList / SessionRevoke / SessionSave tests ---
+
+// TestSessionList verifies SessionList delegates to the store.
+func TestSessionList(t *testing.T) {
+	tests := []struct {
+		name    string
+		store   SessionStore
+		want    int
+		wantErr string
+	}{
+		{
+			name:  "empty store",
+			store: &mockStore{},
+			want:  0,
+		},
+		{
+			name:    "store error",
+			store:   &errStore{err: errors.New("list failed")},
+			want:    0,
+			wantErr: "", // errStore.List returns nil, nil
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := SessionList(tt.store)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != tt.want {
+				t.Fatalf("got %d accounts, want %d", len(got), tt.want)
+			}
+		})
+	}
+}
+
+// --- SessionSave tests ---
+
+// TestSessionSave verifies that SessionSave persists credentials and cookies.
+func TestSessionSave(t *testing.T) {
+	jar, _ := cookiejar.New(nil)
+	apiURL := apiCookieURL()
+	jar.SetCookies(apiURL, []*http.Cookie{
+		{Name: "Session-Id", Value: "abc123"},
+	})
+
+	session := &Session{
+		Auth: proton.Auth{
+			UID:          "uid-1",
+			AccessToken:  "at-1",
+			RefreshToken: "rt-1",
+		},
+		cookieJar: jar,
+	}
+
+	store := &mockStore{}
+	err := SessionSave(store, session, []byte("keypass"))
+	if err != nil {
+		t.Fatalf("SessionSave: %v", err)
+	}
+
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatalf("store.Load: %v", err)
+	}
+	if cfg.UID != "uid-1" {
+		t.Fatalf("UID = %q, want %q", cfg.UID, "uid-1")
+	}
+	if cfg.AccessToken != "at-1" {
+		t.Fatalf("AccessToken = %q, want %q", cfg.AccessToken, "at-1")
+	}
+	if cfg.SaltedKeyPass == "" {
+		t.Fatal("SaltedKeyPass should not be empty")
+	}
+	if cfg.LastRefresh.IsZero() {
+		t.Fatal("LastRefresh should be set")
+	}
+	if len(cfg.Cookies) == 0 {
+		t.Fatal("Cookies should be persisted")
+	}
+}
+
+// --- Session accessor tests ---
+
+// TestSessionAccessors verifies the simple accessor methods on Session.
+func TestSessionAccessors(t *testing.T) {
+	session := &Session{
+		user: proton.User{ID: "user-1", Name: "test"},
+		addressKeyRings: map[string]*crypto.KeyRing{
+			"addr@example.com": nil,
+		},
+	}
+
+	if got := session.User(); got.ID != "user-1" {
+		t.Fatalf("User().ID = %q, want %q", got.ID, "user-1")
+	}
+
+	kr := session.AddressKeyRings()
+	if _, ok := kr["addr@example.com"]; !ok {
+		t.Fatal("AddressKeyRings missing expected key")
+	}
+}
+
+// --- NewDeauthHandler test ---
+
+// TestNewDeauthHandler verifies that the deauth handler doesn't panic.
+func TestNewDeauthHandler(_ *testing.T) {
+	handler := NewDeauthHandler()
+	// Just verify it doesn't panic when called.
+	handler()
+}
+
+// --- NewAuthHandler error path test ---
+
+// failStore is a SessionStore where Load or Save can fail.
+type failStore struct {
+	loadErr error
+	saveErr error
+	config  *SessionConfig
+}
+
+func (s *failStore) Load() (*SessionConfig, error) {
+	if s.loadErr != nil {
+		return nil, s.loadErr
+	}
+	if s.config != nil {
+		cfg := *s.config
+		return &cfg, nil
+	}
+	return &SessionConfig{}, nil
+}
+func (s *failStore) Save(*SessionConfig) error { return s.saveErr }
+func (s *failStore) Delete() error             { return nil }
+func (s *failStore) List() ([]string, error)   { return nil, nil }
+func (s *failStore) Switch(string) error       { return nil }
+
+// TestAuthHandlerStoreErrors verifies that the auth handler handles store
+// errors gracefully (logs them, doesn't panic).
+func TestAuthHandlerStoreErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		store SessionStore
+	}{
+		{
+			name:  "load fails",
+			store: &failStore{loadErr: errors.New("disk read error")},
+		},
+		{
+			name:  "save fails",
+			store: &failStore{saveErr: errors.New("disk write error")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jar, _ := cookiejar.New(nil)
+			session := &Session{cookieJar: jar}
+			handler := NewAuthHandler(tt.store, session)
+
+			// Should not panic even when store operations fail.
+			handler(proton.Auth{
+				UID:          "uid",
+				AccessToken:  "at",
+				RefreshToken: "rt",
+			})
+
+			// Verify in-memory state is still updated.
+			if session.Auth.UID != "uid" {
+				t.Fatalf("UID = %q, want %q", session.Auth.UID, "uid")
+			}
+		})
+	}
+}
+
+// --- SessionRevoke tests ---
+
+// deleteStore tracks whether Delete was called.
+type deleteStore struct {
+	mockStore
+	deleted bool
+}
+
+func (s *deleteStore) Delete() error {
+	s.deleted = true
+	return nil
+}
+
+// TestSessionRevoke verifies SessionRevoke deletes from the store.
+// With a nil session, it skips the API revoke and just deletes.
+func TestSessionRevoke(t *testing.T) {
+	store := &deleteStore{}
+	err := SessionRevoke(context.Background(), nil, store, false)
+	if err != nil {
+		t.Fatalf("SessionRevoke: %v", err)
+	}
+	if !store.deleted {
+		t.Fatal("expected store.Delete to be called")
+	}
+}
+
+// --- Unlock test ---
+
+// TestUnlock verifies that Unlock populates the address map. It will fail
+// at the crypto layer (no real keys), but we verify the address map setup.
+func TestUnlock(t *testing.T) {
+	session := &Session{
+		user: proton.User{
+			ID:   "user-1",
+			Name: "test",
+		},
+	}
+
+	addrs := []proton.Address{
+		{ID: "addr-1", Email: "test@example.com"},
+		{ID: "addr-2", Email: "other@example.com"},
+	}
+
+	// Unlock will fail because there are no real keys, but the address
+	// map should still be populated before the crypto call.
+	_ = session.Unlock([]byte("keypass"), addrs)
+
+	// Verify addresses were stored (even though Unlock returned an error).
+	if len(session.addresses) != 2 {
+		t.Fatalf("expected 2 addresses, got %d", len(session.addresses))
+	}
+	if _, ok := session.addresses["test@example.com"]; !ok {
+		t.Fatal("missing test@example.com in address map")
+	}
+}
+
+// --- SaveConfig error path test ---
+
+// TestSaveConfigError verifies SaveConfig returns an error for an
+// unwritable directory.
+func TestSaveConfigError(t *testing.T) {
+	err := SaveConfig("/proc/nonexistent/deep/path/config.yaml", DefaultConfig())
+	if err == nil {
+		t.Fatal("expected error for unwritable path")
 	}
 }

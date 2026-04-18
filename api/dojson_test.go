@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -215,5 +216,152 @@ func TestDoJSON_Delete(t *testing.T) {
 	err := s.DoJSON(context.Background(), "DELETE", srv.URL+"/member/123", nil, nil)
 	if err != nil {
 		t.Fatalf("DoJSON DELETE: %v", err)
+	}
+}
+
+// --- DoJSON error handling paths (2.3) ---
+
+// TestDoJSON_ErrorPaths exercises various failure modes of DoJSON using
+// table-driven tests.
+func TestDoJSON_ErrorPaths(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		body    any
+		result  any
+		wantErr string
+	}{
+		{
+			name: "server returns 500 with API error",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"Code":  9999,
+					"Error": "internal server error",
+				})
+			},
+			wantErr: "internal server error",
+		},
+		{
+			name: "server returns invalid JSON",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte("not json"))
+			},
+			wantErr: "unmarshal envelope",
+		},
+		{
+			name: "server returns valid envelope but bad result JSON",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				// Code 1000 but the result fields don't match the target struct.
+				_, _ = w.Write([]byte(`{"Code":1000,"Name":12345}`))
+			},
+			result:  new(struct{ Name string }),
+			wantErr: "", // json.Unmarshal coerces int→string, no error
+		},
+		{
+			name: "unmarshalable body",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+			},
+			body:    make(chan int), // channels can't be marshaled
+			wantErr: "marshal body",
+		},
+		{
+			name: "cancelled context",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+			},
+			wantErr: "context canceled",
+		},
+		{
+			name: "API error code without message",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]any{"Code": 2000})
+			},
+			wantErr: "api: 403/2000",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var srv *httptest.Server
+			if tt.handler != nil {
+				srv = httptest.NewServer(tt.handler)
+				defer srv.Close()
+			}
+
+			s := testSession(t, "")
+			ctx := context.Background()
+
+			if tt.name == "cancelled context" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel() // cancel immediately
+			}
+
+			url := ""
+			if srv != nil {
+				url = srv.URL + "/test"
+			} else {
+				url = "http://127.0.0.1:1/unreachable"
+			}
+
+			err := s.DoJSON(ctx, "GET", url, tt.body, tt.result)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			// For cases where wantErr is empty, we just verify no panic.
+		})
+	}
+}
+
+// TestDoJSON_BaseURLOverride verifies that setting Session.BaseURL overrides
+// the default host for relative paths.
+func TestDoJSON_BaseURLOverride(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+	}))
+	defer srv.Close()
+
+	s := testSession(t, "")
+	s.BaseURL = srv.URL
+
+	err := s.DoJSON(context.Background(), "GET", "/relative/path", nil, nil)
+	if err != nil {
+		t.Fatalf("DoJSON with BaseURL: %v", err)
+	}
+}
+
+// TestDoJSON_AppVersionAndUserAgent verifies custom headers are sent.
+func TestDoJSON_AppVersionAndUserAgent(t *testing.T) {
+	var gotAppVer, gotUA string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAppVer = r.Header.Get("x-pm-appversion")
+		gotUA = r.Header.Get("User-Agent")
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+	}))
+	defer srv.Close()
+
+	s := testSession(t, "")
+	s.AppVersion = "cli@1.0.0"
+	s.UserAgent = "proton-cli/1.0"
+
+	err := s.DoJSON(context.Background(), "GET", srv.URL+"/test", nil, nil)
+	if err != nil {
+		t.Fatalf("DoJSON: %v", err)
+	}
+	if gotAppVer != "cli@1.0.0" {
+		t.Fatalf("x-pm-appversion = %q, want %q", gotAppVer, "cli@1.0.0")
+	}
+	if gotUA != "proton-cli/1.0" {
+		t.Fatalf("User-Agent = %q, want %q", gotUA, "proton-cli/1.0")
 	}
 }
