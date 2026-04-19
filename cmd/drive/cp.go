@@ -87,7 +87,7 @@ func runCp(_ *cobra.Command, args []string) error {
 
 	// Validate argument count.
 	if cpFlags.targetDir == "" && len(args) < 2 {
-		return fmt.Errorf("cp: missing destination operand after %q", args[0])
+		return fmt.Errorf("cp: missing destination operand after %q", args[0]) //nolint:gosec // cobra.MinimumNArgs(1) guarantees len(args) >= 1
 	}
 	if cpFlags.targetDir != "" && len(args) < 1 {
 		return fmt.Errorf("cp: missing source operand")
