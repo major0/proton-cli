@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"testing/quick"
 
 	"github.com/major0/proton-cli/api"
+	"pgregory.net/rapid"
 )
 
 // randomString generates a non-empty alphanumeric string for use in quick.Check generators.
@@ -281,4 +283,717 @@ func TestSessionIndex_StaleEntryCleanup(t *testing.T) {
 			t.Error("stale entry for alice/drive still present in index after cleanup")
 		}
 	}
+}
+
+// --- Sub-task 5.1: Tests for SessionIndex Load/Save/Delete/List/Switch ---
+
+// testSession returns a minimal SessionConfig for use in table-driven tests.
+func testSession(uid string) *api.SessionConfig {
+	return &api.SessionConfig{
+		UID:           uid,
+		AccessToken:   "at-" + uid,
+		RefreshToken:  "rt-" + uid,
+		SaltedKeyPass: "skp-" + uid,
+	}
+}
+
+func TestSessionIndex_SaveAndLoad(t *testing.T) {
+	tests := []struct {
+		name    string
+		account string
+		service string
+		session *api.SessionConfig
+		wantErr string
+	}{
+		{
+			name:    "basic save and load",
+			account: "alice",
+			service: "drive",
+			session: testSession("u1"),
+		},
+		{
+			name:    "wildcard service",
+			account: "bob",
+			service: "*",
+			session: testSession("u2"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			indexPath := filepath.Join(dir, "sessions.json")
+			kr := NewMockKeyring()
+
+			store := NewSessionStore(indexPath, tt.account, tt.service, kr)
+			if err := store.Save(tt.session); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+
+			got, err := store.Load()
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if !reflect.DeepEqual(*got, *tt.session) {
+				t.Errorf("Load = %+v, want %+v", *got, *tt.session)
+			}
+		})
+	}
+}
+
+func TestSessionIndex_SaveReusesUUID(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+
+	s1 := testSession("u1")
+	if err := store.Save(s1); err != nil {
+		t.Fatalf("Save s1: %v", err)
+	}
+
+	// Read the UUID assigned on first save.
+	data, _ := os.ReadFile(indexPath) //nolint:gosec // G304: test code reading test fixture.
+	var idx1 SessionIndexData
+	_ = json.Unmarshal(data, &idx1)
+	uuid1 := idx1.Accounts["alice"].Sessions["drive"]
+
+	// Save again — UUID should be reused.
+	s2 := testSession("u2")
+	if err := store.Save(s2); err != nil {
+		t.Fatalf("Save s2: %v", err)
+	}
+
+	data, _ = os.ReadFile(indexPath) //nolint:gosec // G304: test code reading test fixture.
+	var idx2 SessionIndexData
+	_ = json.Unmarshal(data, &idx2)
+	uuid2 := idx2.Accounts["alice"].Sessions["drive"]
+
+	if uuid1 != uuid2 {
+		t.Errorf("UUID changed on second save: %q → %q", uuid1, uuid2)
+	}
+
+	// Verify the loaded session is the updated one.
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.UID != "u2" {
+		t.Errorf("Load.UID = %q, want %q", got.UID, "u2")
+	}
+}
+
+func TestSessionIndex_SaveKeyringError(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+	kr.ErrSet = fmt.Errorf("keyring locked")
+
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	err := store.Save(testSession("u1"))
+	if err == nil {
+		t.Fatal("Save with keyring error: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "keyring locked") {
+		t.Errorf("error = %v, want containing %q", err, "keyring locked")
+	}
+}
+
+func TestSessionIndex_LoadNoAccount(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	// Save under "alice", load under "bob".
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	if err := store.Save(testSession("u1")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	store2 := NewSessionStore(indexPath, "bob", "drive", kr)
+	_, err := store2.Load()
+	if err == nil {
+		t.Fatal("Load missing account: expected error, got nil")
+	}
+	if !errors.Is(err, api.ErrKeyNotFound) {
+		t.Errorf("error = %v, want wrapped ErrKeyNotFound", err)
+	}
+}
+
+func TestSessionIndex_LoadNoServiceNoWildcard(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	// Save under "drive", load under "mail" — no wildcard fallback.
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	if err := store.Save(testSession("u1")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	store2 := NewSessionStore(indexPath, "alice", "mail", kr)
+	_, err := store2.Load()
+	if err == nil {
+		t.Fatal("Load missing service: expected error, got nil")
+	}
+	if !errors.Is(err, api.ErrKeyNotFound) {
+		t.Errorf("error = %v, want wrapped ErrKeyNotFound", err)
+	}
+}
+
+func TestSessionIndex_LoadCorruptKeyringData(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	if err := store.Save(testSession("u1")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Corrupt the keyring value to invalid JSON.
+	data, _ := os.ReadFile(indexPath) //nolint:gosec // G304: test code reading test fixture.
+	var idx SessionIndexData
+	_ = json.Unmarshal(data, &idx)
+	uuid := idx.Accounts["alice"].Sessions["drive"]
+	_ = kr.Set(keyringService, uuid, "not-json!!!")
+
+	_, err := store.Load()
+	if err == nil {
+		t.Fatal("Load with corrupt keyring data: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "alice") {
+		t.Errorf("error lacks context: %v", err)
+	}
+}
+
+func TestSessionIndex_Delete(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupAccounts map[string][]string // account → []services to save
+		deleteAccount string
+		deleteService string
+		wantAccounts  []string // accounts remaining after delete
+		wantErr       string
+	}{
+		{
+			name:          "delete existing session",
+			setupAccounts: map[string][]string{"alice": {"drive"}},
+			deleteAccount: "alice",
+			deleteService: "drive",
+			wantAccounts:  nil,
+		},
+		{
+			name:          "delete one service keeps others",
+			setupAccounts: map[string][]string{"alice": {"drive", "mail"}},
+			deleteAccount: "alice",
+			deleteService: "drive",
+			wantAccounts:  []string{"alice"},
+		},
+		{
+			name:          "delete missing account is idempotent",
+			setupAccounts: map[string][]string{"alice": {"drive"}},
+			deleteAccount: "bob",
+			deleteService: "drive",
+			wantAccounts:  []string{"alice"},
+		},
+		{
+			name:          "delete missing service is idempotent",
+			setupAccounts: map[string][]string{"alice": {"drive"}},
+			deleteAccount: "alice",
+			deleteService: "mail",
+			wantAccounts:  []string{"alice"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			indexPath := filepath.Join(dir, "sessions.json")
+			kr := NewMockKeyring()
+
+			// Setup: save sessions.
+			for acct, services := range tt.setupAccounts {
+				for _, svc := range services {
+					s := NewSessionStore(indexPath, acct, svc, kr)
+					if err := s.Save(testSession(acct + "-" + svc)); err != nil {
+						t.Fatalf("setup Save %s/%s: %v", acct, svc, err)
+					}
+				}
+			}
+
+			// Delete.
+			store := NewSessionStore(indexPath, tt.deleteAccount, tt.deleteService, kr)
+			err := store.Delete()
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+
+			// Verify remaining accounts.
+			lister := NewSessionStore(indexPath, "", "", kr)
+			names, err := lister.List()
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			sort.Strings(names)
+			sort.Strings(tt.wantAccounts)
+			if !reflect.DeepEqual(names, tt.wantAccounts) {
+				// Handle nil vs empty slice.
+				if len(names) == 0 && len(tt.wantAccounts) == 0 {
+					return
+				}
+				t.Errorf("remaining accounts = %v, want %v", names, tt.wantAccounts)
+			}
+		})
+	}
+}
+
+func TestSessionIndex_DeleteKeyringError(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	if err := store.Save(testSession("u1")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	kr.ErrDelete = fmt.Errorf("keyring locked")
+	err := store.Delete()
+	if err == nil {
+		t.Fatal("Delete with keyring error: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "keyring locked") {
+		t.Errorf("error = %v, want containing %q", err, "keyring locked")
+	}
+}
+
+func TestSessionIndex_List(t *testing.T) {
+	tests := []struct {
+		name     string
+		accounts []string
+		want     []string
+	}{
+		{
+			name:     "empty index",
+			accounts: nil,
+			want:     nil,
+		},
+		{
+			name:     "single account",
+			accounts: []string{"alice"},
+			want:     []string{"alice"},
+		},
+		{
+			name:     "multiple accounts",
+			accounts: []string{"alice", "bob", "charlie"},
+			want:     []string{"alice", "bob", "charlie"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			indexPath := filepath.Join(dir, "sessions.json")
+			kr := NewMockKeyring()
+
+			for _, acct := range tt.accounts {
+				s := NewSessionStore(indexPath, acct, "drive", kr)
+				if err := s.Save(testSession(acct)); err != nil {
+					t.Fatalf("Save %s: %v", acct, err)
+				}
+			}
+
+			lister := NewSessionStore(indexPath, "", "", kr)
+			got, err := lister.List()
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			sort.Strings(got)
+			sort.Strings(tt.want)
+			if len(got) == 0 && len(tt.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("List = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSessionIndex_Switch(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	// Save sessions for two accounts.
+	s1 := NewSessionStore(indexPath, "alice", "drive", kr)
+	if err := s1.Save(testSession("alice-uid")); err != nil {
+		t.Fatalf("Save alice: %v", err)
+	}
+	s2 := NewSessionStore(indexPath, "bob", "drive", kr)
+	if err := s2.Save(testSession("bob-uid")); err != nil {
+		t.Fatalf("Save bob: %v", err)
+	}
+
+	// Start as alice, switch to bob, load.
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	if err := store.Switch("bob"); err != nil {
+		t.Fatalf("Switch: %v", err)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load after Switch: %v", err)
+	}
+	if got.UID != "bob-uid" {
+		t.Errorf("Load.UID = %q, want %q", got.UID, "bob-uid")
+	}
+}
+
+func TestSessionIndex_ReadIndexNullAccounts(t *testing.T) {
+	// Verify that an index file with null "accounts" field is handled.
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	if err := os.WriteFile(indexPath, []byte(`{"accounts":null}`), 0600); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+
+	kr := NewMockKeyring()
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	names, err := store.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(names) != 0 {
+		t.Errorf("List = %v, want empty", names)
+	}
+}
+
+func TestSessionIndex_SaveCreatesParentDirs(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "nested", "deep", "sessions.json")
+	kr := NewMockKeyring()
+
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	if err := store.Save(testSession("u1")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Verify the file was created.
+	if _, err := os.Stat(indexPath); err != nil {
+		t.Errorf("index file not created: %v", err)
+	}
+}
+
+func TestSessionIndex_StaleWildcardCleanup(t *testing.T) {
+	// When loading with service "mail" falls back to wildcard "*",
+	// and the wildcard keyring entry is missing, the "*" entry should
+	// be cleaned up (not the "mail" entry which doesn't exist).
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	// Save under wildcard.
+	store := NewSessionStore(indexPath, "alice", "*", kr)
+	if err := store.Save(testSession("u1")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Delete the keyring entry directly.
+	data, _ := os.ReadFile(indexPath) //nolint:gosec // G304: test code reading test fixture.
+	var idx SessionIndexData
+	_ = json.Unmarshal(data, &idx)
+	uuid := idx.Accounts["alice"].Sessions["*"]
+	_ = kr.Delete(keyringService, uuid)
+
+	// Load with "mail" — should fall back to "*", find it stale, clean up.
+	mailStore := NewSessionStore(indexPath, "alice", "mail", kr)
+	_, err := mailStore.Load()
+	if !errors.Is(err, api.ErrKeyNotFound) {
+		t.Fatalf("Load error = %v, want wrapped ErrKeyNotFound", err)
+	}
+
+	// Verify the wildcard entry was cleaned up.
+	data, _ = os.ReadFile(indexPath) //nolint:gosec // G304: test code reading test fixture.
+	var cleaned SessionIndexData
+	_ = json.Unmarshal(data, &cleaned)
+	if _, ok := cleaned.Accounts["alice"]; ok {
+		t.Error("stale wildcard entry for alice still present after cleanup")
+	}
+}
+
+// --- Sub-task 5.2: Additional keyring and error-path tests ---
+
+func TestSessionIndex_DeleteReadIndexError(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+
+	// Write corrupt JSON so readIndex fails.
+	if err := os.WriteFile(indexPath, []byte("{corrupt"), 0600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	kr := NewMockKeyring()
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	err := store.Delete()
+	if err == nil {
+		t.Fatal("Delete with corrupt index: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "alice") {
+		t.Errorf("error lacks context: %v", err)
+	}
+}
+
+func TestSessionIndex_SaveReadIndexError(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+
+	// Write corrupt JSON so readIndex fails.
+	if err := os.WriteFile(indexPath, []byte("{corrupt"), 0600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	kr := NewMockKeyring()
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	err := store.Save(testSession("u1"))
+	if err == nil {
+		t.Fatal("Save with corrupt index: expected error, got nil")
+	}
+}
+
+func TestSessionIndex_ListReadIndexError(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+
+	if err := os.WriteFile(indexPath, []byte("{corrupt"), 0600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	kr := NewMockKeyring()
+	store := NewSessionStore(indexPath, "", "", kr)
+	_, err := store.List()
+	if err == nil {
+		t.Fatal("List with corrupt index: expected error, got nil")
+	}
+}
+
+func TestSessionIndex_WriteIndexReadOnlyDir(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	store := NewSessionStore(indexPath, "alice", "drive", kr)
+	if err := store.Save(testSession("u1")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Make directory read-only so writeIndex fails on Delete.
+	if err := os.Chmod(dir, 0500); err != nil { //nolint:gosec // G302: test needs read-only dir.
+		t.Skipf("cannot set read-only dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) }) //nolint:gosec // G302: restore dir perms in cleanup.
+
+	// Use a new path in a read-only location to trigger writeIndex error.
+	roPath := filepath.Join(dir, "subdir", "sessions.json")
+	store2 := NewSessionStore(roPath, "alice", "drive", kr)
+	err := store2.Save(testSession("u2"))
+	if err == nil {
+		t.Fatal("Save to read-only dir: expected error, got nil")
+	}
+}
+
+func TestMockKeyring_DeleteNonexistent(t *testing.T) {
+	kr := NewMockKeyring()
+	// Deleting a key that doesn't exist should not error (idempotent).
+	if err := kr.Delete("svc", "nonexistent"); err != nil {
+		t.Errorf("Delete nonexistent: %v", err)
+	}
+}
+
+func TestMockKeyring_MultipleServices(t *testing.T) {
+	tests := []struct {
+		name    string
+		service string
+		account string
+		secret  string
+	}{
+		{"svc1/acct1", "svc1", "acct1", "s1"},
+		{"svc1/acct2", "svc1", "acct2", "s2"},
+		{"svc2/acct1", "svc2", "acct1", "s3"},
+	}
+
+	kr := NewMockKeyring()
+	for _, tt := range tests {
+		if err := kr.Set(tt.service, tt.account, tt.secret); err != nil {
+			t.Fatalf("Set %s: %v", tt.name, err)
+		}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := kr.Get(tt.service, tt.account)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if got != tt.secret {
+				t.Errorf("Get = %q, want %q", got, tt.secret)
+			}
+		})
+	}
+}
+
+// --- Sub-task 5.3: Property tests for session index round-trip (rapid) ---
+
+// genSessionConfigRapid generates an arbitrary SessionConfig for rapid property tests.
+func genSessionConfigRapid(t *rapid.T) *api.SessionConfig {
+	return &api.SessionConfig{
+		UID:           rapid.StringMatching(`[a-zA-Z0-9]{1,32}`).Draw(t, "uid"),
+		AccessToken:   rapid.StringMatching(`[a-zA-Z0-9]{1,64}`).Draw(t, "accessToken"),
+		RefreshToken:  rapid.StringMatching(`[a-zA-Z0-9]{1,64}`).Draw(t, "refreshToken"),
+		SaltedKeyPass: rapid.StringMatching(`[a-zA-Z0-9]{1,64}`).Draw(t, "saltedKeyPass"),
+	}
+}
+
+// TestPropertySessionIndexSaveLoadRoundTrip_Property verifies that for any
+// valid SessionConfig, account, and service, Save then Load returns an
+// identical config.
+//
+// **Validates: Requirements 2.3**
+func TestPropertySessionIndexSaveLoadRoundTrip_Property(t *testing.T) {
+	dir := t.TempDir()
+	var counter int
+	rapid.Check(t, func(rt *rapid.T) {
+		account := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "account")
+		service := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "service")
+		session := genSessionConfigRapid(rt)
+
+		counter++
+		indexPath := filepath.Join(dir, fmt.Sprintf("sessions_%d.json", counter))
+		kr := NewMockKeyring()
+
+		store := NewSessionStore(indexPath, account, service, kr)
+		if err := store.Save(session); err != nil {
+			rt.Fatalf("Save: %v", err)
+		}
+
+		loaded, err := store.Load()
+		if err != nil {
+			rt.Fatalf("Load: %v", err)
+		}
+
+		if !reflect.DeepEqual(*session, *loaded) {
+			rt.Fatalf("round-trip mismatch:\n  saved:  %+v\n  loaded: %+v", *session, *loaded)
+		}
+	})
+}
+
+// TestPropertySessionIndexDeleteIdempotent_Property verifies that deleting
+// a session that doesn't exist is a no-op (returns nil).
+//
+// **Validates: Requirements 2.3**
+func TestPropertySessionIndexDeleteIdempotent_Property(t *testing.T) {
+	dir := t.TempDir()
+	var counter int
+	rapid.Check(t, func(rt *rapid.T) {
+		account := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "account")
+		service := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "service")
+
+		counter++
+		indexPath := filepath.Join(dir, fmt.Sprintf("sessions_%d.json", counter))
+		kr := NewMockKeyring()
+
+		store := NewSessionStore(indexPath, account, service, kr)
+		if err := store.Delete(); err != nil {
+			rt.Fatalf("Delete on empty index: %v", err)
+		}
+	})
+}
+
+// TestPropertySessionIndexSaveDeleteLoad_Property verifies that after
+// Save then Delete, Load returns ErrKeyNotFound.
+//
+// **Validates: Requirements 2.3**
+func TestPropertySessionIndexSaveDeleteLoad_Property(t *testing.T) {
+	dir := t.TempDir()
+	var counter int
+	rapid.Check(t, func(rt *rapid.T) {
+		account := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "account")
+		service := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "service")
+		session := genSessionConfigRapid(rt)
+
+		counter++
+		indexPath := filepath.Join(dir, fmt.Sprintf("sessions_%d.json", counter))
+		kr := NewMockKeyring()
+
+		store := NewSessionStore(indexPath, account, service, kr)
+		if err := store.Save(session); err != nil {
+			rt.Fatalf("Save: %v", err)
+		}
+		if err := store.Delete(); err != nil {
+			rt.Fatalf("Delete: %v", err)
+		}
+
+		_, err := store.Load()
+		if err == nil {
+			rt.Fatal("Load after Delete: expected error, got nil")
+		}
+		if !errors.Is(err, api.ErrKeyNotFound) {
+			rt.Fatalf("Load error = %v, want wrapped ErrKeyNotFound", err)
+		}
+	})
+}
+
+// TestPropertySessionIndexListAfterSave_Property verifies that after saving
+// N sessions for distinct accounts, List returns exactly those account names.
+//
+// **Validates: Requirements 2.3**
+func TestPropertySessionIndexListAfterSave_Property(t *testing.T) {
+	dir := t.TempDir()
+	var counter int
+	rapid.Check(t, func(rt *rapid.T) {
+		n := rapid.IntRange(1, 10).Draw(rt, "numAccounts")
+		accounts := make(map[string]bool, n)
+		for len(accounts) < n {
+			a := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "account")
+			accounts[a] = true
+		}
+
+		counter++
+		indexPath := filepath.Join(dir, fmt.Sprintf("sessions_%d.json", counter))
+		kr := NewMockKeyring()
+
+		for acct := range accounts {
+			s := NewSessionStore(indexPath, acct, "drive", kr)
+			if err := s.Save(genSessionConfigRapid(rt)); err != nil {
+				rt.Fatalf("Save %s: %v", acct, err)
+			}
+		}
+
+		lister := NewSessionStore(indexPath, "", "", kr)
+		names, err := lister.List()
+		if err != nil {
+			rt.Fatalf("List: %v", err)
+		}
+
+		if len(names) != n {
+			rt.Fatalf("List returned %d accounts, want %d", len(names), n)
+		}
+
+		for _, name := range names {
+			if !accounts[name] {
+				rt.Fatalf("List returned unexpected account %q", name)
+			}
+		}
+	})
 }
