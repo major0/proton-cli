@@ -38,18 +38,25 @@ func redactBody(body string) string {
 	for _, field := range sensitiveBodyFields {
 		// Match "FieldName":"value" patterns in JSON.
 		prefix := `"` + field + `":"`
+		var result strings.Builder
+		remaining := body
 		for {
-			idx := strings.Index(body, prefix)
+			idx := strings.Index(remaining, prefix)
 			if idx < 0 {
+				result.WriteString(remaining)
 				break
 			}
 			start := idx + len(prefix)
-			end := strings.Index(body[start:], `"`)
+			end := strings.Index(remaining[start:], `"`)
 			if end < 0 {
+				result.WriteString(remaining)
 				break
 			}
-			body = body[:start] + "<redacted>" + body[start+end:]
+			result.WriteString(remaining[:start])
+			result.WriteString("<redacted>")
+			remaining = remaining[start+end:]
 		}
+		body = result.String()
 	}
 	return body
 }
