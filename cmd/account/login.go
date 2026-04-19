@@ -12,6 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// userPromptFn is the function used to prompt the user for input.
+// It is a variable so tests can replace it without reading stdin.
+var userPromptFn = internal.UserPrompt
+
 var authLoginParams = struct {
 	username  string
 	password  string
@@ -65,14 +69,14 @@ func promptCredentials() (username, password string, err error) {
 	password = authLoginParams.password
 
 	if username == "" {
-		username, err = internal.UserPrompt("Username", false)
+		username, err = userPromptFn("Username", false)
 		if err != nil {
 			return "", "", err
 		}
 	}
 
 	if password == "" {
-		password, err = internal.UserPrompt("Password", true)
+		password, err = userPromptFn("Password", true)
 		if err != nil {
 			return "", "", err
 		}
@@ -81,9 +85,17 @@ func promptCredentials() (username, password string, err error) {
 	return username, password, nil
 }
 
+// sessionFromLoginFn is the function used to create a session from login credentials.
+// It is a variable so tests can replace it without making real API calls.
+var sessionFromLoginFn = common.SessionFromLogin
+
+// sessionRetryWithHVFn is the function used to retry login after HV.
+// It is a variable so tests can replace it without making real API calls.
+var sessionRetryWithHVFn = common.SessionRetryWithHV
+
 // attemptLogin performs the initial login, handling HV/CAPTCHA if needed.
 func attemptLogin(ctx context.Context, username, password string) (*common.Session, error) {
-	session, err := common.SessionFromLogin(ctx, cli.ProtonOpts, username, password, nil, nil)
+	session, err := sessionFromLoginFn(ctx, cli.ProtonOpts, username, password, nil, nil)
 	if err != nil {
 		// Check for HV error (code 9001).
 		apiErr := new(proton.APIError)
@@ -108,7 +120,7 @@ func attemptLogin(ctx context.Context, username, password string) (*common.Sessi
 		hv.Token = solvedToken
 		fmt.Println("Authenticating ...")
 
-		if err := common.SessionRetryWithHV(ctx, session, username, password, hv); err != nil {
+		if err := sessionRetryWithHVFn(ctx, session, username, password, hv); err != nil {
 			return nil, err
 		}
 	}
@@ -125,7 +137,7 @@ func handleTwoFA(ctx context.Context, session *common.Session) error {
 	twoFA := authLoginParams.twoFA
 	if twoFA == "" {
 		var err error
-		twoFA, err = internal.UserPrompt("2FA code", false)
+		twoFA, err = userPromptFn("2FA code", false)
 		if err != nil {
 			return err
 		}
@@ -137,26 +149,46 @@ func handleTwoFA(ctx context.Context, session *common.Session) error {
 }
 
 // deriveAndSave derives the key passphrase and saves the session.
-func deriveAndSave(ctx context.Context, session *common.Session, password, mboxpass string) error {
-	var keypass []byte
-	var err error
-
-	if session.Auth.PasswordMode == proton.TwoPasswordMode {
+// selectKeyPassword determines which password to use for key derivation
+// based on the password mode. Returns the password bytes to salt.
+func selectKeyPassword(passwordMode proton.PasswordMode, password, mboxpass string) ([]byte, error) {
+	if passwordMode == proton.TwoPasswordMode {
 		if mboxpass == "" {
-			mboxpass, err = internal.UserPrompt("Mailbox password", true)
+			var err error
+			mboxpass, err = userPromptFn("Mailbox password", true)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
-		keypass, err = common.SaltKeyPass(ctx, session.Client, []byte(mboxpass))
-	} else {
-		keypass, err = common.SaltKeyPass(ctx, session.Client, []byte(password))
+		return []byte(mboxpass), nil
 	}
+	return []byte(password), nil
+}
+
+// saltKeyPassFn is the function used to salt the key password.
+// It is a variable so tests can replace it without making real API calls.
+var saltKeyPassFn = func(ctx context.Context, session *common.Session, password []byte) ([]byte, error) {
+	return common.SaltKeyPass(ctx, session.Client, password)
+}
+
+// sessionSaveFn is the function used to save the session.
+// It is a variable so tests can replace it without real persistence.
+var sessionSaveFn = func(session *common.Session, keypass []byte) error {
+	return common.SessionSave(cli.SessionStoreVar, session, keypass)
+}
+
+func deriveAndSave(ctx context.Context, session *common.Session, password, mboxpass string) error {
+	passBytes, err := selectKeyPassword(session.Auth.PasswordMode, password, mboxpass)
 	if err != nil {
 		return err
 	}
 
-	return common.SessionSave(cli.SessionStoreVar, session, keypass)
+	keypass, err := saltKeyPassFn(ctx, session, passBytes)
+	if err != nil {
+		return err
+	}
+
+	return sessionSaveFn(session, keypass)
 }
 
 func init() {

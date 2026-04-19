@@ -11,7 +11,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/chromedp/chromedp"
-	"github.com/major0/proton-cli/internal"
 )
 
 // captchaURL builds the CAPTCHA page URL.
@@ -29,17 +28,28 @@ func hasDisplay() bool {
 	}
 }
 
-// openBrowser opens the given URL in the user's default browser.
-func openBrowser(rawURL string) error {
-	var cmd string
+// openBrowserCmd returns the command name used to open URLs on the current platform.
+func openBrowserCmd() string {
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = "open"
+		return "open"
 	default:
-		cmd = "xdg-open"
+		return "xdg-open"
 	}
-	return exec.Command(cmd, rawURL).Start() //nolint:gosec
 }
+
+// openBrowser opens the given URL in the user's default browser.
+func openBrowser(rawURL string) error {
+	return exec.Command(openBrowserCmd(), rawURL).Start() //nolint:gosec
+}
+
+// captchaSolver is the function used to solve CAPTCHAs via Chrome.
+// It is a variable so tests can replace it without launching a browser.
+var captchaSolver = solveChromeDP
+
+// manualSolver is the function used for manual CAPTCHA token entry.
+// It is a variable so tests can replace it without reading stdin.
+var manualSolver = solveManual
 
 // SolveCaptcha presents the CAPTCHA to the user and returns the solved
 // composite token. Uses chromedp (headed Chrome) when a display is
@@ -47,13 +57,13 @@ func openBrowser(rawURL string) error {
 // or when --no-browser is set.
 func SolveCaptcha(hv *proton.APIHVDetails, noBrowser bool) (string, error) {
 	if !noBrowser && hasDisplay() {
-		token, err := solveChromeDP(hv)
+		token, err := captchaSolver(hv)
 		if err == nil {
 			return token, nil
 		}
 		fmt.Fprintf(os.Stderr, "Chrome CAPTCHA failed: %v\nFalling back to manual mode.\n", err)
 	}
-	return solveManual(hv)
+	return manualSolver(hv)
 }
 
 // solveChromeDP launches a headed Chrome window with the CAPTCHA page,
@@ -140,7 +150,7 @@ func solveManual(hv *proton.APIHVDetails) (string, error) {
 	fmt.Println("  5. Copy and paste it below")
 	fmt.Println("")
 
-	token, err := internal.UserPrompt("Solved token", false)
+	token, err := userPromptFn("Solved token", false)
 	if err != nil {
 		return "", err
 	}
