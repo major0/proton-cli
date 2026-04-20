@@ -136,3 +136,120 @@ func TestFindRevokeTarget_ByID(t *testing.T) {
 		t.Fatalf("unexpected result: %+v", got)
 	}
 }
+
+// TestFindRevokeTarget_EdgeCases covers additional edge cases for findRevokeTarget.
+func TestFindRevokeTarget_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		arg     string
+		members []drive.Member
+		invs    []drive.Invitation
+		exts    []drive.ExternalInvitation
+		wantID  string
+		wantErr string
+	}{
+		{
+			"empty lists",
+			"nobody@test.local",
+			nil, nil, nil,
+			"",
+			"no matching",
+		},
+		{
+			"match by invitation ID",
+			"inv-42",
+			nil,
+			[]drive.Invitation{{InvitationID: "inv-42", InviteeEmail: "bob@test.local"}},
+			nil,
+			"inv-42",
+			"",
+		},
+		{
+			"match by external invitation ID",
+			"ext-99",
+			nil, nil,
+			[]drive.ExternalInvitation{{ExternalInvitationID: "ext-99", InviteeEmail: "ext@test.local"}},
+			"ext-99",
+			"",
+		},
+		{
+			"ambiguous: same email in member and external",
+			"shared@test.local",
+			[]drive.Member{{MemberID: "m1", Email: "shared@test.local"}},
+			nil,
+			[]drive.ExternalInvitation{{ExternalInvitationID: "ext1", InviteeEmail: "shared@test.local"}},
+			"",
+			"ambiguous",
+		},
+		{
+			"ambiguous: same email in all three lists",
+			"all@test.local",
+			[]drive.Member{{MemberID: "m1", Email: "all@test.local"}},
+			[]drive.Invitation{{InvitationID: "inv1", InviteeEmail: "all@test.local"}},
+			[]drive.ExternalInvitation{{ExternalInvitationID: "ext1", InviteeEmail: "all@test.local"}},
+			"",
+			"ambiguous",
+		},
+		{
+			"member ID matches but email does not",
+			"m-special",
+			[]drive.Member{{MemberID: "m-special", Email: "other@test.local"}},
+			nil, nil,
+			"m-special",
+			"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := findRevokeTarget(tt.arg, tt.members, tt.invs, tt.exts)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.id != tt.wantID {
+				t.Errorf("id = %q, want %q", got.id, tt.wantID)
+			}
+		})
+	}
+}
+
+// TestShareRevokeCmd_RestoreError verifies that runShareRevoke returns
+// an error when session restore fails.
+func TestShareRevokeCmd_RestoreError(t *testing.T) {
+	saveAndRestore(t)
+	injectSessionError(fmt.Errorf("not logged in"))
+
+	err := shareRevokeCmd.RunE(shareRevokeCmd, []string{"myshare", "user@test.local"})
+	if err == nil || !strings.Contains(err.Error(), "not logged in") {
+		t.Fatalf("error = %v, want 'not logged in'", err)
+	}
+}
+
+// TestShareRevokeCmd_ArgsValidation verifies cobra argument validation.
+func TestShareRevokeCmd_ArgsValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{"no args", []string{}, true},
+		{"one arg", []string{"share"}, true},
+		{"two args valid", []string{"share", "user"}, false},
+		{"three args", []string{"share", "user", "extra"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := shareRevokeCmd.Args(shareRevokeCmd, tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Args(%v) error = %v, wantErr %v", tt.args, err, tt.wantErr)
+			}
+		})
+	}
+}

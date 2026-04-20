@@ -23,17 +23,17 @@ func runShareShow(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := restoreSessionFn(ctx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := driveClient.NewClient(ctx, session)
+	dc, err := newDriveClientFn(ctx, session)
 	if err != nil {
 		return err
 	}
 
-	resolved, err := dc.ResolveShare(ctx, name, true)
+	resolved, err := resolveShareFn(ctx, dc, name)
 	if err != nil {
 		return fmt.Errorf("share show: %s: share not found", name)
 	}
@@ -66,7 +66,7 @@ func printShareMetadata(ctx context.Context, s *drive.Share) {
 }
 
 func printMembers(ctx context.Context, dc *driveClient.Client, shareID string) {
-	members, err := dc.ListMembers(ctx, shareID)
+	members, err := listMembersFn(ctx, dc, shareID)
 	if err != nil {
 		slog.Error("share show: listing members", "error", err)
 		fmt.Fprintf(os.Stderr, "warning: failed to list members: %v\n", err)
@@ -88,7 +88,7 @@ func printMembers(ctx context.Context, dc *driveClient.Client, shareID string) {
 }
 
 func printInvitations(ctx context.Context, dc *driveClient.Client, shareID string) {
-	invs, err := dc.ListInvitations(ctx, shareID)
+	invs, err := listInvitationsFn(ctx, dc, shareID)
 	if err != nil {
 		slog.Error("share show: listing invitations", "error", err)
 		fmt.Fprintf(os.Stderr, "warning: failed to list invitations: %v\n", err)
@@ -111,7 +111,7 @@ func printInvitations(ctx context.Context, dc *driveClient.Client, shareID strin
 }
 
 func printExternalInvitations(ctx context.Context, dc *driveClient.Client, shareID string) {
-	exts, err := dc.ListExternalInvitations(ctx, shareID)
+	exts, err := listExternalInvitationsFn(ctx, dc, shareID)
 	if err != nil {
 		slog.Error("share show: listing external invitations", "error", err)
 		fmt.Fprintf(os.Stderr, "warning: failed to list external invitations: %v\n", err)

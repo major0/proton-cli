@@ -2,10 +2,56 @@
 package shareCmd
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/major0/proton-cli/api/drive"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
+	cli "github.com/major0/proton-cli/cmd"
 	driveCmd "github.com/major0/proton-cli/cmd/drive"
 	"github.com/spf13/cobra"
+)
+
+// restoreSessionFn, newDriveClientFn, resolveShareFn, and listSharesFn
+// are replaceable for testing.
+var (
+	restoreSessionFn = cli.RestoreSession
+	newDriveClientFn = driveClient.NewClient
+	resolveShareFn   = func(ctx context.Context, dc *driveClient.Client, name string) (*drive.Share, error) {
+		return dc.ResolveShare(ctx, name, true)
+	}
+	listSharesFn = func(ctx context.Context, dc *driveClient.Client) ([]*drive.Share, error) {
+		shares, err := dc.ListShares(ctx, true)
+		if err != nil {
+			return nil, err
+		}
+		ptrs := make([]*drive.Share, len(shares))
+		for i := range shares {
+			ptrs[i] = &shares[i]
+		}
+		return ptrs, nil
+	}
+	deleteShareFn = func(ctx context.Context, dc *driveClient.Client, shareID string, force bool) error {
+		return dc.DeleteShareByID(ctx, shareID, force)
+	}
+	listMembersFn = func(ctx context.Context, dc *driveClient.Client, shareID string) ([]drive.Member, error) {
+		return dc.ListMembers(ctx, shareID)
+	}
+	listInvitationsFn = func(ctx context.Context, dc *driveClient.Client, shareID string) ([]drive.Invitation, error) {
+		return dc.ListInvitations(ctx, shareID)
+	}
+	listExternalInvitationsFn = func(ctx context.Context, dc *driveClient.Client, shareID string) ([]drive.ExternalInvitation, error) {
+		return dc.ListExternalInvitations(ctx, shareID)
+	}
+	removeMemberFn = func(ctx context.Context, dc *driveClient.Client, shareID, memberID string) error {
+		return dc.RemoveMember(ctx, shareID, memberID)
+	}
+	deleteInvitationFn = func(ctx context.Context, dc *driveClient.Client, shareID, invitationID string) error {
+		return dc.DeleteInvitation(ctx, shareID, invitationID)
+	}
+	deleteExternalInvitationFn = func(ctx context.Context, dc *driveClient.Client, shareID, externalInvitationID string) error {
+		return dc.DeleteExternalInvitation(ctx, shareID, externalInvitationID)
+	}
 )
 
 var shareCmd = &cobra.Command{

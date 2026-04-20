@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -27,17 +26,17 @@ func runShareList(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := restoreSessionFn(ctx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := driveClient.NewClient(ctx, session)
+	dc, err := newDriveClientFn(ctx, session)
 	if err != nil {
 		return err
 	}
 
-	shares, err := dc.ListShares(ctx, true)
+	shares, err := listSharesFn(ctx, dc)
 	if err != nil {
 		return err
 	}

@@ -44,17 +44,17 @@ func runShareInvite(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := restoreSessionFn(ctx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := driveClient.NewClient(ctx, session)
+	dc, err := newDriveClientFn(ctx, session)
 	if err != nil {
 		return err
 	}
 
-	resolved, err := dc.ResolveShare(ctx, shareName, true)
+	resolved, err := resolveShareFn(ctx, dc, shareName)
 	if err != nil {
 		return fmt.Errorf("share invite: %s: share not found", shareName)
 	}

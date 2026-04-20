@@ -6,7 +6,6 @@ import (
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	driveCmd "github.com/major0/proton-cli/cmd/drive"
 	"github.com/spf13/cobra"
@@ -30,12 +29,12 @@ func runShareAdd(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := restoreSessionFn(ctx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := driveClient.NewClient(ctx, session)
+	dc, err := newDriveClientFn(ctx, session)
 	if err != nil {
 		return err
 	}

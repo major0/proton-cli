@@ -7,7 +7,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -80,17 +79,17 @@ func runShareRevoke(_ *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 	defer cancel()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := restoreSessionFn(ctx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := driveClient.NewClient(ctx, session)
+	dc, err := newDriveClientFn(ctx, session)
 	if err != nil {
 		return err
 	}
 
-	resolved, err := dc.ResolveShare(ctx, shareName, true)
+	resolved, err := resolveShareFn(ctx, dc, shareName)
 	if err != nil {
 		return fmt.Errorf("share revoke: %s: share not found", shareName)
 	}
@@ -103,17 +102,17 @@ func runShareRevoke(_ *cobra.Command, args []string) error {
 
 	shareID := meta.ShareID
 
-	members, err := dc.ListMembers(ctx, shareID)
+	members, err := listMembersFn(ctx, dc, shareID)
 	if err != nil {
 		return fmt.Errorf("share revoke: listing members: %w", err)
 	}
 
-	invs, err := dc.ListInvitations(ctx, shareID)
+	invs, err := listInvitationsFn(ctx, dc, shareID)
 	if err != nil {
 		return fmt.Errorf("share revoke: listing invitations: %w", err)
 	}
 
-	exts, err := dc.ListExternalInvitations(ctx, shareID)
+	exts, err := listExternalInvitationsFn(ctx, dc, shareID)
 	if err != nil {
 		return fmt.Errorf("share revoke: listing external invitations: %w", err)
 	}
@@ -125,17 +124,17 @@ func runShareRevoke(_ *cobra.Command, args []string) error {
 
 	switch match.kind {
 	case "member":
-		if err := dc.RemoveMember(ctx, shareID, match.id); err != nil {
+		if err := removeMemberFn(ctx, dc, shareID, match.id); err != nil {
 			return fmt.Errorf("share revoke: %w", err)
 		}
 		fmt.Printf("Removed member %s\n", target)
 	case "invitation":
-		if err := dc.DeleteInvitation(ctx, shareID, match.id); err != nil {
+		if err := deleteInvitationFn(ctx, dc, shareID, match.id); err != nil {
 			return fmt.Errorf("share revoke: %w", err)
 		}
 		fmt.Printf("Cancelled invitation for %s\n", target)
 	case "external-invitation":
-		if err := dc.DeleteExternalInvitation(ctx, shareID, match.id); err != nil {
+		if err := deleteExternalInvitationFn(ctx, dc, shareID, match.id); err != nil {
 			return fmt.Errorf("share revoke: %w", err)
 		}
 		fmt.Printf("Cancelled external invitation for %s\n", target)

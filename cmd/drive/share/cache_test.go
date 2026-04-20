@@ -1,7 +1,12 @@
 package shareCmd
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -74,4 +79,69 @@ func TestShareCacheToggleRoundTrip_Property(t *testing.T) {
 			t.Fatalf("disk: got %v, want %v", sc.DiskCacheEnabled, disk)
 		}
 	})
+}
+
+// TestPrintCacheState verifies the output format of printCacheState.
+func TestPrintCacheState(t *testing.T) {
+	tests := []struct {
+		name     string
+		share    string
+		sc       api.ShareConfig
+		wantSubs []string
+	}{
+		{
+			"all disabled",
+			"test-share",
+			api.ShareConfig{},
+			[]string{"Share: test-share", "dirent:   disabled", "metadata: disabled", "on-disk:  disabled"},
+		},
+		{
+			"all enabled",
+			"my-share",
+			api.ShareConfig{DirentCacheEnabled: true, MetadataCacheEnabled: true, DiskCacheEnabled: true},
+			[]string{"Share: my-share", "dirent:   enabled", "metadata: enabled", "on-disk:  enabled"},
+		},
+		{
+			"mixed",
+			"mixed",
+			api.ShareConfig{DirentCacheEnabled: true, MetadataCacheEnabled: false, DiskCacheEnabled: true},
+			[]string{"dirent:   enabled", "metadata: disabled", "on-disk:  enabled"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture stdout.
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			printCacheState(tt.share, tt.sc)
+
+			_ = w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			_, _ = io.Copy(&buf, r)
+			got := buf.String()
+
+			for _, sub := range tt.wantSubs {
+				if !strings.Contains(got, sub) {
+					t.Errorf("output missing %q, got:\n%s", sub, got)
+				}
+			}
+		})
+	}
+}
+
+// TestShareCacheCmd_RestoreError verifies that runShareCache returns
+// an error when session restore fails.
+func TestShareCacheCmd_RestoreError(t *testing.T) {
+	saveAndRestore(t)
+	injectSessionError(fmt.Errorf("keyring locked"))
+
+	err := shareCacheCmd.RunE(shareCacheCmd, []string{"myshare"})
+	if err == nil || !strings.Contains(err.Error(), "keyring locked") {
+		t.Fatalf("error = %v, want 'keyring locked'", err)
+	}
 }
