@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"syscall"
 
 	"golang.org/x/term"
 )
@@ -22,7 +21,7 @@ func UserPrompt(prompt string, password bool) (string, error) {
 	for input == "" {
 		fmt.Print(prompt + ": ")
 		if password {
-			bytePasswd, err = term.ReadPassword(syscall.Stdin)
+			bytePasswd, err = term.ReadPassword(int(os.Stdin.Fd())) //nolint:gosec // standard pattern for term.ReadPassword
 			input = string(bytePasswd)
 			fmt.Println("")
 		} else {
