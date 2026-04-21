@@ -6,9 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-cli/api/pool"
 )
 
 // StatLink resolves a single link ID within a share into a Link.
@@ -23,22 +22,19 @@ func (c *Client) StatLink(ctx context.Context, share *drive.Share, parentLink *d
 	return drive.NewLink(&pLink, parentLink, share, c), nil
 }
 
-// StatLinks resolves a batch of link IDs concurrently. Up to MaxWorkers
-// goroutines run in parallel. Links that fail to resolve are logged and
+// StatLinks resolves a batch of link IDs concurrently using the
+// session's worker pool. Links that fail to resolve are logged and
 // skipped. Respects context cancellation.
-func (c *Client) StatLinks(ctx context.Context, share *drive.Share, parentLink *drive.Link, linkIDs []string) ([]*drive.Link, error) {
+func (c *Client) StatLinks(_ context.Context, share *drive.Share, parentLink *drive.Link, linkIDs []string) ([]*drive.Link, error) {
 	if len(linkIDs) == 0 {
 		return nil, nil
 	}
-
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(c.Session.MaxWorkers)
 
 	var mu sync.Mutex
 	links := make([]*drive.Link, 0, len(linkIDs))
 
 	for _, id := range linkIDs {
-		g.Go(func() error {
+		c.Session.Pool.Go(func(ctx context.Context) error {
 			link, err := c.StatLink(ctx, share, parentLink, id)
 			if err != nil {
 				slog.Error("stat", "linkID", id, "error", err)
@@ -51,7 +47,7 @@ func (c *Client) StatLinks(ctx context.Context, share *drive.Share, parentLink *
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	if err := c.Session.Pool.Wait(); err != nil {
 		return links, err
 	}
 	return links, nil
@@ -60,12 +56,8 @@ func (c *Client) StatLinks(ctx context.Context, share *drive.Share, parentLink *
 // FindLinkByName resolves link IDs concurrently and returns the first one
 // whose decrypted name matches. Returns nil if no match is found.
 //
-// This function keeps the manual channel + WaitGroup pattern instead of
-// errgroup because it needs early cancellation: when a match is found,
-// remaining workers must stop immediately. errgroup.WithContext would
-// cancel on error, but here we cancel on success — a semantic mismatch
-// that would require returning a sentinel error to trigger cancellation,
-// making the code less clear than the explicit cancel() call.
+// Uses a short-lived pool with a child context for early cancellation:
+// when a match is found, the context is cancelled to stop remaining workers.
 func (c *Client) FindLinkByName(ctx context.Context, share *drive.Share, parentLink *drive.Link, linkIDs []string, name string) (*drive.Link, error) {
 	if len(linkIDs) == 0 {
 		return nil, nil
@@ -75,65 +67,43 @@ func (c *Client) FindLinkByName(ctx context.Context, share *drive.Share, parentL
 	defer cancel()
 
 	workers := min(c.Session.MaxWorkers, len(linkIDs))
+	p := pool.New(ctx, workers)
 
-	type result struct {
-		link *drive.Link
-		err  error
-	}
+	var (
+		found   *drive.Link
+		foundMu sync.Mutex
+	)
 
-	idQueue := make(chan string)
-	resultCh := make(chan result, 1)
-
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for id := range idQueue {
-				link, err := c.StatLink(ctx, share, parentLink, id)
-				if err != nil {
-					if ctx.Err() != nil {
-						return
-					}
-					slog.Error("stat", "linkID", id, "error", err)
-					continue
+	for _, id := range linkIDs {
+		p.Go(func(ctx context.Context) error {
+			link, err := c.StatLink(ctx, share, parentLink, id)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
 				}
-				linkName, err := link.Name()
-				if err != nil {
-					slog.Error("stat", "linkID", id, "error", err)
-					continue
-				}
-				if linkName == name {
-					select {
-					case resultCh <- result{link: link}:
-						cancel()
-					default:
-					}
-					return
-				}
+				slog.Error("stat", "linkID", id, "error", err)
+				return nil
 			}
-		}()
-	}
-
-	go func() {
-		defer close(idQueue)
-		for _, id := range linkIDs {
-			select {
-			case idQueue <- id:
-			case <-ctx.Done():
-				return
+			linkName, err := link.Name()
+			if err != nil {
+				slog.Error("stat", "linkID", id, "error", err)
+				return nil
 			}
-		}
-	}()
-
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	if r, ok := <-resultCh; ok {
-		return r.link, r.err
+			if linkName == name {
+				foundMu.Lock()
+				if found == nil {
+					found = link
+				}
+				foundMu.Unlock()
+				cancel()
+			}
+			return nil
+		})
 	}
 
-	return nil, nil
+	// Context cancellation from cancel() causes Wait to return ctx.Err();
+	// that's expected when we found a match — not a real error.
+	_ = p.Wait()
+
+	return found, nil
 }

@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 )
@@ -61,9 +59,6 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 	slog.Debug("client.ListShares", "shares", len(pshares))
 	slog.Debug("client.ListShares", "volumeID", volumeID)
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(c.Session.MaxWorkers)
-
 	var mu sync.Mutex
 	shares := make([]drive.Share, 0, len(pshares))
 
@@ -72,7 +67,7 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 			continue
 		}
 		shareID := s.ShareID
-		g.Go(func() error {
+		c.Session.Pool.Go(func(ctx context.Context) error {
 			share, err := c.GetShare(ctx, shareID)
 			if err != nil {
 				slog.Error("worker", "shareID", shareID, "error", err)
@@ -85,7 +80,7 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	if err := c.Session.Pool.Wait(); err != nil {
 		return shares, err
 	}
 	return shares, nil

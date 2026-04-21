@@ -17,6 +17,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/major0/proton-cli/api/pool"
 )
 
 // serialCookie holds the minimal fields needed to reconstruct an http.Cookie
@@ -107,6 +108,7 @@ type Session struct {
 	cachedAuthInfo *proton.AuthInfo
 
 	MaxWorkers int
+	Pool       *pool.Pool
 	Throttle   *Throttle
 
 	addresses       map[string]proton.Address
@@ -137,6 +139,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 	var session Session
 	session.MaxWorkers = DefaultMaxWorkers
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
+	session.Pool = pool.New(ctx, DefaultMaxWorkers, pool.WithThrottle(session.Throttle))
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
@@ -169,10 +172,11 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 // sessionFromLogin creates a session with common setup shared by
 // SessionFromLogin and SessionFromLoginWithHV. It returns the prepared
 // session and manager; the caller performs the actual login call.
-func sessionFromLogin(options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
+func sessionFromLogin(ctx context.Context, options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
 	session := &Session{}
 	session.MaxWorkers = DefaultMaxWorkers
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
+	session.Pool = pool.New(ctx, DefaultMaxWorkers, pool.WithThrottle(session.Throttle))
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
@@ -430,7 +434,7 @@ func SessionList(store SessionStore) ([]string, error) {
 // attempts so that the solved CAPTCHA correlates with the session cookie
 // established during the initial (failed) login request.
 func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string, hvDetails *proton.APIHVDetails, managerHook func(*proton.Manager)) (*Session, error) {
-	session, manager := sessionFromLogin(options, managerHook)
+	session, manager := sessionFromLogin(ctx, options, managerHook)
 
 	slog.Debug("session.login", "username", username, "password", "<hidden>")
 
