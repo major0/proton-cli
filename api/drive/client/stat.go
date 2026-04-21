@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 	"github.com/major0/proton-cli/api/pool"
 )
@@ -66,7 +67,7 @@ func (c *Client) FindLinkByName(ctx context.Context, share *drive.Share, parentL
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	workers := min(c.Session.MaxWorkers, len(linkIDs))
+	workers := min(api.DefaultMaxWorkers, len(linkIDs))
 	p := pool.New(ctx, workers)
 
 	var (

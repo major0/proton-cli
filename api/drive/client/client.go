@@ -69,7 +69,7 @@ func (c *Client) Throttle() *api.Throttle {
 	return c.Session.Throttle
 }
 
-// MaxWorkers returns the session's concurrency limit.
+// MaxWorkers returns the default concurrency limit for parallel operations.
 func (c *Client) MaxWorkers() int {
-	return c.Session.MaxWorkers
+	return api.DefaultMaxWorkers
 }

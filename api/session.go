@@ -86,11 +86,6 @@ func loadCookies(jar http.CookieJar, cookies []serialCookie, apiURL *url.URL) {
 	jar.SetCookies(apiURL, httpCookies)
 }
 
-// SessionOptions holds configuration for session creation.
-type SessionOptions struct {
-	MaxWorkers int
-}
-
 // Session holds an authenticated Proton API session with decrypted keyrings.
 type Session struct {
 	Client     *proton.Client
@@ -107,9 +102,8 @@ type Session struct {
 	// It is reused on HV retry so the SRP session matches the solved CAPTCHA.
 	cachedAuthInfo *proton.AuthInfo
 
-	MaxWorkers int
-	Pool       *pool.Pool
-	Throttle   *Throttle
+	Pool     *pool.Pool
+	Throttle *Throttle
 
 	addresses       map[string]proton.Address
 	addressKeyRings map[string]*crypto.KeyRing
@@ -137,7 +131,6 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 	}
 
 	var session Session
-	session.MaxWorkers = DefaultMaxWorkers
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
 	session.Pool = pool.New(ctx, DefaultMaxWorkers, pool.WithThrottle(session.Throttle))
 
@@ -174,7 +167,6 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 // session and manager; the caller performs the actual login call.
 func sessionFromLogin(ctx context.Context, options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
 	session := &Session{}
-	session.MaxWorkers = DefaultMaxWorkers
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
 	session.Pool = pool.New(ctx, DefaultMaxWorkers, pool.WithThrottle(session.Throttle))
 

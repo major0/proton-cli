@@ -85,23 +85,9 @@ func TestClient_Throttle(t *testing.T) {
 }
 
 func TestClient_MaxWorkers(t *testing.T) {
-	tests := []struct {
-		name    string
-		workers int
-	}{
-		{"default", 0},
-		{"custom", 16},
-		{"one", 1},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{
-				Session: &api.Session{MaxWorkers: tt.workers},
-			}
-			if got := c.MaxWorkers(); got != tt.workers {
-				t.Fatalf("MaxWorkers() = %d, want %d", got, tt.workers)
-			}
-		})
+	c := &Client{}
+	if got := c.MaxWorkers(); got != api.DefaultMaxWorkers {
+		t.Fatalf("MaxWorkers() = %d, want %d", got, api.DefaultMaxWorkers)
 	}
 }
 

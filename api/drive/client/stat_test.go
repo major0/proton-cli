@@ -38,9 +38,7 @@ func TestStatLinks_Empty(t *testing.T) {
 // empty input without touching the pool.
 func TestFindLinkByName_Empty(t *testing.T) {
 	c := &Client{
-		Session: &api.Session{
-			MaxWorkers: 4,
-		},
+		Session: &api.Session{},
 	}
 
 	link, err := c.FindLinkByName(context.Background(), nil, nil, nil, "test")
@@ -67,8 +65,7 @@ func TestSessionPool_Default(t *testing.T) {
 	p := pool.New(ctx, api.DefaultMaxWorkers)
 
 	session := &api.Session{
-		MaxWorkers: api.DefaultMaxWorkers,
-		Pool:       p,
+		Pool: p,
 	}
 
 	if session.Pool == nil {
