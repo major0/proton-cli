@@ -99,3 +99,9 @@ func (c *Client) deriveSpaceDEK(ctx context.Context, space *lumo.Space) ([]byte,
 
 	return lumo.DeriveDataEncryptionKey(spaceKey)
 }
+
+// DeriveSpaceDEK is the exported version of deriveSpaceDEK for use by
+// command-layer code that needs to decrypt conversation content.
+func (c *Client) DeriveSpaceDEK(ctx context.Context, space *lumo.Space) ([]byte, error) {
+	return c.deriveSpaceDEK(ctx, space)
+}
