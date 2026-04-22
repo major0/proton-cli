@@ -12,6 +12,7 @@ import (
 // Client wraps an api.Session for Lumo API operations.
 type Client struct {
 	Session *api.Session
+	masterKeyFields
 }
 
 // NewClient constructs a Lumo client from an existing session.
