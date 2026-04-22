@@ -45,7 +45,7 @@ func (c *Client) CreateConversation(ctx context.Context, spaceID, title string) 
 	}
 
 	var resp lumo.GetConversationResponse
-	err = c.Session.DoJSON(ctx, "POST", "/api/lumo/v1/spaces/"+spaceID+"/conversations", req, &resp)
+	err = c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/spaces/"+spaceID+"/conversations"), req, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create conversation: %w", mapCRUDError(err))
 	}
@@ -55,7 +55,7 @@ func (c *Client) CreateConversation(ctx context.Context, spaceID, title string) 
 // ListConversations fetches all conversations in a space.
 func (c *Client) ListConversations(ctx context.Context, spaceID string) ([]lumo.Conversation, error) {
 	var resp lumo.ListConversationsResponse
-	if err := c.Session.DoJSON(ctx, "GET", "/api/lumo/v1/spaces/"+spaceID+"/conversations", nil, &resp); err != nil {
+	if err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/spaces/"+spaceID+"/conversations"), nil, &resp); err != nil {
 		return nil, fmt.Errorf("lumo: list conversations: %w", err)
 	}
 	return resp.Conversations, nil
@@ -64,7 +64,7 @@ func (c *Client) ListConversations(ctx context.Context, spaceID string) ([]lumo.
 // GetConversation fetches a conversation by ID.
 func (c *Client) GetConversation(ctx context.Context, conversationID string) (*lumo.Conversation, error) {
 	var resp lumo.GetConversationResponse
-	err := c.Session.DoJSON(ctx, "GET", "/api/lumo/v1/conversations/"+conversationID, nil, &resp)
+	err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/conversations/"+conversationID), nil, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: get conversation: %w", mapCRUDError(err))
 	}
@@ -73,7 +73,7 @@ func (c *Client) GetConversation(ctx context.Context, conversationID string) (*l
 
 // DeleteConversation deletes a conversation by ID.
 func (c *Client) DeleteConversation(ctx context.Context, conversationID string) error {
-	err := c.Session.DoJSON(ctx, "DELETE", "/api/lumo/v1/conversations/"+conversationID, nil, nil)
+	err := c.Session.DoJSON(ctx, "DELETE", c.url("/lumo/v1/conversations/"+conversationID), nil, nil)
 	if err != nil {
 		return fmt.Errorf("lumo: delete conversation: %w", mapCRUDError(err))
 	}

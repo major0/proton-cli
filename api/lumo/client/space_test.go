@@ -102,8 +102,8 @@ func TestListSpaces_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	got, err := c.ListSpaces(context.Background())
 	if err != nil {
@@ -144,9 +144,9 @@ func TestCreateSpace_RequestBody(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = tc.kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	space, err := c.CreateSpace(context.Background(), "My Space", false)
 	if err != nil {
@@ -211,9 +211,9 @@ func TestGetDefaultSpace_FindsSimple(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = tc.kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	got, err := c.GetDefaultSpace(context.Background())
 	if err != nil {
@@ -258,9 +258,9 @@ func TestGetDefaultSpace_CreatesWhenNone(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = tc.kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	got, err := c.GetDefaultSpace(context.Background())
 	if err != nil {
@@ -280,8 +280,8 @@ func TestDeleteSpace_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	err := c.DeleteSpace(context.Background(), "deleted-id")
 	if !errors.Is(err, lumo.ErrNotFound) {
@@ -305,9 +305,9 @@ func TestCreateSpace_Conflict(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = tc.kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	_, err := c.CreateSpace(context.Background(), "dup", false)
 	if !errors.Is(err, lumo.ErrConflict) {

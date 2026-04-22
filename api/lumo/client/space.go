@@ -14,7 +14,7 @@ import (
 // ListSpaces fetches all spaces from the API.
 func (c *Client) ListSpaces(ctx context.Context) ([]lumo.Space, error) {
 	var resp lumo.ListSpacesResponse
-	if err := c.Session.DoJSON(ctx, "GET", "/api/lumo/v1/spaces", nil, &resp); err != nil {
+	if err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/spaces"), nil, &resp); err != nil {
 		return nil, fmt.Errorf("lumo: list spaces: %w", err)
 	}
 	return resp.Spaces, nil
@@ -23,7 +23,7 @@ func (c *Client) ListSpaces(ctx context.Context) ([]lumo.Space, error) {
 // GetSpace fetches a single space by ID.
 func (c *Client) GetSpace(ctx context.Context, spaceID string) (*lumo.Space, error) {
 	var resp lumo.GetSpaceResponse
-	err := c.Session.DoJSON(ctx, "GET", "/api/lumo/v1/spaces/"+spaceID, nil, &resp)
+	err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/spaces/"+spaceID), nil, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: get space: %w", mapCRUDError(err))
 	}
@@ -78,7 +78,7 @@ func (c *Client) CreateSpace(ctx context.Context, name string, isProject bool) (
 	}
 
 	var resp lumo.GetSpaceResponse
-	err = c.Session.DoJSON(ctx, "POST", "/api/lumo/v1/spaces", req, &resp)
+	err = c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/spaces"), req, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create space: %w", mapCRUDError(err))
 	}
@@ -87,7 +87,7 @@ func (c *Client) CreateSpace(ctx context.Context, name string, isProject bool) (
 
 // DeleteSpace deletes a space by ID.
 func (c *Client) DeleteSpace(ctx context.Context, spaceID string) error {
-	err := c.Session.DoJSON(ctx, "DELETE", "/api/lumo/v1/spaces/"+spaceID, nil, nil)
+	err := c.Session.DoJSON(ctx, "DELETE", c.url("/lumo/v1/spaces/"+spaceID), nil, nil)
 	if err != nil {
 		return fmt.Errorf("lumo: delete space: %w", mapCRUDError(err))
 	}

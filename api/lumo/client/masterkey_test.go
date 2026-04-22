@@ -57,9 +57,9 @@ func TestGetMasterKey_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	got, err := c.GetMasterKey(context.Background())
 	if err != nil {
@@ -108,9 +108,9 @@ func TestGetMasterKey_CreatePath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	key, err := c.GetMasterKey(context.Background())
 	if err != nil {
@@ -146,9 +146,9 @@ func TestGetMasterKey_Caching(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	if _, err := c.GetMasterKey(context.Background()); err != nil {
 		t.Fatalf("GetMasterKey (1): %v", err)
@@ -172,8 +172,8 @@ func TestGetMasterKey_NotEligible(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	_, err := c.GetMasterKey(context.Background())
 	if !errors.Is(err, lumo.ErrNotEligible) {
@@ -206,9 +206,9 @@ func TestGetMasterKey_BestKeySelection(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	got, err := c.GetMasterKey(context.Background())
 	if err != nil {

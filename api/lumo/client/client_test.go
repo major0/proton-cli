@@ -157,8 +157,8 @@ func TestGenerate_MockServer(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	var mu sync.Mutex
 	var messages []lumo.GenerationResponseMessage
@@ -205,8 +205,8 @@ func TestGenerate_Rejected(t *testing.T) {
 
 	pubKey, _ := testKeyPair(t)
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	err := c.Generate(context.Background(), []lumo.Turn{
 		{Role: lumo.RoleUser, Content: "bad"},
@@ -227,8 +227,8 @@ func TestGenerate_Harmful(t *testing.T) {
 
 	pubKey, _ := testKeyPair(t)
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	err := c.Generate(context.Background(), []lumo.Turn{
 		{Role: lumo.RoleUser, Content: "bad"},
@@ -249,8 +249,8 @@ func TestGenerate_Timeout(t *testing.T) {
 
 	pubKey, _ := testKeyPair(t)
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	err := c.Generate(context.Background(), []lumo.Turn{
 		{Role: lumo.RoleUser, Content: "slow"},

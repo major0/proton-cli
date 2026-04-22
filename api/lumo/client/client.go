@@ -9,15 +9,28 @@ import (
 	"github.com/major0/proton-cli/api/lumo"
 )
 
+// DefaultLumoBaseURL is the base URL for the Lumo API.
+const DefaultLumoBaseURL = "https://lumo.proton.me/api"
+
 // Client wraps an api.Session for Lumo API operations.
 type Client struct {
 	Session *api.Session
+	BaseURL string // defaults to DefaultLumoBaseURL
 	masterKeyFields
 }
 
 // NewClient constructs a Lumo client from an existing session.
 func NewClient(session *api.Session) *Client {
-	return &Client{Session: session}
+	return &Client{Session: session, BaseURL: DefaultLumoBaseURL}
+}
+
+// url constructs a full URL from a relative path.
+func (c *Client) url(path string) string {
+	base := c.BaseURL
+	if base == "" {
+		base = DefaultLumoBaseURL
+	}
+	return base + path
 }
 
 // GenerateOpts configures a Generate request.
@@ -85,7 +98,7 @@ func (c *Client) Generate(ctx context.Context, turns []lumo.Turn, opts GenerateO
 		},
 	}
 
-	body, err := c.Session.DoSSE(ctx, "/ai/v1/chat", req)
+	body, err := c.Session.DoSSE(ctx, c.url("/ai/v1/chat"), req)
 	if err != nil {
 		return fmt.Errorf("lumo: chat request: %w", err)
 	}

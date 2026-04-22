@@ -112,9 +112,9 @@ func TestCreateConversation_RequestBody(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = mock.tc.kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	conv, err := c.CreateConversation(context.Background(), "space-1", "Hello World")
 	if err != nil {
@@ -156,9 +156,9 @@ func TestGetConversation_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = mock.tc.kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	conv, err := c.GetConversation(context.Background(), "conv-1")
 	if err != nil {
@@ -181,8 +181,8 @@ func TestDeleteConversation_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	err := c.DeleteConversation(context.Background(), "deleted-conv")
 	if !errors.Is(err, lumo.ErrNotFound) {

@@ -15,9 +15,9 @@ func TestCreateMessage_RequestBody(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = mock.tc.kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	msg, err := c.CreateMessage(context.Background(), "conv-1", RoleUser, "Hello!")
 	if err != nil {
@@ -62,9 +62,9 @@ func TestGetMessage_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL
 	sess.UserKeyRing = mock.tc.kr
 	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
 
 	msg, err := c.GetMessage(context.Background(), "msg-1")
 	if err != nil {

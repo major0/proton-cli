@@ -70,7 +70,7 @@ func (c *Client) CreateMessage(ctx context.Context, conversationID string, role 
 	}
 
 	var resp lumo.GetMessageResponse
-	err = c.Session.DoJSON(ctx, "POST", "/api/lumo/v1/conversations/"+conversationID+"/messages", req, &resp)
+	err = c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/conversations/"+conversationID+"/messages"), req, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create message: %w", mapCRUDError(err))
 	}
@@ -80,7 +80,7 @@ func (c *Client) CreateMessage(ctx context.Context, conversationID string, role 
 // GetMessage fetches a message by ID.
 func (c *Client) GetMessage(ctx context.Context, messageID string) (*lumo.Message, error) {
 	var resp lumo.GetMessageResponse
-	err := c.Session.DoJSON(ctx, "GET", "/api/lumo/v1/messages/"+messageID, nil, &resp)
+	err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/messages/"+messageID), nil, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: get message: %w", mapCRUDError(err))
 	}
@@ -90,7 +90,7 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*lumo.Messag
 // ListMessages fetches all messages in a conversation.
 func (c *Client) ListMessages(ctx context.Context, conversationID string) ([]lumo.Message, error) {
 	var resp lumo.ListMessagesResponse
-	if err := c.Session.DoJSON(ctx, "GET", "/api/lumo/v1/conversations/"+conversationID+"/messages", nil, &resp); err != nil {
+	if err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/conversations/"+conversationID+"/messages"), nil, &resp); err != nil {
 		return nil, fmt.Errorf("lumo: list messages: %w", err)
 	}
 	return resp.Messages, nil
