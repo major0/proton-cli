@@ -52,6 +52,15 @@ func (c *Client) CreateConversation(ctx context.Context, spaceID, title string) 
 	return &resp.Conversation, nil
 }
 
+// ListConversations fetches all conversations in a space.
+func (c *Client) ListConversations(ctx context.Context, spaceID string) ([]lumo.Conversation, error) {
+	var resp lumo.ListConversationsResponse
+	if err := c.Session.DoJSON(ctx, "GET", "api/lumo/v1/spaces/"+spaceID+"/conversations", nil, &resp); err != nil {
+		return nil, fmt.Errorf("lumo: list conversations: %w", err)
+	}
+	return resp.Conversations, nil
+}
+
 // GetConversation fetches a conversation by ID.
 func (c *Client) GetConversation(ctx context.Context, conversationID string) (*lumo.Conversation, error) {
 	var resp lumo.GetConversationResponse

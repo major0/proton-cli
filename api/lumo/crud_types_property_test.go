@@ -230,7 +230,48 @@ func assertJSONRoundTrip[T any](t *rapid.T, orig T) {
 	}
 }
 
-// --- Property 7: SpacePriv JSON round-trip ---
+// --- Property 7 (lumo-chat): New response types JSON round-trip ---
+
+// TestListResponses_JSONRoundTrip_Property verifies that for any valid
+// ListConversationsResponse or ListMessagesResponse, JSON marshal
+// followed by unmarshal produces a value equal to the original.
+//
+// Feature: lumo-chat, Property 7: New response types JSON round-trip
+//
+// **Validates: Requirements 1.3, 3.4**
+func TestListResponses_JSONRoundTrip_Property(t *testing.T) {
+	t.Run("ListConversationsResponse", func(t *testing.T) {
+		rapid.Check(t, func(t *rapid.T) {
+			n := rapid.IntRange(0, 10).Draw(t, "num_conversations")
+			convs := make([]Conversation, n)
+			for i := range convs {
+				convs[i] = genConversation(t)
+			}
+			orig := ListConversationsResponse{
+				Code:          rapid.IntRange(1000, 9999).Draw(t, "code"),
+				Conversations: convs,
+			}
+			assertJSONRoundTrip(t, orig)
+		})
+	})
+
+	t.Run("ListMessagesResponse", func(t *testing.T) {
+		rapid.Check(t, func(t *rapid.T) {
+			n := rapid.IntRange(0, 10).Draw(t, "num_messages")
+			msgs := make([]Message, n)
+			for i := range msgs {
+				msgs[i] = genMessage(t)
+			}
+			orig := ListMessagesResponse{
+				Code:     rapid.IntRange(1000, 9999).Draw(t, "code"),
+				Messages: msgs,
+			}
+			assertJSONRoundTrip(t, orig)
+		})
+	})
+}
+
+// --- Property 7 (lumo-crud): SpacePriv JSON round-trip ---
 
 // TestSpacePriv_JSONRoundTrip_Property verifies that for any valid
 // SpacePriv value, JSON marshal → unmarshal produces an equal value,

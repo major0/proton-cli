@@ -86,3 +86,12 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*lumo.Messag
 	}
 	return &resp.Message, nil
 }
+
+// ListMessages fetches all messages in a conversation.
+func (c *Client) ListMessages(ctx context.Context, conversationID string) ([]lumo.Message, error) {
+	var resp lumo.ListMessagesResponse
+	if err := c.Session.DoJSON(ctx, "GET", "api/lumo/v1/conversations/"+conversationID+"/messages", nil, &resp); err != nil {
+		return nil, fmt.Errorf("lumo: list messages: %w", err)
+	}
+	return resp.Messages, nil
+}

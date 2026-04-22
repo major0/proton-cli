@@ -132,6 +132,18 @@ type GetMessageResponse struct {
 	Message Message `json:"Message"`
 }
 
+// ListConversationsResponse is the response from GET /api/lumo/v1/spaces/{spaceID}/conversations.
+type ListConversationsResponse struct {
+	Code          int            `json:"Code"`
+	Conversations []Conversation `json:"Conversations"`
+}
+
+// ListMessagesResponse is the response from GET /api/lumo/v1/conversations/{conversationID}/messages.
+type ListMessagesResponse struct {
+	Code     int       `json:"Code"`
+	Messages []Message `json:"Messages"`
+}
+
 // --- Best-key selection ---
 
 // SelectBestMasterKey returns the best master key from a non-empty list.
