@@ -85,7 +85,7 @@ func (c *Client) Generate(ctx context.Context, turns []lumo.Turn, opts GenerateO
 		},
 	}
 
-	body, err := c.Session.DoSSE(ctx, "ai/v1/chat", req)
+	body, err := c.Session.DoSSE(ctx, "/ai/v1/chat", req)
 	if err != nil {
 		return fmt.Errorf("lumo: chat request: %w", err)
 	}

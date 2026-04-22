@@ -112,7 +112,7 @@ func TestCreateConversation_RequestBody(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = mock.tc.kr
 	c := NewClient(sess)
 
@@ -156,7 +156,7 @@ func TestGetConversation_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = mock.tc.kr
 	c := NewClient(sess)
 
@@ -181,7 +181,7 @@ func TestDeleteConversation_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	c := NewClient(sess)
 
 	err := c.DeleteConversation(context.Background(), "deleted-conv")

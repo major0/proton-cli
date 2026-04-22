@@ -102,7 +102,7 @@ func TestListSpaces_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	c := NewClient(sess)
 
 	got, err := c.ListSpaces(context.Background())
@@ -144,7 +144,7 @@ func TestCreateSpace_RequestBody(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = tc.kr
 	c := NewClient(sess)
 
@@ -211,7 +211,7 @@ func TestGetDefaultSpace_FindsSimple(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = tc.kr
 	c := NewClient(sess)
 
@@ -258,7 +258,7 @@ func TestGetDefaultSpace_CreatesWhenNone(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = tc.kr
 	c := NewClient(sess)
 
@@ -280,7 +280,7 @@ func TestDeleteSpace_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	c := NewClient(sess)
 
 	err := c.DeleteSpace(context.Background(), "deleted-id")
@@ -305,7 +305,7 @@ func TestCreateSpace_Conflict(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = tc.kr
 	c := NewClient(sess)
 

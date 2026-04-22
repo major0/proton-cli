@@ -157,7 +157,7 @@ func TestGenerate_MockServer(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	c := NewClient(sess)
 
 	var mu sync.Mutex
@@ -205,7 +205,7 @@ func TestGenerate_Rejected(t *testing.T) {
 
 	pubKey, _ := testKeyPair(t)
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	c := NewClient(sess)
 
 	err := c.Generate(context.Background(), []lumo.Turn{
@@ -227,7 +227,7 @@ func TestGenerate_Harmful(t *testing.T) {
 
 	pubKey, _ := testKeyPair(t)
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	c := NewClient(sess)
 
 	err := c.Generate(context.Background(), []lumo.Turn{
@@ -249,7 +249,7 @@ func TestGenerate_Timeout(t *testing.T) {
 
 	pubKey, _ := testKeyPair(t)
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	c := NewClient(sess)
 
 	err := c.Generate(context.Background(), []lumo.Turn{

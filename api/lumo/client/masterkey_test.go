@@ -57,7 +57,7 @@ func TestGetMasterKey_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = kr
 	c := NewClient(sess)
 
@@ -108,7 +108,7 @@ func TestGetMasterKey_CreatePath(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = kr
 	c := NewClient(sess)
 
@@ -146,7 +146,7 @@ func TestGetMasterKey_Caching(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = kr
 	c := NewClient(sess)
 
@@ -172,7 +172,7 @@ func TestGetMasterKey_NotEligible(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	c := NewClient(sess)
 
 	_, err := c.GetMasterKey(context.Background())
@@ -206,7 +206,7 @@ func TestGetMasterKey_BestKeySelection(t *testing.T) {
 	defer srv.Close()
 
 	sess := testSession(t)
-	sess.BaseURL = srv.URL + "/"
+	sess.BaseURL = srv.URL
 	sess.UserKeyRing = kr
 	c := NewClient(sess)
 

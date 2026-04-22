@@ -38,7 +38,7 @@ func (c *Client) GetMasterKey(ctx context.Context) ([]byte, error) {
 // and PGP-decrypts it. If no keys exist, it creates a new one.
 func (c *Client) fetchMasterKey(ctx context.Context) ([]byte, error) {
 	var resp lumo.ListMasterKeysResponse
-	err := c.Session.DoJSON(ctx, "GET", "api/lumo/v1/masterkeys", nil, &resp)
+	err := c.Session.DoJSON(ctx, "GET", "/api/lumo/v1/masterkeys", nil, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: get master keys: %w", err)
 	}
@@ -96,7 +96,7 @@ func (c *Client) createMasterKey(ctx context.Context) ([]byte, error) {
 	}
 
 	req := lumo.CreateMasterKeyReq{MasterKey: armored}
-	err = c.Session.DoJSON(ctx, "POST", "api/lumo/v1/masterkeys", req, nil)
+	err = c.Session.DoJSON(ctx, "POST", "/api/lumo/v1/masterkeys", req, nil)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create master key: %w", err)
 	}
