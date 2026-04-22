@@ -16,9 +16,10 @@ import (
 // testCryptoChain sets up a master key and returns the raw key bytes
 // and the PGP-armored version for mock server responses.
 type testCryptoChain struct {
-	masterKey []byte
-	armored   string
-	kr        *pgpcrypto.KeyRing
+	masterKey    []byte
+	armored      string
+	kr           *pgpcrypto.KeyRing
+	lastSpaceKey []byte
 }
 
 func newTestCryptoChain(t *testing.T) *testCryptoChain {
@@ -61,6 +62,7 @@ func (tc *testCryptoChain) makeEncryptedSpace(t *testing.T, id, tag string, isPr
 	if err != nil {
 		t.Fatalf("wrap space key: %v", err)
 	}
+	tc.lastSpaceKey = spaceKey
 	dek, err := lumo.DeriveDataEncryptionKey(spaceKey)
 	if err != nil {
 		t.Fatalf("derive DEK: %v", err)
@@ -79,6 +81,13 @@ func (tc *testCryptoChain) makeEncryptedSpace(t *testing.T, id, tag string, isPr
 		Encrypted:  encrypted,
 		CreateTime: "2024-01-01T00:00:00Z",
 	}
+}
+
+// deriveSpaceDEK derives the DEK from the last space key created by
+// makeEncryptedSpace.
+func (tc *testCryptoChain) deriveSpaceDEK(t *testing.T) ([]byte, error) {
+	t.Helper()
+	return lumo.DeriveDataEncryptionKey(tc.lastSpaceKey)
 }
 
 func TestListSpaces_HappyPath(t *testing.T) {
