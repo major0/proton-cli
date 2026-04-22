@@ -1,4 +1,4 @@
-package client
+package driveCmd
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-cli/api/pool"
 )
 
 // RunPipeline transfers files using a pool of workers. Each worker
@@ -30,11 +31,9 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 	// Build block maps for all jobs upfront.
 	maps := make([]*blockMap, len(jobs))
 	totalBlocks := 0
-	var totalBytes int64
 	for i := range jobs {
 		maps[i] = newBlockMap(&jobs[i])
 		totalBlocks += jobs[i].Src.BlockCount()
-		totalBytes += jobs[i].Src.TotalSize()
 	}
 
 	// Shared state: current job index and its block map.
@@ -101,19 +100,17 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 		return -1, nil, 0, 0
 	}
 
-	var wg sync.WaitGroup
+	p := pool.New(ctx, nWorkers)
 	for i := 0; i < nWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		p.Go(func(ctx context.Context) error {
 			buf := make([]byte, drive.BlockSize)
 			for {
 				if ctx.Err() != nil {
-					return
+					return nil
 				}
 				ji, job, idx, sz := claim()
 				if job == nil {
-					return
+					return nil
 				}
 				n, err := job.Src.ReadBlock(ctx, idx, buf[:sz])
 				if err != nil {
@@ -130,10 +127,12 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 				}
 				clear(buf[:n])
 			}
-		}()
+		})
 	}
 
-	wg.Wait()
+	// Wait for all workers. Pool tasks return nil — errors are
+	// collected via addErr, not through the pool.
+	_ = p.Wait()
 
 	// Close all readers and writers.
 	for i := range jobs {

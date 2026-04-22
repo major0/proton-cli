@@ -2,8 +2,6 @@ package client
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -91,41 +89,6 @@ func TestClient_MaxWorkers(t *testing.T) {
 	}
 }
 
-func TestBulkCopy_LocalFiles(t *testing.T) {
-	dir := t.TempDir()
-
-	tests := []struct {
-		name    string
-		nJobs   int
-		wantErr bool
-	}{
-		{"empty", 0, false},
-		{"single", 1, false},
-		{"multiple", 3, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var jobs []CopyJob
-			for i := 0; i < tt.nJobs; i++ {
-				srcPath := filepath.Join(dir, tt.name+string(rune('a'+i))+".bin")
-				dstPath := filepath.Join(dir, tt.name+"dst"+string(rune('a'+i))+".bin")
-				_ = os.WriteFile(srcPath, []byte("data"), 0600)
-				_ = os.WriteFile(dstPath, nil, 0600)
-				jobs = append(jobs, CopyJob{
-					Src: NewLocalReader(srcPath, 4),
-					Dst: NewLocalWriter(dstPath),
-				})
-			}
-
-			c := &Client{}
-			err := c.BulkCopy(context.Background(), jobs, TransferOpts{Workers: 2})
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("BulkCopy() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestClient_NewChildLink(t *testing.T) {
 	resolver := &mockResolver{}
 	pShare := &proton.Share{
@@ -143,25 +106,5 @@ func TestClient_NewChildLink(t *testing.T) {
 
 	if child.LinkID() != "child-1" {
 		t.Fatalf("child LinkID = %q, want %q", child.LinkID(), "child-1")
-	}
-}
-
-// TestBulkCopy_WithErrors verifies that BulkCopy wraps pipeline errors.
-func TestBulkCopy_WithErrors(t *testing.T) {
-	dir := t.TempDir()
-	srcPath := filepath.Join(dir, "missing.bin")
-	dstPath := filepath.Join(dir, "dst.bin")
-	_ = os.WriteFile(dstPath, nil, 0600)
-
-	c := &Client{}
-	err := c.BulkCopy(context.Background(), []CopyJob{
-		{
-			Src: NewLocalReader(srcPath, 1024),
-			Dst: NewLocalWriter(dstPath),
-		},
-	}, TransferOpts{Workers: 1})
-
-	if err == nil {
-		t.Fatal("expected error from missing source, got nil")
 	}
 }
