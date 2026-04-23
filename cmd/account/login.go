@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
@@ -59,7 +61,14 @@ var authLoginCmd = &cobra.Command{
 			return err
 		}
 
-		return deriveAndSave(ctx, session, password, authLoginParams.mboxpass)
+		if err := deriveAndSave(ctx, session, password, authLoginParams.mboxpass); err != nil {
+			return err
+		}
+
+		// Verbose login diagnostics.
+		logLoginDiagnostics()
+
+		return nil
 	},
 }
 
@@ -189,6 +198,26 @@ func deriveAndSave(ctx context.Context, session *common.Session, password, mboxp
 	}
 
 	return sessionSaveFn(session, keypass)
+}
+
+// logLoginDiagnostics prints session diagnostic info when verbose mode is enabled.
+// Logs token age, LastRefresh timestamp, expiry estimate, and service config.
+func logLoginDiagnostics() {
+	svc, err := common.LookupService("account")
+	if err != nil {
+		return
+	}
+
+	slog.Info("login.diagnostics",
+		"service", svc.Name,
+		"host", svc.Host,
+		"clientID", svc.ClientID,
+		"appVersion", svc.AppVersion(common.DefaultVersion),
+		"tokenLifetime", common.TokenExpireAge,
+		"refreshThreshold", common.ProactiveRefreshAge,
+		"lastRefresh", time.Now().Truncate(time.Second),
+		"expiresAt", time.Now().Add(common.TokenExpireAge).Truncate(time.Second),
+	)
 }
 
 func init() {

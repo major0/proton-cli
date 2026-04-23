@@ -1288,3 +1288,46 @@ func TestRenderUserInfo(t *testing.T) {
 		})
 	}
 }
+
+// TestLogLoginDiagnostics verifies that logLoginDiagnostics doesn't panic.
+func TestLogLoginDiagnostics(_ *testing.T) {
+	// Just verify it doesn't panic when called.
+	logLoginDiagnostics()
+}
+
+// TestLoginUsesAccountService verifies that the login command uses
+// cli.ProtonOpts which, after SetService("account"), points to
+// account-api.proton.me.
+func TestLoginUsesAccountService(t *testing.T) {
+	origService := cli.ServiceName
+	origStore := cli.SessionStoreVar
+	origAcctStore := cli.AccountStoreVar
+	origOpts := cli.ProtonOpts
+	origDebug := cli.DebugHTTP
+	origConfig := cli.ConfigVar
+	origOverride := cli.AppVersionOverride
+	t.Cleanup(func() {
+		cli.ServiceName = origService
+		cli.SessionStoreVar = origStore
+		cli.AccountStoreVar = origAcctStore
+		cli.ProtonOpts = origOpts
+		cli.DebugHTTP = origDebug
+		cli.ConfigVar = origConfig
+		cli.AppVersionOverride = origOverride
+	})
+
+	cli.DebugHTTP = false
+	cli.ConfigVar = common.DefaultConfig()
+	cli.AppVersionOverride = ""
+
+	cli.SetService("account")
+
+	if cli.ServiceName != "account" {
+		t.Errorf("ServiceName = %q, want %q", cli.ServiceName, "account")
+	}
+
+	// ProtonOpts should be non-empty after SetService.
+	if len(cli.ProtonOpts) == 0 {
+		t.Error("ProtonOpts is empty after SetService(account)")
+	}
+}

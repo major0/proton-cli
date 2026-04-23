@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/major0/proton-cli/api"
@@ -19,12 +20,16 @@ const (
 	statusFresh   sessionStatus = "fresh"
 	statusWarn    sessionStatus = "warn"
 	statusExpired sessionStatus = "expired"
+	statusStale   sessionStatus = "stale"
 	statusNone    sessionStatus = "none"
 )
 
 // serviceStatus holds display data for one service session.
 type serviceStatus struct {
 	Service     string        `json:"service"`
+	Host        string        `json:"host"`
+	ClientID    string        `json:"client_id,omitempty"`
+	AppVersion  string        `json:"app_version,omitempty"`
 	Status      sessionStatus `json:"status"`
 	UID         string        `json:"uid,omitempty"`
 	LastRefresh time.Time     `json:"last_refresh,omitempty"`
@@ -46,17 +51,69 @@ func init() {
 	accountStatusCmd.Flags().BoolVar(&statusJSON, "json", false, "Output as JSON")
 }
 
+// buildServiceStatus builds the status for a single service, given the
+// account session's LastRefresh for staleness comparison.
+func buildServiceStatus(svc api.ServiceConfig, cfg *api.SessionConfig, acctRefresh time.Time, verbose bool) serviceStatus {
+	ss := serviceStatus{
+		Service: svc.Name,
+		Host:    svc.Host,
+	}
+
+	if verbose {
+		ss.ClientID = svc.ClientID
+		ss.AppVersion = svc.AppVersion(api.DefaultVersion)
+	}
+
+	if cfg == nil {
+		ss.Status = statusNone
+		return ss
+	}
+
+	ss.UID = cfg.UID
+	ss.LastRefresh = cfg.LastRefresh
+
+	if cfg.LastRefresh.IsZero() {
+		ss.Status = statusStale
+		ss.Age = "unknown"
+		ss.ExpiresIn = "unknown"
+		return ss
+	}
+
+	age := time.Since(cfg.LastRefresh)
+	ss.Age = age.Truncate(time.Second).String()
+
+	remaining := api.TokenExpireAge - age
+	switch {
+	case remaining < 0:
+		ss.ExpiresIn = "expired"
+		ss.Status = statusExpired
+	case age > api.TokenWarnAge:
+		ss.ExpiresIn = remaining.Truncate(time.Second).String()
+		ss.Status = statusWarn
+	default:
+		ss.ExpiresIn = remaining.Truncate(time.Second).String()
+		ss.Status = statusFresh
+	}
+
+	// Override with staleness relative to account session for non-account services.
+	if svc.Name != "account" && !acctRefresh.IsZero() && api.IsStale(acctRefresh, cfg.LastRefresh) {
+		ss.Status = statusStale
+	}
+
+	return ss
+}
+
 func runAccountStatus(_ *cobra.Command, _ []string) error {
-	// Read the session index directly to enumerate all services.
 	sessionFile := cli.ConfigFilePath()
 	if sessionFile != "" {
-		// ConfigFilePath returns the config.yaml path; session file is alongside it.
 		sessionFile = sessionFile[:len(sessionFile)-len("config.yaml")] + "sessions.db"
 	}
 
 	kr := internal.SystemKeyring{}
-	idx := internal.NewSessionStore(sessionFile, cli.Account, "*", kr)
+	verbose := cli.DebugHTTP || false // verbose when -vv or higher
 
+	// Check if any account exists.
+	idx := internal.NewSessionStore(sessionFile, cli.Account, "*", kr)
 	accounts, err := idx.List()
 	if err != nil {
 		return fmt.Errorf("reading session index: %w", err)
@@ -67,50 +124,48 @@ func runAccountStatus(_ *cobra.Command, _ []string) error {
 		os.Exit(1)
 	}
 
-	// Known services to check.
-	services := []string{"*", "account", "drive", "lumo", "mail", "calendar", "pass"}
+	// Load account session for staleness comparison.
+	acctStore := internal.NewSessionStore(sessionFile, cli.Account, "account", kr)
+	acctCfg, _ := acctStore.Load()
+
+	// Also try wildcard for backward compat.
+	if acctCfg == nil {
+		wildcardStore := internal.NewSessionStore(sessionFile, cli.Account, "*", kr)
+		acctCfg, _ = wildcardStore.Load()
+	}
+
+	var acctRefresh time.Time
+	if acctCfg != nil {
+		acctRefresh = acctCfg.LastRefresh
+	}
+
+	// Build status for all registered services from the registry.
+	serviceNames := make([]string, 0, len(api.Services))
+	for name := range api.Services {
+		serviceNames = append(serviceNames, name)
+	}
+	sort.Strings(serviceNames)
+
+	// Also check wildcard for backward compat.
+	allServices := append([]string{"*"}, serviceNames...)
 
 	var results []serviceStatus
 
-	for _, svc := range services {
-		store := internal.NewSessionStore(sessionFile, cli.Account, svc, kr)
-		cfg, err := store.Load()
-		if err != nil {
-			results = append(results, serviceStatus{
-				Service: svc,
-				Status:  statusNone,
-			})
-			continue
-		}
-
-		ss := serviceStatus{
-			Service:     svc,
-			UID:         cfg.UID,
-			LastRefresh: cfg.LastRefresh,
-		}
-
-		if cfg.LastRefresh.IsZero() {
-			ss.Status = statusWarn
-			ss.Age = "unknown"
-			ss.ExpiresIn = "unknown"
+	for _, svcName := range allServices {
+		var svc api.ServiceConfig
+		if svcName == "*" {
+			svc = api.ServiceConfig{Name: "*", Host: "-", ClientID: "-"}
 		} else {
-			age := time.Since(cfg.LastRefresh)
-			ss.Age = age.Truncate(time.Second).String()
-
-			remaining := api.TokenExpireAge - age
-			switch {
-			case remaining < 0:
-				ss.ExpiresIn = "expired"
-				ss.Status = statusExpired
-			case age > api.TokenWarnAge:
-				ss.ExpiresIn = remaining.Truncate(time.Second).String()
-				ss.Status = statusWarn
-			default:
-				ss.ExpiresIn = remaining.Truncate(time.Second).String()
-				ss.Status = statusFresh
-			}
+			svc, _ = api.LookupService(svcName)
 		}
 
+		store := internal.NewSessionStore(sessionFile, cli.Account, svcName, kr)
+		cfg, loadErr := store.Load()
+		if loadErr != nil {
+			cfg = nil
+		}
+
+		ss := buildServiceStatus(svc, cfg, acctRefresh, verbose)
 		results = append(results, ss)
 	}
 
@@ -122,8 +177,15 @@ func runAccountStatus(_ *cobra.Command, _ []string) error {
 
 	// Human-readable output.
 	fmt.Fprintf(os.Stderr, "Account: %s\n\n", cli.Account)
-	fmt.Fprintf(os.Stderr, "%-12s  %-8s  %-14s  %-14s  %s\n",
-		"SERVICE", "STATUS", "AGE", "EXPIRES IN", "UID")
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "%-12s  %-8s  %-14s  %-14s  %-40s  %-15s  %s\n",
+			"SERVICE", "STATUS", "AGE", "EXPIRES IN", "HOST", "UID", "APP VERSION")
+	} else {
+		fmt.Fprintf(os.Stderr, "%-12s  %-8s  %-14s  %-14s  %s\n",
+			"SERVICE", "STATUS", "AGE", "EXPIRES IN", "HOST")
+	}
+
 	for _, s := range results {
 		uid := s.UID
 		if uid == "" {
@@ -139,8 +201,22 @@ func runAccountStatus(_ *cobra.Command, _ []string) error {
 		if expires == "" {
 			expires = "-"
 		}
-		fmt.Fprintf(os.Stderr, "%-12s  %-8s  %-14s  %-14s  %s\n",
-			s.Service, s.Status, age, expires, uid)
+		host := s.Host
+		if len(host) > 40 {
+			host = host[:40] + "..."
+		}
+
+		if verbose {
+			appVer := s.AppVersion
+			if appVer == "" {
+				appVer = "-"
+			}
+			fmt.Fprintf(os.Stderr, "%-12s  %-8s  %-14s  %-14s  %-40s  %-15s  %s\n",
+				s.Service, s.Status, age, expires, host, uid, appVer)
+		} else {
+			fmt.Fprintf(os.Stderr, "%-12s  %-8s  %-14s  %-14s  %s\n",
+				s.Service, s.Status, age, expires, host)
+		}
 	}
 
 	return nil
