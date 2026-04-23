@@ -210,6 +210,9 @@ func (s *Session) AddressKeyRings() map[string]*crypto.KeyRing {
 // User returns the proton.User for this session.
 func (s *Session) User() proton.User { return s.user }
 
+// CookieJar returns the session's cookie jar.
+func (s *Session) CookieJar() http.CookieJar { return s.cookieJar }
+
 // Addresses fetches addresses from the API.
 // Service-specific clients call this during their own construction.
 func (s *Session) Addresses(ctx context.Context) ([]proton.Address, error) {
