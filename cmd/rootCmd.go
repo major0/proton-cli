@@ -128,8 +128,10 @@ func AddCommand(cmd *cobra.Command) {
 
 // SetService configures the CLI for a specific service. Called by subcommand
 // group PersistentPreRunE hooks. It rebuilds SessionStoreVar with a
-// service-specific store and rebuilds ProtonOpts with the service's host
-// and app version.
+// service-specific store and rebuilds ProtonOpts with the service's host.
+// The Resty client (used by go-proton-api for login, GetUser, etc.) uses
+// the global AppVersion. DoJSON/DoSSE resolve per-host versions via
+// resolveAppVersion.
 func SetService(service string) {
 	ServiceName = service
 	svc, _ := common.LookupService(service)
@@ -140,7 +142,7 @@ func SetService(service string) {
 
 	ProtonOpts = []proton.Option{
 		proton.WithHostURL(svc.Host),
-		proton.WithAppVersion(svc.AppVersion("")),
+		proton.WithAppVersion(AppVersion),
 		proton.WithUserAgent(UserAgent),
 	}
 

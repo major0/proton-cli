@@ -31,7 +31,7 @@ func (sc ServiceConfig) AppVersion(version string) string {
 
 // Services is the global service registry.
 var Services = map[string]ServiceConfig{
-	"account": {Name: "account", Host: "https://account.proton.me/api", ClientID: "web-account", Version: "5.2.0"},
+	"account": {Name: "account", Host: "https://account-api.proton.me/api", ClientID: "web-account", Version: "5.2.0"},
 	"drive":   {Name: "drive", Host: "https://drive-api.proton.me/api", ClientID: "web-drive", Version: "5.2.0"},
 	"lumo":    {Name: "lumo", Host: "https://lumo.proton.me/api", ClientID: "web-lumo", Version: "1.3.3.4"},
 }

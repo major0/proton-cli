@@ -44,7 +44,7 @@ func TestServicesRegistry(t *testing.T) {
 		clientID string
 		version  string
 	}{
-		{"account", "https://account.proton.me/api", "web-account", "5.2.0"},
+		{"account", "https://account-api.proton.me/api", "web-account", "5.2.0"},
 		{"drive", "https://drive-api.proton.me/api", "web-drive", "5.2.0"},
 		{"lumo", "https://lumo.proton.me/api", "web-lumo", "1.3.3.4"},
 	}
@@ -81,8 +81,8 @@ func TestLookupService_Found(t *testing.T) {
 	if svc.Name != "account" {
 		t.Errorf("Name = %q, want %q", svc.Name, "account")
 	}
-	if svc.Host != "https://account.proton.me/api" {
-		t.Errorf("Host = %q, want %q", svc.Host, "https://account.proton.me/api")
+	if svc.Host != "https://account-api.proton.me/api" {
+		t.Errorf("Host = %q, want %q", svc.Host, "https://account-api.proton.me/api")
 	}
 	if svc.ClientID != "web-account" {
 		t.Errorf("ClientID = %q, want %q", svc.ClientID, "web-account")
@@ -108,7 +108,7 @@ func TestLookupServiceByHost_AllRegistered(t *testing.T) {
 		host     string
 		wantName string
 	}{
-		{"account.proton.me", "account"},
+		{"account-api.proton.me", "account"},
 		{"drive-api.proton.me", "drive"},
 		{"lumo.proton.me", "lumo"},
 	}

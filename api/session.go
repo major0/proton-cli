@@ -304,6 +304,19 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	// Log Set-Cookie headers from the response.
+	if setCookies := resp.Header.Values("Set-Cookie"); len(setCookies) > 0 {
+		names := make([]string, len(setCookies))
+		for i, sc := range setCookies {
+			if idx := strings.Index(sc, "="); idx > 0 {
+				names[i] = sc[:idx]
+			} else {
+				names[i] = sc[:min(20, len(sc))]
+			}
+		}
+		slog.Debug("doJSON.set-cookie", "url", reqURL, "cookies", names)
+	}
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("doJSON: read response: %w", err)
@@ -362,7 +375,10 @@ func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, r
 	}
 
 	req.Header.Set("x-pm-uid", s.Auth.UID)
-	// No Authorization: Bearer header — auth via cookie jar.
+	// Prefer cookie auth (AUTH-<uid>=<token>) but fall back to Bearer.
+	// The AUTH cookie is set by POST /core/v4/auth/cookies. If not present,
+	// Bearer auth works but grants restricted scopes.
+	req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
 	appVer := s.resolveAppVersion(reqURL)
 	if appVer != "" {
 		req.Header.Set("x-pm-appversion", appVer)
@@ -377,12 +393,35 @@ func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, r
 
 	slog.Debug("doJSONCookie.request", "method", method, "url", reqURL, "appversion", appVer)
 
+	// Log cookies being sent.
+	if reqParsed, err := url.Parse(reqURL); err == nil {
+		outCookies := s.cookieJar.Cookies(reqParsed)
+		names := make([]string, len(outCookies))
+		for i, c := range outCookies {
+			names[i] = c.Name
+		}
+		slog.Debug("doJSONCookie.sending-cookies", "url", reqURL, "cookies", names)
+	}
+
 	httpClient := &http.Client{Jar: s.cookieJar}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("doJSONCookie: %s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	// Log Set-Cookie headers from the response.
+	if setCookies := resp.Header.Values("Set-Cookie"); len(setCookies) > 0 {
+		names := make([]string, len(setCookies))
+		for i, sc := range setCookies {
+			if idx := strings.Index(sc, "="); idx > 0 {
+				names[i] = sc[:idx]
+			} else {
+				names[i] = sc[:min(20, len(sc))]
+			}
+		}
+		slog.Debug("doJSONCookie.set-cookie", "url", reqURL, "cookies", names)
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -609,6 +648,12 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 		if err != nil {
 			return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
 		}
+
+		// TODO: Establish cookie-based auth via POST /core/v4/auth/cookies
+		// to get the AUTH-<uid>=<token> cookie for the fork push. This is
+		// needed to grant service-specific scopes like "lumo". Currently
+		// the fork push uses a synthetic AUTH cookie from the access token,
+		// which grants restricted scopes. See docs/session-fork-protocol.md.
 
 		// The fork push goes to the account host with the account app version.
 		// The fork pull goes to the target service host with the target app version.

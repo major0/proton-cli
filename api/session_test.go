@@ -1094,9 +1094,9 @@ func TestDoSSE_AbsoluteURLResolvesAppVersion(t *testing.T) {
 
 // --- DoJSONCookie tests ---
 
-// TestDoJSONCookie_NoAuthorizationHeader verifies that DoJSONCookie does NOT
-// send an Authorization: Bearer header.
-func TestDoJSONCookie_NoAuthorizationHeader(t *testing.T) {
+// TestDoJSONCookie_SendsAuthHeaders verifies that DoJSONCookie sends both
+// Bearer auth (as fallback) and cookie auth, plus x-pm-uid.
+func TestDoJSONCookie_SendsAuthHeaders(t *testing.T) {
 	var gotAuth, gotUID, gotAppVersion string
 	var gotCookies []*http.Cookie
 
@@ -1129,9 +1129,9 @@ func TestDoJSONCookie_NoAuthorizationHeader(t *testing.T) {
 		t.Fatalf("DoJSONCookie: %v", err)
 	}
 
-	// No Authorization header.
-	if gotAuth != "" {
-		t.Fatalf("Authorization = %q, want empty", gotAuth)
+	// Bearer auth is sent as fallback.
+	if gotAuth != "Bearer parent-at" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer parent-at")
 	}
 
 	// x-pm-uid must be present.
