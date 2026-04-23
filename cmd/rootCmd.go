@@ -40,6 +40,10 @@ var (
 	// Used by RestoreServiceSession as the fork source.
 	AccountStoreVar common.SessionStore
 
+	// CookieStoreVar handles loading/saving cookie-based session data.
+	// Used by RestoreServiceSession for cookie auth persistence.
+	CookieStoreVar common.SessionStore
+
 	// Account holds the current --account flag value.
 	Account string
 
@@ -103,6 +107,7 @@ var (
 
 			SessionStoreVar = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", internal.SystemKeyring{})
 			AccountStoreVar = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "account", internal.SystemKeyring{})
+			CookieStoreVar = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "cookie", internal.SystemKeyring{})
 			ServiceName = "*"
 
 			// Load application config.
@@ -174,7 +179,7 @@ func RestoreSession(ctx context.Context) (*common.Session, error) {
 		svc, _ := common.LookupService(ServiceName)
 		session, err := common.RestoreServiceSession(
 			ctx, ServiceName, ProtonOpts,
-			SessionStoreVar, AccountStoreVar,
+			SessionStoreVar, AccountStoreVar, CookieStoreVar,
 			svc.AppVersion(""), nil,
 		)
 		if err != nil {

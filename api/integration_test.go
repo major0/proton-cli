@@ -345,7 +345,7 @@ func TestIntegration_ProactiveRefreshCascade(t *testing.T) {
 	// Create a session with a real proton.Manager pointing at our mock.
 	manager := proton.New(
 		proton.WithHostURL(srv.URL),
-		proton.WithAppVersion("web-account@5.0.999.999+proton-cli"),
+		proton.WithAppVersion("web-account@5.0.999.999"),
 	)
 	client := manager.NewClient("uid", "at", "rt")
 
@@ -498,7 +498,7 @@ func TestIntegration_RestoreServiceSessionDecisionLogic(t *testing.T) {
 	_, err := RestoreServiceSession(
 		context.Background(), "nonexistent", nil,
 		&errStore{err: ErrKeyNotFound}, &errStore{err: ErrKeyNotFound},
-		DefaultVersion, nil,
+		nil, DefaultVersion, nil,
 	)
 	if !errors.Is(err, ErrUnknownService) {
 		t.Errorf("unknown service: got %v, want ErrUnknownService", err)
@@ -508,7 +508,7 @@ func TestIntegration_RestoreServiceSessionDecisionLogic(t *testing.T) {
 	_, err = RestoreServiceSession(
 		context.Background(), "drive", nil,
 		&errStore{err: ErrKeyNotFound}, &errStore{err: ErrKeyNotFound},
-		DefaultVersion, nil,
+		nil, DefaultVersion, nil,
 	)
 	if !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("no account: got %v, want ErrNotLoggedIn", err)
@@ -518,7 +518,7 @@ func TestIntegration_RestoreServiceSessionDecisionLogic(t *testing.T) {
 	_, err = RestoreServiceSession(
 		context.Background(), "drive", nil,
 		&errStore{err: ErrKeyNotFound}, &errStore{err: errors.New("disk error")},
-		DefaultVersion, nil,
+		nil, DefaultVersion, nil,
 	)
 	if err == nil || !containsError(err, "disk error") {
 		t.Errorf("account error: got %v, want containing 'disk error'", err)
@@ -540,7 +540,7 @@ func TestIntegration_RestoreServiceSessionDecisionLogic(t *testing.T) {
 	_, err = RestoreServiceSession(
 		context.Background(), "drive", nil,
 		&errStore{err: errors.New("svc disk error")}, acctStore,
-		DefaultVersion, nil,
+		nil, DefaultVersion, nil,
 	)
 	// The error may come from SessionFromCredentials (no server) or from
 	// the service store — either way, it should be non-nil.

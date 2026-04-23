@@ -100,6 +100,7 @@ func TestPersistentPreRunE(t *testing.T) {
 	origOpts := ProtonOpts
 	origStore := SessionStoreVar
 	origConfig := ConfigVar
+	origCookieStore := CookieStoreVar
 	t.Cleanup(func() {
 		rootParams = origParams
 		Timeout = origTimeout
@@ -108,6 +109,7 @@ func TestPersistentPreRunE(t *testing.T) {
 		ProtonOpts = origOpts
 		SessionStoreVar = origStore
 		ConfigVar = origConfig
+		CookieStoreVar = origCookieStore
 	})
 
 	tests := []struct {
@@ -322,17 +324,20 @@ func TestRestoreSession_ServiceAware(t *testing.T) {
 	origService := ServiceName
 	origStore := SessionStoreVar
 	origAcctStore := AccountStoreVar
+	origCookieStore := CookieStoreVar
 	origOpts := ProtonOpts
 	t.Cleanup(func() {
 		ServiceName = origService
 		SessionStoreVar = origStore
 		AccountStoreVar = origAcctStore
+		CookieStoreVar = origCookieStore
 		ProtonOpts = origOpts
 	})
 
 	ServiceName = "drive"
 	SessionStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
 	AccountStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
+	CookieStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
 
 	_, err := RestoreSession(context.Background())
 	if err == nil {

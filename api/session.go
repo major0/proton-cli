@@ -43,6 +43,11 @@ const DefaultThrottleMaxDelay = 30 * time.Second
 // When age exceeds this value, a lightweight API call triggers token refresh.
 const ProactiveRefreshAge = 1 * time.Hour
 
+// ProtonAccept is the Accept header value for Proton API requests.
+// The vendor media type triggers full API behavior including service-specific
+// scope grants on fork responses.
+const ProtonAccept = "application/vnd.protonmail.v1+json"
+
 // TokenWarnAge is the age at which session tokens are considered near expiry.
 const TokenWarnAge = 20 * time.Hour
 
@@ -88,6 +93,13 @@ func loadCookies(jar http.CookieJar, cookies []serialCookie, apiURL *url.URL) {
 		}
 	}
 	jar.SetCookies(apiURL, httpCookies)
+}
+
+// Doer is the interface for making authenticated Proton API requests.
+// Both Session (Bearer auth) and CookieSession (cookie auth) implement this.
+type Doer interface {
+	DoJSON(ctx context.Context, method, path string, body, result any) error
+	DoSSE(ctx context.Context, path string, body any) (io.ReadCloser, error)
 }
 
 // Session holds an authenticated Proton API session with decrypted keyrings.
@@ -296,7 +308,7 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", ProtonAccept)
 
 	slog.Debug("doJSON.request", "method", method, "url", reqURL, "appversion", appVer)
 
@@ -392,7 +404,7 @@ func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, r
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", ProtonAccept)
 
 	slog.Debug("doJSONCookie.request", "method", method, "url", reqURL, "appversion", appVer)
 
@@ -573,7 +585,7 @@ func proactiveRefresh(ctx context.Context, session *Session, config *SessionConf
 //     fork from account session via ForkSessionWithKeyPass.
 //  6. Set session.BaseURL and AppVersion from the ServiceConfig.
 //  7. Return session.
-func RestoreServiceSession(ctx context.Context, service string, options []proton.Option, store SessionStore, accountStore SessionStore, version string, managerHook func(*proton.Manager)) (*Session, error) {
+func RestoreServiceSession(ctx context.Context, service string, options []proton.Option, store SessionStore, accountStore SessionStore, cookieStore SessionStore, version string, managerHook func(*proton.Manager)) (*Session, error) {
 	svc, err := LookupService(service)
 	if err != nil {
 		return nil, err
@@ -652,12 +664,6 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 			return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
 		}
 
-		// TODO: Establish cookie-based auth via POST /core/v4/auth/cookies
-		// to get the AUTH-<uid>=<token> cookie for the fork push. This is
-		// needed to grant service-specific scopes like "lumo". Currently
-		// the fork push uses a synthetic AUTH cookie from the access token,
-		// which grants restricted scopes. See docs/session-fork-protocol.md.
-
 		// The fork push goes to the account host with the account app version.
 		// The fork pull goes to the target service host with the target app version.
 
@@ -671,7 +677,16 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 			slog.Debug("fork.cookies", "host", svc.Host, "cookies", names)
 		}
 
-		child, childKeyPass, err := ForkSessionWithKeyPass(ctx, acctSession, svc, version, keypass)
+		var child *Session
+		var childKeyPass []byte
+
+		if svc.CookieAuth && cookieStore != nil {
+			// Cookie-aware fork: use CookieSession for the fork push.
+			child, childKeyPass, err = cookieFork(ctx, acctSession, acctConfig, svc, version, keypass, cookieStore)
+		} else {
+			// Bearer fork: existing behavior.
+			child, childKeyPass, err = ForkSessionWithKeyPass(ctx, acctSession, svc, version, keypass)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
 		}

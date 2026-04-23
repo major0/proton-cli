@@ -867,7 +867,7 @@ func TestRestoreServiceSession_NoAccountSession(t *testing.T) {
 
 	_, err := RestoreServiceSession(
 		context.Background(), "drive", nil,
-		svcStore, acctStore, DefaultVersion, nil,
+		svcStore, acctStore, nil, DefaultVersion, nil,
 	)
 	if !errors.Is(err, ErrNotLoggedIn) {
 		t.Fatalf("expected ErrNotLoggedIn, got %v", err)
@@ -882,7 +882,7 @@ func TestRestoreServiceSession_UnknownService(t *testing.T) {
 
 	_, err := RestoreServiceSession(
 		context.Background(), "nonexistent", nil,
-		svcStore, acctStore, DefaultVersion, nil,
+		svcStore, acctStore, nil, DefaultVersion, nil,
 	)
 	if !errors.Is(err, ErrUnknownService) {
 		t.Fatalf("expected ErrUnknownService, got %v", err)
@@ -897,7 +897,7 @@ func TestRestoreServiceSession_AccountStoreError(t *testing.T) {
 
 	_, err := RestoreServiceSession(
 		context.Background(), "drive", nil,
-		svcStore, acctStore, DefaultVersion, nil,
+		svcStore, acctStore, nil, DefaultVersion, nil,
 	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -933,7 +933,7 @@ func TestRestoreSessionBackwardCompat(t *testing.T) {
 func TestResolveAppVersion_AbsoluteKnownHost(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	s := &Session{
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		cookieJar:  jar,
 	}
 
@@ -941,9 +941,9 @@ func TestResolveAppVersion_AbsoluteKnownHost(t *testing.T) {
 		url  string
 		want string
 	}{
-		{"https://account.proton.me/api/core/v4/users", "web-account@5.2.0+proton-cli"},
-		{"https://lumo.proton.me/api/lumo/v1/spaces", "web-lumo@1.3.3.4+proton-cli"},
-		{"https://drive-api.proton.me/api/drive/shares", "web-drive@5.2.0+proton-cli"},
+		{"https://account.proton.me/api/core/v4/users", "web-account@5.2.0"},
+		{"https://lumo.proton.me/api/lumo/v1/spaces", "web-lumo@1.3.3.4"},
+		{"https://drive-api.proton.me/api/drive/shares", "web-drive@5.2.0"},
 	}
 
 	for _, tt := range tests {
@@ -961,7 +961,7 @@ func TestResolveAppVersion_AbsoluteKnownHost(t *testing.T) {
 func TestResolveAppVersion_RelativePath(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	s := &Session{
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		cookieJar:  jar,
 	}
 
@@ -976,7 +976,7 @@ func TestResolveAppVersion_RelativePath(t *testing.T) {
 func TestResolveAppVersion_UnknownHost(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	s := &Session{
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		cookieJar:  jar,
 	}
 
@@ -991,7 +991,7 @@ func TestResolveAppVersion_UnknownHost(t *testing.T) {
 func TestResolveAppVersion_NeverEmpty(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	s := &Session{
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		cookieJar:  jar,
 	}
 
@@ -1027,7 +1027,7 @@ func TestDoJSON_AbsoluteURLResolvesAppVersion(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	s := &Session{
 		Auth:       proton.Auth{UID: "uid", AccessToken: "at"},
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		cookieJar:  jar,
 	}
 
@@ -1037,8 +1037,8 @@ func TestDoJSON_AbsoluteURLResolvesAppVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoJSON relative: %v", err)
 	}
-	if gotAppVersion != "web-account@5.2.0+proton-cli" {
-		t.Fatalf("relative path appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	if gotAppVersion != "web-account@5.2.0" {
+		t.Fatalf("relative path appversion = %q, want %q", gotAppVersion, "web-account@5.2.0")
 	}
 
 	// Absolute URL to the test server (unknown host) should fall back to session's AppVersion.
@@ -1046,8 +1046,8 @@ func TestDoJSON_AbsoluteURLResolvesAppVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DoJSON absolute unknown: %v", err)
 	}
-	if gotAppVersion != "web-account@5.2.0+proton-cli" {
-		t.Fatalf("unknown host appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	if gotAppVersion != "web-account@5.2.0" {
+		t.Fatalf("unknown host appversion = %q, want %q", gotAppVersion, "web-account@5.2.0")
 	}
 }
 
@@ -1066,7 +1066,7 @@ func TestDoSSE_AbsoluteURLResolvesAppVersion(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	s := &Session{
 		Auth:       proton.Auth{UID: "uid", AccessToken: "at"},
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		cookieJar:  jar,
 	}
 
@@ -1077,8 +1077,8 @@ func TestDoSSE_AbsoluteURLResolvesAppVersion(t *testing.T) {
 		t.Fatalf("DoSSE relative: %v", err)
 	}
 	_ = body.Close()
-	if gotAppVersion != "web-account@5.2.0+proton-cli" {
-		t.Fatalf("relative path appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	if gotAppVersion != "web-account@5.2.0" {
+		t.Fatalf("relative path appversion = %q, want %q", gotAppVersion, "web-account@5.2.0")
 	}
 
 	// Absolute URL to the test server (unknown host) should fall back.
@@ -1087,8 +1087,8 @@ func TestDoSSE_AbsoluteURLResolvesAppVersion(t *testing.T) {
 		t.Fatalf("DoSSE absolute unknown: %v", err)
 	}
 	_ = body.Close()
-	if gotAppVersion != "web-account@5.2.0+proton-cli" {
-		t.Fatalf("unknown host appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	if gotAppVersion != "web-account@5.2.0" {
+		t.Fatalf("unknown host appversion = %q, want %q", gotAppVersion, "web-account@5.2.0")
 	}
 }
 
@@ -1119,7 +1119,7 @@ func TestDoJSONCookie_SendsAuthHeaders(t *testing.T) {
 
 	s := &Session{
 		Auth:       proton.Auth{UID: "parent-uid", AccessToken: "parent-at"},
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		BaseURL:    srv.URL,
 		cookieJar:  jar,
 	}
@@ -1140,8 +1140,8 @@ func TestDoJSONCookie_SendsAuthHeaders(t *testing.T) {
 	}
 
 	// x-pm-appversion should be resolved (falls back to session default for test server).
-	if gotAppVersion != "web-account@5.2.0+proton-cli" {
-		t.Fatalf("x-pm-appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	if gotAppVersion != "web-account@5.2.0" {
+		t.Fatalf("x-pm-appversion = %q, want %q", gotAppVersion, "web-account@5.2.0")
 	}
 
 	// AUTH-* cookie must be sent.
@@ -1171,7 +1171,7 @@ func TestDoJSONCookie_UnmarshalResult(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	s := &Session{
 		Auth:       proton.Auth{UID: "uid", AccessToken: "at"},
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		BaseURL:    srv.URL,
 		cookieJar:  jar,
 	}
@@ -1201,7 +1201,7 @@ func TestDoJSONCookie_APIError(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	s := &Session{
 		Auth:       proton.Auth{UID: "uid", AccessToken: "at"},
-		AppVersion: "web-account@5.2.0+proton-cli",
+		AppVersion: "web-account@5.2.0",
 		BaseURL:    srv.URL,
 		cookieJar:  jar,
 	}

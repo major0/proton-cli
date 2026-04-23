@@ -70,7 +70,7 @@ func TestForkResponseToSessionMapping_Property(t *testing.T) {
 
 		// Verify AppVersion format — uses service's default version, not the
 		// version parameter (which is for the Resty client).
-		wantAppVer := clientID + "@" + version + "+proton-cli"
+		wantAppVer := clientID + "@" + version + ""
 		if session.AppVersion != wantAppVer {
 			t.Fatalf("AppVersion: got %q, want %q", session.AppVersion, wantAppVer)
 		}
@@ -168,7 +168,7 @@ func TestForkPullGoesToCorrectHost(t *testing.T) {
 			UID:         "parent-uid",
 			AccessToken: "parent-token",
 		},
-		AppVersion: "web-account@1.0.0+proton-cli",
+		AppVersion: "web-account@1.0.0",
 		UserAgent:  "proton-cli/test",
 		cookieJar:  jar,
 	}
@@ -373,8 +373,8 @@ func TestBuildChildSession(t *testing.T) {
 	if session.BaseURL != "https://drive-api.proton.me/api" {
 		t.Fatalf("BaseURL = %q, want %q", session.BaseURL, "https://drive-api.proton.me/api")
 	}
-	if session.AppVersion != "web-drive@5.2.0+proton-cli" {
-		t.Fatalf("AppVersion = %q, want %q", session.AppVersion, "web-drive@5.2.0+proton-cli")
+	if session.AppVersion != "web-drive@5.2.0" {
+		t.Fatalf("AppVersion = %q, want %q", session.AppVersion, "web-drive@5.2.0")
 	}
 	if session.Client == nil {
 		t.Fatal("Client is nil")

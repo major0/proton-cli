@@ -17,7 +17,7 @@ func TestAppVersionFormat_Property(t *testing.T) {
 		sc := ServiceConfig{ClientID: clientID, Version: version}
 		got := sc.AppVersion(version)
 
-		want := clientID + "@" + version + "+proton-cli"
+		want := clientID + "@" + version + ""
 		if got != want {
 			t.Fatalf("AppVersion(%q) = %q, want %q", version, got, want)
 		}
@@ -29,7 +29,7 @@ func TestAppVersionFormat_Property(t *testing.T) {
 func TestAppVersionDefaultVersion(t *testing.T) {
 	sc := ServiceConfig{ClientID: "web-lumo", Version: "1.3.3.4"}
 	got := sc.AppVersion("")
-	want := "web-lumo@1.3.3.4+proton-cli"
+	want := "web-lumo@1.3.3.4"
 	if got != want {
 		t.Fatalf("AppVersion(\"\") = %q, want %q", got, want)
 	}
@@ -39,14 +39,15 @@ func TestAppVersionDefaultVersion(t *testing.T) {
 // entries with correct hosts, client IDs, and versions.
 func TestServicesRegistry(t *testing.T) {
 	tests := []struct {
-		name     string
-		host     string
-		clientID string
-		version  string
+		name       string
+		host       string
+		clientID   string
+		version    string
+		cookieAuth bool
 	}{
-		{"account", "https://account-api.proton.me/api", "web-account", "5.2.0"},
-		{"drive", "https://drive-api.proton.me/api", "web-drive", "5.2.0"},
-		{"lumo", "https://lumo.proton.me/api", "web-lumo", "1.3.3.4"},
+		{"account", "https://account.proton.me/api", "web-account", "5.2.0", true},
+		{"drive", "https://drive-api.proton.me/api", "web-drive", "5.2.0", false},
+		{"lumo", "https://lumo.proton.me/api", "web-lumo", "1.3.3.4", true},
 	}
 
 	for _, tt := range tests {
@@ -67,6 +68,9 @@ func TestServicesRegistry(t *testing.T) {
 			if svc.Version != tt.version {
 				t.Errorf("Version = %q, want %q", svc.Version, tt.version)
 			}
+			if svc.CookieAuth != tt.cookieAuth {
+				t.Errorf("CookieAuth = %v, want %v", svc.CookieAuth, tt.cookieAuth)
+			}
 		})
 	}
 }
@@ -81,8 +85,8 @@ func TestLookupService_Found(t *testing.T) {
 	if svc.Name != "account" {
 		t.Errorf("Name = %q, want %q", svc.Name, "account")
 	}
-	if svc.Host != "https://account-api.proton.me/api" {
-		t.Errorf("Host = %q, want %q", svc.Host, "https://account-api.proton.me/api")
+	if svc.Host != "https://account.proton.me/api" {
+		t.Errorf("Host = %q, want %q", svc.Host, "https://account.proton.me/api")
 	}
 	if svc.ClientID != "web-account" {
 		t.Errorf("ClientID = %q, want %q", svc.ClientID, "web-account")
@@ -108,7 +112,7 @@ func TestLookupServiceByHost_AllRegistered(t *testing.T) {
 		host     string
 		wantName string
 	}{
-		{"account-api.proton.me", "account"},
+		{"account.proton.me", "account"},
 		{"drive-api.proton.me", "drive"},
 		{"lumo.proton.me", "lumo"},
 	}
