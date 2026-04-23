@@ -19,15 +19,17 @@ type ShareConfig struct {
 
 // Config holds application-level settings loaded from YAML.
 type Config struct {
-	Shares   map[string]ShareConfig `yaml:"shares,omitempty"`
-	Defaults map[string]string      `yaml:"defaults,omitempty"`
+	Shares          map[string]ShareConfig `yaml:"shares,omitempty"`
+	Defaults        map[string]string      `yaml:"defaults,omitempty"`
+	ServiceVersions map[string]string      `yaml:"service_versions,omitempty"`
 }
 
 // DefaultConfig returns a Config with all defaults (empty maps, caching off).
 func DefaultConfig() *Config {
 	return &Config{
-		Shares:   make(map[string]ShareConfig),
-		Defaults: make(map[string]string),
+		Shares:          make(map[string]ShareConfig),
+		Defaults:        make(map[string]string),
+		ServiceVersions: make(map[string]string),
 	}
 }
 
@@ -40,6 +42,18 @@ func (c *Config) DefaultAccount(service string) string {
 		}
 	}
 	return "default"
+}
+
+// ServiceVersion returns the version override for a service, or the
+// defaultVersion if none is configured. Returns empty string if
+// defaultVersion is empty and no override exists.
+func (c *Config) ServiceVersion(service, defaultVersion string) string {
+	if c.ServiceVersions != nil {
+		if v, ok := c.ServiceVersions[service]; ok && v != "" {
+			return v
+		}
+	}
+	return defaultVersion
 }
 
 // LoadConfig reads a YAML config file. Returns DefaultConfig if the file
@@ -64,6 +78,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Defaults == nil {
 		cfg.Defaults = make(map[string]string)
+	}
+	if cfg.ServiceVersions == nil {
+		cfg.ServiceVersions = make(map[string]string)
 	}
 
 	return cfg, nil

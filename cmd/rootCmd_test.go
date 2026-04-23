@@ -170,3 +170,195 @@ func TestExecute(t *testing.T) {
 		t.Fatalf("rootCmd.Execute: %v", err)
 	}
 }
+
+// --- SetService and version resolution tests ---
+
+func TestSetService(t *testing.T) {
+	// Save originals.
+	origService := ServiceName
+	origStore := SessionStoreVar
+	origAcctStore := AccountStoreVar
+	origOpts := ProtonOpts
+	origDebug := DebugHTTP
+	origConfig := ConfigVar
+	origOverride := AppVersionOverride
+	origParams := rootParams
+	t.Cleanup(func() {
+		ServiceName = origService
+		SessionStoreVar = origStore
+		AccountStoreVar = origAcctStore
+		ProtonOpts = origOpts
+		DebugHTTP = origDebug
+		ConfigVar = origConfig
+		AppVersionOverride = origOverride
+		rootParams = origParams
+	})
+
+	// Initialize required state.
+	rootParams.SessionFile = "/tmp/test-sessions.db"
+	Account = "default"
+	DebugHTTP = false
+	ConfigVar = common.DefaultConfig()
+	AppVersionOverride = ""
+
+	tests := []struct {
+		name        string
+		service     string
+		wantService string
+	}{
+		{"drive", "drive", "drive"},
+		{"lumo", "lumo", "lumo"},
+		{"account", "account", "account"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetService(tt.service)
+
+			if ServiceName != tt.wantService {
+				t.Errorf("ServiceName = %q, want %q", ServiceName, tt.wantService)
+			}
+
+			// ProtonOpts should be rebuilt (non-nil, non-empty).
+			if len(ProtonOpts) == 0 {
+				t.Error("ProtonOpts is empty after SetService")
+			}
+		})
+	}
+}
+
+func TestResolveVersion(t *testing.T) {
+	origConfig := ConfigVar
+	origOverride := AppVersionOverride
+	t.Cleanup(func() {
+		ConfigVar = origConfig
+		AppVersionOverride = origOverride
+	})
+
+	tests := []struct {
+		name     string
+		override string
+		config   map[string]string
+		service  string
+		want     string
+	}{
+		{
+			"flag override takes precedence",
+			"1.2.3.4",
+			map[string]string{"drive": "9.9.9.9"},
+			"drive",
+			"1.2.3.4",
+		},
+		{
+			"config override used when no flag",
+			"",
+			map[string]string{"drive": "2.0.0.0"},
+			"drive",
+			"2.0.0.0",
+		},
+		{
+			"default version when no overrides",
+			"",
+			nil,
+			"drive",
+			common.DefaultVersion,
+		},
+		{
+			"config for different service not used",
+			"",
+			map[string]string{"lumo": "3.0.0.0"},
+			"drive",
+			common.DefaultVersion,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			AppVersionOverride = tt.override
+			cfg := common.DefaultConfig()
+			if tt.config != nil {
+				cfg.ServiceVersions = tt.config
+			}
+			ConfigVar = cfg
+
+			got := resolveVersion(tt.service)
+			if got != tt.want {
+				t.Errorf("resolveVersion(%q) = %q, want %q", tt.service, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAppVersionFlag(t *testing.T) {
+	// Verify the --app-version flag is registered on rootCmd.
+	f := rootCmd.PersistentFlags().Lookup("app-version")
+	if f == nil {
+		t.Fatal("--app-version flag not registered")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--app-version default = %q, want empty", f.DefValue)
+	}
+}
+
+func TestServiceVersionConfig(t *testing.T) {
+	cfg := common.DefaultConfig()
+	cfg.ServiceVersions["drive"] = "1.0.0.0"
+
+	got := cfg.ServiceVersion("drive", common.DefaultVersion)
+	if got != "1.0.0.0" {
+		t.Errorf("ServiceVersion(drive) = %q, want %q", got, "1.0.0.0")
+	}
+
+	got = cfg.ServiceVersion("lumo", common.DefaultVersion)
+	if got != common.DefaultVersion {
+		t.Errorf("ServiceVersion(lumo) = %q, want %q", got, common.DefaultVersion)
+	}
+}
+
+func TestRestoreSession_ServiceAware(t *testing.T) {
+	// When ServiceName is set to a specific service, RestoreSession should
+	// attempt RestoreServiceSession. With a failing store, it should return
+	// an error (not panic).
+	origService := ServiceName
+	origStore := SessionStoreVar
+	origAcctStore := AccountStoreVar
+	origOpts := ProtonOpts
+	t.Cleanup(func() {
+		ServiceName = origService
+		SessionStoreVar = origStore
+		AccountStoreVar = origAcctStore
+		ProtonOpts = origOpts
+	})
+
+	ServiceName = "drive"
+	SessionStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
+	AccountStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
+
+	_, err := RestoreSession(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestRestoreSession_WildcardFallback(t *testing.T) {
+	// When ServiceName is "*", RestoreSession should use the old path.
+	origService := ServiceName
+	origStore := SessionStoreVar
+	origOpts := ProtonOpts
+	t.Cleanup(func() {
+		ServiceName = origService
+		SessionStoreVar = origStore
+		ProtonOpts = origOpts
+	})
+
+	ServiceName = "*"
+	SessionStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
+
+	_, err := RestoreSession(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !contains(err.Error(), "not logged in") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "not logged in")
+	}
+}
