@@ -11,8 +11,8 @@ var accountCmd = &cobra.Command{
 	Short: "Manage user authentication with Proton",
 	Long:  "Manage user authentication with Proton",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if p := cmd.Parent(); p != nil && p.PersistentPreRunE != nil {
-			if err := p.PersistentPreRunE(cmd, args); err != nil {
+		if p := cmd.Root(); p != nil && p.PersistentPreRunE != nil {
+			if err := p.PersistentPreRunE(p, args); err != nil {
 				return err
 			}
 		}
