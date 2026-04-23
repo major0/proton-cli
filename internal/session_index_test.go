@@ -997,3 +997,41 @@ func TestPropertySessionIndexListAfterSave_Property(t *testing.T) {
 		}
 	})
 }
+
+// TestWildcardFallback_Property verifies that for any SessionConfig stored
+// under the "*" wildcard service, SessionIndex.Load with any service name
+// that has no exact match returns the wildcard session's config.
+//
+// **Validates: Requirements 11.1**
+// Tag: Feature: session-fork, Property 7: Wildcard fallback
+func TestWildcardFallback_Property(t *testing.T) {
+	dir := t.TempDir()
+	var counter int
+	rapid.Check(t, func(rt *rapid.T) {
+		account := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "account")
+		// Service name that is never "*".
+		service := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{0,15}`).Draw(rt, "service")
+		session := genSessionConfigRapid(rt)
+
+		counter++
+		indexPath := filepath.Join(dir, fmt.Sprintf("sessions_%d.json", counter))
+		kr := NewMockKeyring()
+
+		// Save under wildcard.
+		wildcardStore := NewSessionStore(indexPath, account, "*", kr)
+		if err := wildcardStore.Save(session); err != nil {
+			rt.Fatalf("Save wildcard: %v", err)
+		}
+
+		// Load with a non-wildcard service — should fall back to "*".
+		serviceStore := NewSessionStore(indexPath, account, service, kr)
+		loaded, err := serviceStore.Load()
+		if err != nil {
+			rt.Fatalf("Load with service %q: %v", service, err)
+		}
+
+		if !reflect.DeepEqual(*session, *loaded) {
+			rt.Fatalf("wildcard fallback mismatch:\n  saved:  %+v\n  loaded: %+v", *session, *loaded)
+		}
+	})
+}

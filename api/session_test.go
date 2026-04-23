@@ -735,3 +735,190 @@ func TestSaveConfigError(t *testing.T) {
 		t.Fatal("expected error for unwritable path")
 	}
 }
+
+// --- Property tests for staleness and proactive refresh ---
+
+// TestStalenessComparison_Property verifies that for any pair of timestamps
+// (accountRefresh, serviceRefresh) where accountRefresh is after serviceRefresh,
+// IsStale classifies the service session as stale. A zero-valued serviceRefresh
+// is always stale regardless of accountRefresh.
+//
+// **Validates: Requirements 9.2, 11.4**
+// Tag: Feature: session-fork, Property 5: Staleness comparison
+func TestStalenessComparison_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate two distinct unix timestamps.
+		sec1 := rapid.Int64Range(0, 253402300799).Draw(t, "sec1")
+		sec2 := rapid.Int64Range(0, 253402300799).Draw(t, "sec2")
+		ts1 := time.Unix(sec1, 0).UTC()
+		ts2 := time.Unix(sec2, 0).UTC()
+
+		// When serviceRefresh is zero, always stale.
+		if !IsStale(ts1, time.Time{}) {
+			t.Fatal("zero serviceRefresh should always be stale")
+		}
+
+		// When accountRefresh is strictly after serviceRefresh, stale.
+		if sec1 > sec2 {
+			if !IsStale(ts1, ts2) {
+				t.Fatalf("expected stale: account=%v > service=%v", ts1, ts2)
+			}
+		}
+
+		// When serviceRefresh is at or after accountRefresh, not stale.
+		if sec2 >= sec1 {
+			if IsStale(ts1, ts2) {
+				t.Fatalf("expected fresh: account=%v <= service=%v", ts1, ts2)
+			}
+		}
+	})
+}
+
+// TestProactiveRefreshThreshold_Property verifies that NeedsProactiveRefresh
+// returns true if and only if time.Since(LastRefresh) > 1 hour, and always
+// returns true for zero-valued LastRefresh.
+//
+// **Validates: Requirements 10.1, 10.2**
+// Tag: Feature: session-fork, Property 6: Proactive refresh threshold
+func TestProactiveRefreshThreshold_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Zero LastRefresh always triggers refresh.
+		if !NeedsProactiveRefresh(time.Time{}) {
+			t.Fatal("zero LastRefresh should always need refresh")
+		}
+
+		// Generate an age in minutes from 0 to 180 (3 hours).
+		ageMinutes := rapid.IntRange(0, 180).Draw(t, "ageMinutes")
+		lastRefresh := time.Now().Add(-time.Duration(ageMinutes) * time.Minute)
+
+		got := NeedsProactiveRefresh(lastRefresh)
+
+		// The threshold is 1 hour (60 minutes). Due to test execution time,
+		// we use a 2-minute buffer zone around the boundary.
+		if ageMinutes > 62 && !got {
+			t.Fatalf("age=%dm should need refresh", ageMinutes)
+		}
+		if ageMinutes < 58 && got {
+			t.Fatalf("age=%dm should NOT need refresh", ageMinutes)
+		}
+	})
+}
+
+// --- Unit tests for RestoreServiceSession and proactiveRefresh ---
+
+// TestIsStale verifies the staleness comparison logic.
+func TestIsStale(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name           string
+		accountRefresh time.Time
+		serviceRefresh time.Time
+		want           bool
+	}{
+		{"zero service is always stale", now, time.Time{}, true},
+		{"account after service is stale", now, now.Add(-time.Hour), true},
+		{"equal timestamps is fresh", now, now, false},
+		{"service after account is fresh", now.Add(-time.Hour), now, false},
+		{"both zero: service zero is stale", time.Time{}, time.Time{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsStale(tt.accountRefresh, tt.serviceRefresh)
+			if got != tt.want {
+				t.Fatalf("IsStale(%v, %v) = %v, want %v",
+					tt.accountRefresh, tt.serviceRefresh, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNeedsProactiveRefresh verifies the proactive refresh threshold.
+func TestNeedsProactiveRefresh(t *testing.T) {
+	tests := []struct {
+		name        string
+		lastRefresh time.Time
+		want        bool
+	}{
+		{"zero always needs refresh", time.Time{}, true},
+		{"30 minutes ago: no refresh", time.Now().Add(-30 * time.Minute), false},
+		{"2 hours ago: needs refresh", time.Now().Add(-2 * time.Hour), true},
+		{"exactly 1h1m ago: needs refresh", time.Now().Add(-61 * time.Minute), true},
+		{"59 minutes ago: no refresh", time.Now().Add(-59 * time.Minute), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NeedsProactiveRefresh(tt.lastRefresh)
+			if got != tt.want {
+				t.Fatalf("NeedsProactiveRefresh(%v) = %v, want %v",
+					tt.lastRefresh, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRestoreServiceSession_NoAccountSession verifies that when no account
+// session exists, RestoreServiceSession returns ErrNotLoggedIn.
+func TestRestoreServiceSession_NoAccountSession(t *testing.T) {
+	svcStore := &mockStore{}
+	acctStore := &errStore{err: ErrKeyNotFound}
+
+	_, err := RestoreServiceSession(
+		context.Background(), "drive", nil,
+		svcStore, acctStore, DefaultVersion, nil,
+	)
+	if !errors.Is(err, ErrNotLoggedIn) {
+		t.Fatalf("expected ErrNotLoggedIn, got %v", err)
+	}
+}
+
+// TestRestoreServiceSession_UnknownService verifies that an unknown service
+// returns ErrUnknownService.
+func TestRestoreServiceSession_UnknownService(t *testing.T) {
+	svcStore := &mockStore{}
+	acctStore := &mockStore{}
+
+	_, err := RestoreServiceSession(
+		context.Background(), "nonexistent", nil,
+		svcStore, acctStore, DefaultVersion, nil,
+	)
+	if !errors.Is(err, ErrUnknownService) {
+		t.Fatalf("expected ErrUnknownService, got %v", err)
+	}
+}
+
+// TestRestoreServiceSession_AccountStoreError verifies that a non-ErrKeyNotFound
+// error from the account store is propagated.
+func TestRestoreServiceSession_AccountStoreError(t *testing.T) {
+	svcStore := &mockStore{}
+	acctStore := &errStore{err: errors.New("disk failure")}
+
+	_, err := RestoreServiceSession(
+		context.Background(), "drive", nil,
+		svcStore, acctStore, DefaultVersion, nil,
+	)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !containsError(err, "disk failure") {
+		t.Fatalf("error = %v, want containing %q", err, "disk failure")
+	}
+}
+
+// TestProactiveRefreshAge verifies the constant value.
+func TestProactiveRefreshAge(t *testing.T) {
+	if ProactiveRefreshAge != time.Hour {
+		t.Fatalf("ProactiveRefreshAge = %v, want %v", ProactiveRefreshAge, time.Hour)
+	}
+}
+
+// TestRestoreSessionBackwardCompat verifies that the existing RestoreSession
+// (no service arg) continues to work with the wildcard store.
+func TestRestoreSessionBackwardCompat(t *testing.T) {
+	// The existing ReadySession/SessionRestore path should still work.
+	// We test that it returns ErrNotLoggedIn for an empty store.
+	store := &errStore{err: ErrKeyNotFound}
+	_, err := ReadySession(context.Background(), nil, store, nil)
+	if !errors.Is(err, ErrNotLoggedIn) {
+		t.Fatalf("expected ErrNotLoggedIn, got %v", err)
+	}
+}

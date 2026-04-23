@@ -39,6 +39,10 @@ const DefaultThrottleBackoff = time.Second
 // DefaultThrottleMaxDelay is the maximum backoff duration for rate limiting.
 const DefaultThrottleMaxDelay = 30 * time.Second
 
+// ProactiveRefreshAge is the token age threshold for proactive refresh.
+// When age exceeds this value, a lightweight API call triggers token refresh.
+const ProactiveRefreshAge = 1 * time.Hour
+
 // TokenWarnAge is the age at which session tokens are considered near expiry.
 const TokenWarnAge = 20 * time.Hour
 
@@ -377,6 +381,165 @@ func ReadySession(ctx context.Context, options []proton.Option, store SessionSto
 	}
 	session.AddAuthHandler(NewAuthHandler(store, session))
 	session.AddDeauthHandler(NewDeauthHandler())
+	return session, nil
+}
+
+// NeedsProactiveRefresh reports whether the session's LastRefresh age exceeds
+// ProactiveRefreshAge. A zero-valued LastRefresh always triggers refresh.
+func NeedsProactiveRefresh(lastRefresh time.Time) bool {
+	if lastRefresh.IsZero() {
+		return true
+	}
+	return time.Since(lastRefresh) > ProactiveRefreshAge
+}
+
+// IsStale reports whether a service session is stale relative to the account
+// session. A service session is stale when the account's LastRefresh is after
+// the service's LastRefresh, or when the service's LastRefresh is zero.
+func IsStale(accountRefresh, serviceRefresh time.Time) bool {
+	if serviceRefresh.IsZero() {
+		return true
+	}
+	return accountRefresh.After(serviceRefresh)
+}
+
+// proactiveRefresh checks the session's LastRefresh age and triggers a
+// refresh if the token is past the ProactiveRefreshAge threshold.
+// The auth handler callback updates Session.Auth and persists via SessionSave.
+func proactiveRefresh(ctx context.Context, session *Session, config *SessionConfig) error {
+	if !NeedsProactiveRefresh(config.LastRefresh) {
+		return nil
+	}
+
+	slog.Debug("proactiveRefresh", "age", time.Since(config.LastRefresh))
+
+	if _, err := session.Client.GetUser(ctx); err != nil {
+		return fmt.Errorf("session expired, run `proton account login`: %w", err)
+	}
+
+	return nil
+}
+
+// RestoreServiceSession loads and unlocks a session for the given service.
+// If no session exists for the service, it forks from the account session.
+// If no account session exists, it returns ErrNotLoggedIn.
+//
+// The flow:
+//  1. Look up ServiceConfig for the requested service.
+//  2. Load session from store (service-specific store).
+//  3. Load account session from accountStore.
+//  4. If account session age > ProactiveRefreshAge, trigger proactive refresh.
+//  5. If service session missing or stale (account LastRefresh > service LastRefresh),
+//     fork from account session via ForkSessionWithKeyPass.
+//  6. Set session.BaseURL and AppVersion from the ServiceConfig.
+//  7. Return session.
+func RestoreServiceSession(ctx context.Context, service string, options []proton.Option, store SessionStore, accountStore SessionStore, version string, managerHook func(*proton.Manager)) (*Session, error) {
+	svc, err := LookupService(service)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load account session config (needed for staleness check and fork source).
+	acctConfig, err := accountStore.Load()
+	if err != nil {
+		if errors.Is(err, ErrKeyNotFound) {
+			return nil, ErrNotLoggedIn
+		}
+		return nil, fmt.Errorf("restore service session %q: account: %w", service, err)
+	}
+
+	// Build account session for proactive refresh and fork source.
+	acctSession, err := SessionFromCredentials(ctx, options, acctConfig, managerHook)
+	if err != nil {
+		return nil, fmt.Errorf("restore service session %q: account credentials: %w", service, err)
+	}
+
+	// Restore cookies into account session.
+	loadCookies(acctSession.cookieJar, acctConfig.Cookies, apiCookieURL())
+
+	// Register auth handler on account session so proactive refresh persists tokens.
+	acctSession.AddAuthHandler(NewAuthHandler(accountStore, acctSession))
+	acctSession.AddDeauthHandler(NewDeauthHandler())
+
+	// Proactive refresh on account session.
+	if err := proactiveRefresh(ctx, acctSession, acctConfig); err != nil {
+		return nil, err
+	}
+
+	// Try loading the service session.
+	svcConfig, svcErr := store.Load()
+
+	needsFork := false
+	if svcErr != nil {
+		if !errors.Is(svcErr, ErrKeyNotFound) {
+			return nil, fmt.Errorf("restore service session %q: %w", service, svcErr)
+		}
+		needsFork = true
+	} else if IsStale(acctConfig.LastRefresh, svcConfig.LastRefresh) {
+		needsFork = true
+	}
+
+	if needsFork {
+		// Decrypt account keypass for fork blob.
+		keypass, err := Base64Decode(acctConfig.SaltedKeyPass)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
+		}
+
+		child, childKeyPass, err := ForkSessionWithKeyPass(ctx, acctSession, svc, version, keypass)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
+		}
+
+		// Save the forked session.
+		if err := SessionSave(store, child, childKeyPass); err != nil {
+			return nil, fmt.Errorf("restore service session %q: save fork: %w", service, err)
+		}
+
+		// Unlock the child session.
+		addrs, err := child.Client.GetAddresses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
+		}
+		if err := child.Unlock(childKeyPass, addrs); err != nil {
+			return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
+		}
+
+		child.AddAuthHandler(NewAuthHandler(store, child))
+		child.AddDeauthHandler(NewDeauthHandler())
+
+		return child, nil
+	}
+
+	// Restore existing service session.
+	session, err := SessionFromCredentials(ctx, options, svcConfig, managerHook)
+	if err != nil {
+		return nil, fmt.Errorf("restore service session %q: credentials: %w", service, err)
+	}
+
+	loadCookies(session.cookieJar, svcConfig.Cookies, apiCookieURL())
+
+	keypass, err := Base64Decode(svcConfig.SaltedKeyPass)
+	if err != nil {
+		return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
+	}
+
+	addrs, err := session.Client.GetAddresses(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
+	}
+
+	if err := session.Unlock(keypass, addrs); err != nil {
+		return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
+	}
+
+	// Set service-specific BaseURL and AppVersion.
+	session.BaseURL = svc.Host
+	session.AppVersion = svc.AppVersion(version)
+
+	session.AddAuthHandler(NewAuthHandler(store, session))
+	session.AddDeauthHandler(NewDeauthHandler())
+
 	return session, nil
 }
 
