@@ -100,3 +100,50 @@ func TestLookupService_Unknown(t *testing.T) {
 		t.Fatalf("expected ErrUnknownService, got: %v", err)
 	}
 }
+
+// TestLookupServiceByHost_AllRegistered verifies that LookupServiceByHost
+// resolves every registered service by its hostname.
+func TestLookupServiceByHost_AllRegistered(t *testing.T) {
+	tests := []struct {
+		host     string
+		wantName string
+	}{
+		{"account.proton.me", "account"},
+		{"drive-api.proton.me", "drive"},
+		{"lumo.proton.me", "lumo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			svc, err := LookupServiceByHost(tt.host)
+			if err != nil {
+				t.Fatalf("LookupServiceByHost(%q): %v", tt.host, err)
+			}
+			if svc.Name != tt.wantName {
+				t.Errorf("Name = %q, want %q", svc.Name, tt.wantName)
+			}
+		})
+	}
+}
+
+// TestLookupServiceByHost_Unknown verifies that LookupServiceByHost returns
+// ErrUnknownService for unregistered hostnames.
+func TestLookupServiceByHost_Unknown(t *testing.T) {
+	unknowns := []string{
+		"unknown.proton.me",
+		"example.com",
+		"",
+	}
+
+	for _, host := range unknowns {
+		t.Run(host, func(t *testing.T) {
+			_, err := LookupServiceByHost(host)
+			if err == nil {
+				t.Fatalf("expected error for host %q", host)
+			}
+			if !errors.Is(err, ErrUnknownService) {
+				t.Fatalf("expected ErrUnknownService, got: %v", err)
+			}
+		})
+	}
+}

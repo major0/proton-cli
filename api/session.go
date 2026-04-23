@@ -231,6 +231,21 @@ func (s *Session) Stop() {
 	s.manager.Close()
 }
 
+// resolveAppVersion returns the x-pm-appversion value for the given request
+// URL. If the URL targets a known service host, returns that service's app
+// version. Otherwise falls back to s.AppVersion.
+func (s *Session) resolveAppVersion(reqURL string) string {
+	u, err := url.Parse(reqURL)
+	if err != nil || u.Host == "" {
+		return s.AppVersion
+	}
+	svc, err := LookupServiceByHost(u.Hostname())
+	if err != nil {
+		return s.AppVersion
+	}
+	return svc.AppVersion("")
+}
+
 // apiEnvelope is the standard Proton API response wrapper.
 type apiEnvelope struct {
 	Code  int    `json:"Code"`
@@ -268,8 +283,9 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 
 	req.Header.Set("x-pm-uid", s.Auth.UID)
 	req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
-	if s.AppVersion != "" {
-		req.Header.Set("x-pm-appversion", s.AppVersion)
+	appVer := s.resolveAppVersion(reqURL)
+	if appVer != "" {
+		req.Header.Set("x-pm-appversion", appVer)
 	}
 	if s.UserAgent != "" {
 		req.Header.Set("User-Agent", s.UserAgent)
@@ -279,7 +295,7 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	}
 	req.Header.Set("Accept", "application/json")
 
-	slog.Debug("doJSON.request", "method", method, "url", reqURL, "appversion", s.AppVersion)
+	slog.Debug("doJSON.request", "method", method, "url", reqURL, "appversion", appVer)
 
 	httpClient := &http.Client{Jar: s.cookieJar}
 	resp, err := httpClient.Do(req)
@@ -311,6 +327,85 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	if result != nil {
 		if err := json.Unmarshal(respBody, result); err != nil {
 			return fmt.Errorf("doJSON: unmarshal result: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// DoJSONCookie executes an authenticated JSON API request using cookie-based
+// auth. Instead of the Authorization: Bearer header, auth is provided via the
+// AUTH-<uid>=<token> cookie in the session's cookie jar. The x-pm-uid header
+// is still sent. The x-pm-appversion is resolved from the target URL's host.
+func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, result any) error {
+	reqURL := path
+	if !strings.HasPrefix(path, "http") {
+		base := s.BaseURL
+		if base == "" {
+			base = proton.DefaultHostURL
+		}
+		reqURL = base + path
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("doJSONCookie: marshal body: %w", err)
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
+	if err != nil {
+		return fmt.Errorf("doJSONCookie: new request: %w", err)
+	}
+
+	req.Header.Set("x-pm-uid", s.Auth.UID)
+	// No Authorization: Bearer header — auth via cookie jar.
+	appVer := s.resolveAppVersion(reqURL)
+	if appVer != "" {
+		req.Header.Set("x-pm-appversion", appVer)
+	}
+	if s.UserAgent != "" {
+		req.Header.Set("User-Agent", s.UserAgent)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Accept", "application/json")
+
+	slog.Debug("doJSONCookie.request", "method", method, "url", reqURL, "appversion", appVer)
+
+	httpClient := &http.Client{Jar: s.cookieJar}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("doJSONCookie: %s %s: %w", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("doJSONCookie: read response: %w", err)
+	}
+
+	var envelope apiEnvelope
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		return fmt.Errorf("doJSONCookie: unmarshal envelope: %w", err)
+	}
+
+	if envelope.Code != 1000 {
+		slog.Debug("doJSONCookie.error", "method", method, "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
+		return &Error{
+			Status:  resp.StatusCode,
+			Code:    envelope.Code,
+			Message: envelope.Error,
+		}
+	}
+
+	if result != nil {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("doJSONCookie: unmarshal result: %w", err)
 		}
 	}
 

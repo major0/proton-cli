@@ -44,8 +44,9 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 
 	req.Header.Set("x-pm-uid", s.Auth.UID)
 	req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
-	if s.AppVersion != "" {
-		req.Header.Set("x-pm-appversion", s.AppVersion)
+	appVer := s.resolveAppVersion(reqURL)
+	if appVer != "" {
+		req.Header.Set("x-pm-appversion", appVer)
 	}
 	if s.UserAgent != "" {
 		req.Header.Set("User-Agent", s.UserAgent)
@@ -55,7 +56,7 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	slog.Debug("doSSE.request", "url", reqURL, "appversion", s.AppVersion)
+	slog.Debug("doSSE.request", "url", reqURL, "appversion", appVer)
 
 	httpClient := &http.Client{Jar: s.cookieJar}
 	resp, err := httpClient.Do(req)

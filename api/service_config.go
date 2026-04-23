@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"net/url"
 )
 
 // ErrUnknownService indicates that the requested service is not in the registry.
@@ -35,12 +36,38 @@ var Services = map[string]ServiceConfig{
 	"lumo":    {Name: "lumo", Host: "https://lumo.proton.me/api", ClientID: "web-lumo", Version: "1.3.3.4"},
 }
 
+// hostIndex maps hostname → ServiceConfig for reverse lookup.
+// Built once at init from the Services registry.
+var hostIndex map[string]ServiceConfig
+
+func init() {
+	hostIndex = make(map[string]ServiceConfig, len(Services))
+	for _, svc := range Services {
+		u, err := url.Parse(svc.Host)
+		if err != nil {
+			continue
+		}
+		hostIndex[u.Hostname()] = svc
+	}
+}
+
 // LookupService returns the ServiceConfig for the given name, or
 // ErrUnknownService if the service is not registered.
 func LookupService(name string) (ServiceConfig, error) {
 	svc, ok := Services[name]
 	if !ok {
 		return ServiceConfig{}, fmt.Errorf("%w: %q", ErrUnknownService, name)
+	}
+	return svc, nil
+}
+
+// LookupServiceByHost returns the ServiceConfig whose Host URL matches the
+// given hostname (e.g., "account.proton.me", "lumo.proton.me"). Returns
+// ErrUnknownService if no service matches.
+func LookupServiceByHost(host string) (ServiceConfig, error) {
+	svc, ok := hostIndex[host]
+	if !ok {
+		return ServiceConfig{}, fmt.Errorf("%w: host %q", ErrUnknownService, host)
 	}
 	return svc, nil
 }

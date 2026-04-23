@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -920,5 +923,299 @@ func TestRestoreSessionBackwardCompat(t *testing.T) {
 	_, err := ReadySession(context.Background(), nil, store, nil)
 	if !errors.Is(err, ErrNotLoggedIn) {
 		t.Fatalf("expected ErrNotLoggedIn, got %v", err)
+	}
+}
+
+// --- resolveAppVersion tests ---
+
+// TestResolveAppVersion_AbsoluteKnownHost verifies that an absolute URL
+// targeting a known service host resolves to that service's app version.
+func TestResolveAppVersion_AbsoluteKnownHost(t *testing.T) {
+	jar, _ := cookiejar.New(nil)
+	s := &Session{
+		AppVersion: "web-account@5.2.0+proton-cli",
+		cookieJar:  jar,
+	}
+
+	tests := []struct {
+		url  string
+		want string
+	}{
+		{"https://account.proton.me/api/core/v4/users", "web-account@5.2.0+proton-cli"},
+		{"https://lumo.proton.me/api/lumo/v1/spaces", "web-lumo@1.3.3.4+proton-cli"},
+		{"https://drive-api.proton.me/api/drive/shares", "web-drive@5.2.0+proton-cli"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			got := s.resolveAppVersion(tt.url)
+			if got != tt.want {
+				t.Fatalf("resolveAppVersion(%q) = %q, want %q", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestResolveAppVersion_RelativePath verifies that relative paths fall back
+// to s.AppVersion.
+func TestResolveAppVersion_RelativePath(t *testing.T) {
+	jar, _ := cookiejar.New(nil)
+	s := &Session{
+		AppVersion: "web-account@5.2.0+proton-cli",
+		cookieJar:  jar,
+	}
+
+	got := s.resolveAppVersion("/core/v4/users")
+	if got != s.AppVersion {
+		t.Fatalf("resolveAppVersion(relative) = %q, want %q", got, s.AppVersion)
+	}
+}
+
+// TestResolveAppVersion_UnknownHost verifies that an absolute URL targeting
+// an unknown host falls back to s.AppVersion.
+func TestResolveAppVersion_UnknownHost(t *testing.T) {
+	jar, _ := cookiejar.New(nil)
+	s := &Session{
+		AppVersion: "web-account@5.2.0+proton-cli",
+		cookieJar:  jar,
+	}
+
+	got := s.resolveAppVersion("https://unknown.example.com/api/foo")
+	if got != s.AppVersion {
+		t.Fatalf("resolveAppVersion(unknown) = %q, want %q", got, s.AppVersion)
+	}
+}
+
+// TestResolveAppVersion_NeverEmpty verifies that resolveAppVersion never
+// returns an empty string when s.AppVersion is set.
+func TestResolveAppVersion_NeverEmpty(t *testing.T) {
+	jar, _ := cookiejar.New(nil)
+	s := &Session{
+		AppVersion: "web-account@5.2.0+proton-cli",
+		cookieJar:  jar,
+	}
+
+	inputs := []string{
+		"/relative/path",
+		"https://account.proton.me/api/foo",
+		"https://unknown.host/bar",
+		"",
+		"not-a-url",
+	}
+
+	for _, input := range inputs {
+		got := s.resolveAppVersion(input)
+		if got == "" {
+			t.Fatalf("resolveAppVersion(%q) returned empty string", input)
+		}
+	}
+}
+
+// --- DoJSON/DoSSE resolveAppVersion integration tests ---
+
+// TestDoJSON_AbsoluteURLResolvesAppVersion verifies that DoJSON sets the
+// correct x-pm-appversion when given an absolute URL to a known host.
+func TestDoJSON_AbsoluteURLResolvesAppVersion(t *testing.T) {
+	var gotAppVersion string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAppVersion = r.Header.Get("x-pm-appversion")
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+	}))
+	defer srv.Close()
+
+	jar, _ := cookiejar.New(nil)
+	s := &Session{
+		Auth:       proton.Auth{UID: "uid", AccessToken: "at"},
+		AppVersion: "web-account@5.2.0+proton-cli",
+		cookieJar:  jar,
+	}
+
+	// Relative path should use session's AppVersion.
+	s.BaseURL = srv.URL
+	err := s.DoJSON(context.Background(), "GET", "/core/v4/users", nil, nil)
+	if err != nil {
+		t.Fatalf("DoJSON relative: %v", err)
+	}
+	if gotAppVersion != "web-account@5.2.0+proton-cli" {
+		t.Fatalf("relative path appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	}
+
+	// Absolute URL to the test server (unknown host) should fall back to session's AppVersion.
+	err = s.DoJSON(context.Background(), "GET", srv.URL+"/core/v4/users", nil, nil)
+	if err != nil {
+		t.Fatalf("DoJSON absolute unknown: %v", err)
+	}
+	if gotAppVersion != "web-account@5.2.0+proton-cli" {
+		t.Fatalf("unknown host appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	}
+}
+
+// TestDoSSE_AbsoluteURLResolvesAppVersion verifies that DoSSE sets the
+// correct x-pm-appversion when given an absolute URL.
+func TestDoSSE_AbsoluteURLResolvesAppVersion(t *testing.T) {
+	var gotAppVersion string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAppVersion = r.Header.Get("x-pm-appversion")
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	jar, _ := cookiejar.New(nil)
+	s := &Session{
+		Auth:       proton.Auth{UID: "uid", AccessToken: "at"},
+		AppVersion: "web-account@5.2.0+proton-cli",
+		cookieJar:  jar,
+	}
+
+	// Relative path should use session's AppVersion.
+	s.BaseURL = srv.URL
+	body, err := s.DoSSE(context.Background(), "/events/stream", nil)
+	if err != nil {
+		t.Fatalf("DoSSE relative: %v", err)
+	}
+	_ = body.Close()
+	if gotAppVersion != "web-account@5.2.0+proton-cli" {
+		t.Fatalf("relative path appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	}
+
+	// Absolute URL to the test server (unknown host) should fall back.
+	body, err = s.DoSSE(context.Background(), srv.URL+"/events/stream", nil)
+	if err != nil {
+		t.Fatalf("DoSSE absolute unknown: %v", err)
+	}
+	_ = body.Close()
+	if gotAppVersion != "web-account@5.2.0+proton-cli" {
+		t.Fatalf("unknown host appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	}
+}
+
+// --- DoJSONCookie tests ---
+
+// TestDoJSONCookie_NoAuthorizationHeader verifies that DoJSONCookie does NOT
+// send an Authorization: Bearer header.
+func TestDoJSONCookie_NoAuthorizationHeader(t *testing.T) {
+	var gotAuth, gotUID, gotAppVersion string
+	var gotCookies []*http.Cookie
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotUID = r.Header.Get("x-pm-uid")
+		gotAppVersion = r.Header.Get("x-pm-appversion")
+		gotCookies = r.Cookies()
+		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
+	}))
+	defer srv.Close()
+
+	jar, _ := cookiejar.New(nil)
+	// Set an AUTH-* cookie in the jar for the test server.
+	srvURL, _ := url.Parse(srv.URL)
+	jar.SetCookies(srvURL, []*http.Cookie{
+		{Name: "AUTH-parent-uid", Value: "parent-token"},
+		{Name: "Session-Id", Value: "sid-123"},
+	})
+
+	s := &Session{
+		Auth:       proton.Auth{UID: "parent-uid", AccessToken: "parent-at"},
+		AppVersion: "web-account@5.2.0+proton-cli",
+		BaseURL:    srv.URL,
+		cookieJar:  jar,
+	}
+
+	err := s.DoJSONCookie(context.Background(), "POST", "/auth/v4/sessions/forks", map[string]string{"test": "data"}, nil)
+	if err != nil {
+		t.Fatalf("DoJSONCookie: %v", err)
+	}
+
+	// No Authorization header.
+	if gotAuth != "" {
+		t.Fatalf("Authorization = %q, want empty", gotAuth)
+	}
+
+	// x-pm-uid must be present.
+	if gotUID != "parent-uid" {
+		t.Fatalf("x-pm-uid = %q, want %q", gotUID, "parent-uid")
+	}
+
+	// x-pm-appversion should be resolved (falls back to session default for test server).
+	if gotAppVersion != "web-account@5.2.0+proton-cli" {
+		t.Fatalf("x-pm-appversion = %q, want %q", gotAppVersion, "web-account@5.2.0+proton-cli")
+	}
+
+	// AUTH-* cookie must be sent.
+	hasAuthCookie := false
+	for _, c := range gotCookies {
+		if strings.HasPrefix(c.Name, "AUTH-") {
+			hasAuthCookie = true
+			break
+		}
+	}
+	if !hasAuthCookie {
+		t.Fatal("expected AUTH-* cookie to be sent, but none found")
+	}
+}
+
+// TestDoJSONCookie_UnmarshalResult verifies that DoJSONCookie correctly
+// unmarshals the response body into the result parameter.
+func TestDoJSONCookie_UnmarshalResult(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"Code":     1000,
+			"Selector": "fork-sel-abc",
+		})
+	}))
+	defer srv.Close()
+
+	jar, _ := cookiejar.New(nil)
+	s := &Session{
+		Auth:       proton.Auth{UID: "uid", AccessToken: "at"},
+		AppVersion: "web-account@5.2.0+proton-cli",
+		BaseURL:    srv.URL,
+		cookieJar:  jar,
+	}
+
+	var result ForkPushResp
+	err := s.DoJSONCookie(context.Background(), "POST", "/auth/v4/sessions/forks", nil, &result)
+	if err != nil {
+		t.Fatalf("DoJSONCookie: %v", err)
+	}
+	if result.Selector != "fork-sel-abc" {
+		t.Fatalf("Selector = %q, want %q", result.Selector, "fork-sel-abc")
+	}
+}
+
+// TestDoJSONCookie_APIError verifies that DoJSONCookie returns *Error on
+// non-1000 API codes.
+func TestDoJSONCookie_APIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"Code":  9100,
+			"Error": "insufficient scope",
+		})
+	}))
+	defer srv.Close()
+
+	jar, _ := cookiejar.New(nil)
+	s := &Session{
+		Auth:       proton.Auth{UID: "uid", AccessToken: "at"},
+		AppVersion: "web-account@5.2.0+proton-cli",
+		BaseURL:    srv.URL,
+		cookieJar:  jar,
+	}
+
+	err := s.DoJSONCookie(context.Background(), "POST", "/auth/v4/sessions/forks", nil, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var apiErr *Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *Error, got %T: %v", err, err)
+	}
+	if apiErr.Code != 9100 {
+		t.Fatalf("Code = %d, want 9100", apiErr.Code)
 	}
 }

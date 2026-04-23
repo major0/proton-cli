@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strings"
 
 	proton "github.com/ProtonMail/go-proton-api"
 )
@@ -70,7 +71,22 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 		Payload:       ciphertext,
 	}
 	var pushResp ForkPushResp
-	if err := parent.DoJSON(ctx, "POST", "/auth/v4/sessions/forks", pushReq, &pushResp); err != nil {
+
+	// Check for AUTH-* cookie presence.
+	hasAuthCookie := false
+	if pushURL, err := url.Parse(parent.BaseURL); err == nil {
+		for _, c := range parent.cookieJar.Cookies(pushURL) {
+			if strings.HasPrefix(c.Name, "AUTH-") {
+				hasAuthCookie = true
+				break
+			}
+		}
+	}
+	if !hasAuthCookie {
+		slog.Warn("fork.push: no AUTH-* cookie in jar — child session may have restricted scopes", "service", targetService.Name)
+	}
+
+	if err := parent.DoJSONCookie(ctx, "POST", "/auth/v4/sessions/forks", pushReq, &pushResp); err != nil {
 		return nil, nil, fmt.Errorf("%w: push: %w", ErrForkFailed, err)
 	}
 
@@ -125,7 +141,22 @@ func ForkSessionWithKeyPass(ctx context.Context, parent *Session, targetService 
 		Payload:       ciphertext,
 	}
 	var pushResp ForkPushResp
-	if err := parent.DoJSON(ctx, "POST", "/auth/v4/sessions/forks", pushReq, &pushResp); err != nil {
+
+	// Check for AUTH-* cookie presence.
+	hasAuthCookie := false
+	if pushURL, err := url.Parse(parent.BaseURL); err == nil {
+		for _, c := range parent.cookieJar.Cookies(pushURL) {
+			if strings.HasPrefix(c.Name, "AUTH-") {
+				hasAuthCookie = true
+				break
+			}
+		}
+	}
+	if !hasAuthCookie {
+		slog.Warn("fork.push: no AUTH-* cookie in jar — child session may have restricted scopes", "service", targetService.Name)
+	}
+
+	if err := parent.DoJSONCookie(ctx, "POST", "/auth/v4/sessions/forks", pushReq, &pushResp); err != nil {
 		return nil, nil, fmt.Errorf("%w: push: %w", ErrForkFailed, err)
 	}
 
