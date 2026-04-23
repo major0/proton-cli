@@ -115,15 +115,40 @@ tokens.
 
 ## CLI Implementation Notes
 
-For a CLI client to use the fork protocol:
+For a CLI client to use the fork protocol with full scopes (including `lumo`):
 
-1. The login flow must capture and persist cookies (especially `AUTH-*`
-   and `Session-Id`) from the Proton API responses.
-2. The fork push must send the `AUTH-<uid>=<token>` cookie instead of
-   (or in addition to) the `Authorization: Bearer` header.
-3. The fork pull must use a clean cookie jar with only `Session-Id`
-   (no `AUTH-*` cookies).
-4. Each request must use the `x-pm-appversion` matching the target host.
+1. The session must use **cookie-based auth**, not Bearer tokens. The
+   `go-proton-api` Resty client is Bearer-only and cannot be used for
+   Lumo. A separate cookie-based session handler is required.
+
+2. The auth flow must replicate the browser:
+   - SRP login → get Bearer tokens
+   - `POST /core/v4/auth/cookies` → transitions to cookie auth
+   - After this call, Bearer tokens are invalid. New credentials are
+     delivered as `AUTH-<uid>=<token>` and `REFRESH-<uid>=<token>` cookies.
+   - All subsequent API calls use cookie auth (no Bearer header).
+
+3. The fork push uses the `AUTH-*` cookie from step 2. Without it,
+   the server grants restricted scopes excluding `lumo`.
+
+4. The fork pull is unauthenticated — only `Session-Id` cookie.
+
+5. After the fork pull, the child session calls `auth/cookies` again
+   to establish cookie auth on the child (entry 86 in the HAR).
+
+### Incompatibility with go-proton-api
+
+The `go-proton-api` library uses Bearer token auth exclusively via its
+Resty HTTP client. The `auth/cookies` endpoint invalidates Bearer tokens
+and transitions to cookie-only auth. After calling `auth/cookies`:
+
+- The Resty client's Bearer tokens are invalid → 401 on all requests
+- The Resty client's token refresh fails → 422 "Invalid input"
+- Only cookie-based requests (via `http.Client` with cookie jar) work
+
+This means Lumo requires a cookie-based session handler independent of
+`go-proton-api`. Drive and other services can continue using the Resty
+client with Bearer auth.
 
 ## References
 
