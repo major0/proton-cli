@@ -36,11 +36,39 @@ Access tokens are scoped based on the `x-pm-appversion` header and the API endpo
 used during authentication. A token obtained with a `bridge` app version against
 `mail-api.proton.me` will not have permission to access Drive endpoints, and vice versa.
 
+### Per-Host Version Routing
+
+Each Proton host validates the `x-pm-appversion` header against its service.
+Sending the wrong version returns a misleading 401 "Invalid access token"
+error (not a version-specific error code). Every outgoing request must use
+the app version matching the target host.
+
+| Service  | Web App Host              | API Host (dedicated)        | Client ID      | Version (observed) |
+|----------|---------------------------|-----------------------------|----------------|--------------------|
+| Account  | `account.proton.me`       | `account-api.proton.me`     | `web-account`  | `5.0.367.1`        |
+| Drive    | `drive.proton.me`         | `drive-api.proton.me`       | `web-drive`    | `5.2.0`            |
+| Lumo     | `lumo.proton.me`          | —                           | `web-lumo`     | `1.3.3.4`          |
+| Mail     | `mail.proton.me`          | —                           | `web-mail`     | varies             |
+
+The web app hosts (`*.proton.me`) and dedicated API hosts (`*-api.proton.me`)
+are different endpoints. The fork protocol requires the web app hosts — the
+dedicated API hosts do not participate in the fork/scope system.
+
+### Version String Format
+
+```
+<clientID>@<semver>
+```
+
+No suffix (e.g., `+proton-cli`) — the API rejects unrecognized suffixes
+with CAPTCHA or auth errors.
+
 | Product  | API Host                    | App Version Pattern        | Token Scope |
 |----------|-----------------------------|----------------------------|-------------|
 | Mail     | `mail-api.proton.me`        | `<os>-bridge@<version>`    | Mail        |
 | Drive    | `drive-api.proton.me`       | `<os>-drive@<version>`     | Drive       |
 | Account  | `account-api.proton.me`     | `web-account@<version>`    | Account     |
+| Lumo     | `lumo.proton.me`            | `web-lumo@<version>`       | Lumo        |
 
 Attempting to use a token outside its scope returns error code **9100**
 ("Access token does not have sufficient scope").

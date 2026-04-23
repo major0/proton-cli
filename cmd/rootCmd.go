@@ -138,10 +138,9 @@ func SetService(service string) {
 		rootParams.SessionFile, Account, service, internal.SystemKeyring{},
 	)
 
-	version := resolveVersion(service)
 	ProtonOpts = []proton.Option{
 		proton.WithHostURL(svc.Host),
-		proton.WithAppVersion(svc.AppVersion(version)),
+		proton.WithAppVersion(svc.AppVersion("")),
 		proton.WithUserAgent(UserAgent),
 	}
 
@@ -170,11 +169,11 @@ func resolveVersion(service string) string {
 // handles auto-forking from the account session.
 func RestoreSession(ctx context.Context) (*common.Session, error) {
 	if ServiceName != "" && ServiceName != "*" {
-		version := resolveVersion(ServiceName)
+		svc, _ := common.LookupService(ServiceName)
 		session, err := common.RestoreServiceSession(
 			ctx, ServiceName, ProtonOpts,
 			SessionStoreVar, AccountStoreVar,
-			version, nil,
+			svc.AppVersion(""), nil,
 		)
 		if err != nil {
 			return nil, err

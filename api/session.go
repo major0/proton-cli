@@ -279,6 +279,8 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	}
 	req.Header.Set("Accept", "application/json")
 
+	slog.Debug("doJSON.request", "method", method, "url", reqURL, "appversion", s.AppVersion)
+
 	httpClient := &http.Client{Jar: s.cookieJar}
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -298,6 +300,7 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	}
 
 	if envelope.Code != 1000 {
+		slog.Debug("doJSON.error", "method", method, "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
 		return &Error{
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
@@ -448,11 +451,24 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 		return nil, fmt.Errorf("restore service session %q: account: %w", service, err)
 	}
 
-	// Build account session for proactive refresh and fork source.
-	acctSession, err := SessionFromCredentials(ctx, options, acctConfig, managerHook)
+	// Build account session using account-specific options (not the service options).
+	// The passed-in options point to the target service host, but the account
+	// session must use the account host for proactive refresh and fork push.
+	acctSvc, _ := LookupService("account")
+	acctOpts := []proton.Option{
+		proton.WithHostURL(acctSvc.Host),
+		proton.WithAppVersion(acctSvc.AppVersion("")),
+	}
+	acctSession, err := SessionFromCredentials(ctx, acctOpts, acctConfig, managerHook)
 	if err != nil {
 		return nil, fmt.Errorf("restore service session %q: account credentials: %w", service, err)
 	}
+
+	// Set AppVersion and BaseURL on the session struct so DoJSON sends the
+	// x-pm-appversion header. SessionFromCredentials passes options to the
+	// proton.Manager (for Resty), but DoJSON uses Session.AppVersion directly.
+	acctSession.AppVersion = acctSvc.AppVersion("")
+	acctSession.BaseURL = acctSvc.Host
 
 	// Restore cookies into account session.
 	loadCookies(acctSession.cookieJar, acctConfig.Cookies, apiCookieURL())
@@ -470,13 +486,26 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 	svcConfig, svcErr := store.Load()
 
 	needsFork := false
-	if svcErr != nil {
+	switch {
+	case svcErr != nil:
 		if !errors.Is(svcErr, ErrKeyNotFound) {
 			return nil, fmt.Errorf("restore service session %q: %w", service, svcErr)
 		}
+		slog.Debug("service session not found, will fork", "service", service)
 		needsFork = true
-	} else if IsStale(acctConfig.LastRefresh, svcConfig.LastRefresh) {
+	case svcConfig.Service != service && svcConfig.Service != "":
+		// The store returned a wildcard fallback, not a service-specific session.
+		slog.Debug("service session is wildcard fallback, will fork", "service", service, "found_service", svcConfig.Service)
 		needsFork = true
+	case svcConfig.Service == "":
+		// Legacy session without Service field — treat as wildcard.
+		slog.Debug("service session has no service field, will fork", "service", service)
+		needsFork = true
+	case IsStale(acctConfig.LastRefresh, svcConfig.LastRefresh):
+		slog.Debug("service session is stale, will re-fork", "service", service)
+		needsFork = true
+	default:
+		slog.Debug("service session is fresh", "service", service, "uid", svcConfig.UID, "svc_service", svcConfig.Service, "svc_last_refresh", svcConfig.LastRefresh, "acct_last_refresh", acctConfig.LastRefresh)
 	}
 
 	if needsFork {
@@ -486,10 +515,30 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 			return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
 		}
 
+		// The fork push goes to the account host with the account app version.
+		// The fork pull goes to the target service host with the target app version.
+
+		// Log cookies available for the target service host.
+		if targetURL, err := url.Parse(svc.Host); err == nil {
+			cookies := acctSession.cookieJar.Cookies(targetURL)
+			names := make([]string, len(cookies))
+			for i, c := range cookies {
+				names[i] = c.Name
+			}
+			slog.Debug("fork.cookies", "host", svc.Host, "cookies", names)
+		}
+
 		child, childKeyPass, err := ForkSessionWithKeyPass(ctx, acctSession, svc, version, keypass)
 		if err != nil {
 			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
 		}
+
+		// Fetch the user for the child session (needed for key unlock).
+		childUser, err := child.Client.GetUser(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: get user: %w", service, err)
+		}
+		child.user = childUser
 
 		// Save the forked session.
 		if err := SessionSave(store, child, childKeyPass); err != nil {
@@ -501,6 +550,7 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 		if err != nil {
 			return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
 		}
+		slog.Debug("fork.unlock", "service", service, "child_uid", child.Auth.UID, "keypass_len", len(childKeyPass), "num_addresses", len(addrs))
 		if err := child.Unlock(childKeyPass, addrs); err != nil {
 			return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
 		}
@@ -535,7 +585,7 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 
 	// Set service-specific BaseURL and AppVersion.
 	session.BaseURL = svc.Host
-	session.AppVersion = svc.AppVersion(version)
+	session.AppVersion = svc.AppVersion("")
 
 	session.AddAuthHandler(NewAuthHandler(store, session))
 	session.AddDeauthHandler(NewDeauthHandler())

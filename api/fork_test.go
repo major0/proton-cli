@@ -42,6 +42,7 @@ func TestForkResponseToSessionMapping_Property(t *testing.T) {
 			Name:     "test",
 			Host:     host,
 			ClientID: clientID,
+			Version:  version,
 		}
 
 		session := SessionFromForkPull(pull, svc, version)
@@ -67,7 +68,8 @@ func TestForkResponseToSessionMapping_Property(t *testing.T) {
 			t.Fatalf("BaseURL: got %q, want %q", session.BaseURL, host)
 		}
 
-		// Verify AppVersion format.
+		// Verify AppVersion format — uses service's default version, not the
+		// version parameter (which is for the Resty client).
 		wantAppVer := clientID + "@" + version + "+proton-cli"
 		if session.AppVersion != wantAppVer {
 			t.Fatalf("AppVersion: got %q, want %q", session.AppVersion, wantAppVer)
@@ -171,7 +173,7 @@ func TestForkPullGoesToCorrectHost(t *testing.T) {
 		cookieJar:  jar,
 	}
 
-	resp, err := forkPull(context.Background(), parent, childSrv.URL, "sel-123")
+	resp, err := forkPull(context.Background(), parent, childSrv.URL, "sel-123", "web-lumo@1.3.3.4")
 	if err != nil {
 		t.Fatalf("forkPull: %v", err)
 	}
@@ -179,11 +181,12 @@ func TestForkPullGoesToCorrectHost(t *testing.T) {
 	if gotPath != "/auth/v4/sessions/forks/sel-123" {
 		t.Fatalf("path = %q, want %q", gotPath, "/auth/v4/sessions/forks/sel-123")
 	}
-	if gotUID != "parent-uid" {
-		t.Fatalf("x-pm-uid = %q, want %q", gotUID, "parent-uid")
+	// Pull is unauthenticated — no x-pm-uid or Authorization headers.
+	if gotUID != "" {
+		t.Fatalf("x-pm-uid = %q, want empty (unauthenticated pull)", gotUID)
 	}
-	if gotAuth != "Bearer parent-token" {
-		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer parent-token")
+	if gotAuth != "" {
+		t.Fatalf("Authorization = %q, want empty (unauthenticated pull)", gotAuth)
 	}
 	if resp.UID != "child-uid" {
 		t.Fatalf("UID = %q, want %q", resp.UID, "child-uid")
@@ -211,7 +214,7 @@ func TestForkPullAPIError(t *testing.T) {
 		cookieJar: jar,
 	}
 
-	_, err := forkPull(context.Background(), parent, childSrv.URL, "bad-sel")
+	_, err := forkPull(context.Background(), parent, childSrv.URL, "bad-sel", "web-lumo@1.3.3.4")
 	if err == nil {
 		t.Fatal("expected error from forkPull")
 	}
@@ -311,7 +314,7 @@ func TestForkSessionEndToEnd(t *testing.T) {
 	}
 
 	// Pull.
-	pullResp, err := forkPull(context.Background(), parent, targetSvc.Host, pushResp.Selector)
+	pullResp, err := forkPull(context.Background(), parent, targetSvc.Host, pushResp.Selector, targetSvc.AppVersion(""))
 	if err != nil {
 		t.Fatalf("pull: %v", err)
 	}
@@ -358,6 +361,7 @@ func TestBuildChildSession(t *testing.T) {
 		Name:     "drive",
 		Host:     "https://drive-api.proton.me/api",
 		ClientID: "web-drive",
+		Version:  "5.2.0",
 	}
 
 	session := SessionFromForkPull(pull, svc, "1.2.3.4")
@@ -369,8 +373,8 @@ func TestBuildChildSession(t *testing.T) {
 	if session.BaseURL != "https://drive-api.proton.me/api" {
 		t.Fatalf("BaseURL = %q, want %q", session.BaseURL, "https://drive-api.proton.me/api")
 	}
-	if session.AppVersion != "web-drive@1.2.3.4+proton-cli" {
-		t.Fatalf("AppVersion = %q, want %q", session.AppVersion, "web-drive@1.2.3.4+proton-cli")
+	if session.AppVersion != "web-drive@5.2.0+proton-cli" {
+		t.Fatalf("AppVersion = %q, want %q", session.AppVersion, "web-drive@5.2.0+proton-cli")
 	}
 	if session.Client == nil {
 		t.Fatal("Client is nil")

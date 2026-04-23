@@ -8,16 +8,13 @@ import (
 )
 
 // TestAppVersionFormat_Property verifies that for any valid (clientID, version)
-// pair, AppVersion produces "<clientID>@<version>+proton-cli".
-//
-// **Validates: Requirements 1.5**
-// Tag: Feature: session-fork, Property 1: App version format
+// pair, AppVersion produces "<clientID>@<version>".
 func TestAppVersionFormat_Property(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		clientID := rapid.StringMatching(`[a-z]{2,8}(-[a-z]{2,8})?`).Draw(t, "clientID")
 		version := rapid.StringMatching(`[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`).Draw(t, "version")
 
-		sc := ServiceConfig{ClientID: clientID}
+		sc := ServiceConfig{ClientID: clientID, Version: version}
 		got := sc.AppVersion(version)
 
 		want := clientID + "@" + version + "+proton-cli"
@@ -27,17 +24,29 @@ func TestAppVersionFormat_Property(t *testing.T) {
 	})
 }
 
+// TestAppVersionDefaultVersion verifies that AppVersion("") uses the
+// service's default Version field.
+func TestAppVersionDefaultVersion(t *testing.T) {
+	sc := ServiceConfig{ClientID: "web-lumo", Version: "1.3.3.4"}
+	got := sc.AppVersion("")
+	want := "web-lumo@1.3.3.4+proton-cli"
+	if got != want {
+		t.Fatalf("AppVersion(\"\") = %q, want %q", got, want)
+	}
+}
+
 // TestServicesRegistry verifies that the default registry has the expected
-// entries with correct hosts and client IDs.
+// entries with correct hosts, client IDs, and versions.
 func TestServicesRegistry(t *testing.T) {
 	tests := []struct {
 		name     string
 		host     string
 		clientID string
+		version  string
 	}{
-		{"account", "https://account-api.proton.me/api", "web-account"},
-		{"drive", "https://drive-api.proton.me/api", "web-drive"},
-		{"lumo", "https://lumo.proton.me/api", "web-lumo"},
+		{"account", "https://account.proton.me/api", "web-account", "5.2.0"},
+		{"drive", "https://drive-api.proton.me/api", "web-drive", "5.2.0"},
+		{"lumo", "https://lumo.proton.me/api", "web-lumo", "1.3.3.4"},
 	}
 
 	for _, tt := range tests {
@@ -55,6 +64,9 @@ func TestServicesRegistry(t *testing.T) {
 			if svc.ClientID != tt.clientID {
 				t.Errorf("ClientID = %q, want %q", svc.ClientID, tt.clientID)
 			}
+			if svc.Version != tt.version {
+				t.Errorf("Version = %q, want %q", svc.Version, tt.version)
+			}
 		})
 	}
 }
@@ -69,8 +81,8 @@ func TestLookupService_Found(t *testing.T) {
 	if svc.Name != "account" {
 		t.Errorf("Name = %q, want %q", svc.Name, "account")
 	}
-	if svc.Host != "https://account-api.proton.me/api" {
-		t.Errorf("Host = %q, want %q", svc.Host, "https://account-api.proton.me/api")
+	if svc.Host != "https://account.proton.me/api" {
+		t.Errorf("Host = %q, want %q", svc.Host, "https://account.proton.me/api")
 	}
 	if svc.ClientID != "web-account" {
 		t.Errorf("ClientID = %q, want %q", svc.ClientID, "web-account")

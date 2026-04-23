@@ -56,13 +56,10 @@ func (s *testSessionIndex) SetConfig(svc string, cfg *SessionConfig) {
 // TestIntegration_FullForkFlow verifies the complete fork flow:
 // push fork request → receive selector → pull fork → build child session.
 func TestIntegration_FullForkFlow(t *testing.T) {
-	// The push endpoint captures the payload sent by ForkSessionWithKeyPass.
-	// The pull endpoint returns it back — simulating the server storing and
-	// returning the fork payload.
 	var capturedPayload string
-
-	// Mock push endpoint (parent host).
 	var pushReceived ForkPushReq
+
+	// Mock parent (account) host — handles push (POST).
 	pushSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := make([]byte, r.ContentLength)
 		_, _ = r.Body.Read(body)
@@ -75,7 +72,7 @@ func TestIntegration_FullForkFlow(t *testing.T) {
 	}))
 	defer pushSrv.Close()
 
-	// Mock pull endpoint (child host) — returns the captured payload.
+	// Mock target service host — handles pull (GET).
 	pullSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"Code":         1000,
@@ -101,9 +98,9 @@ func TestIntegration_FullForkFlow(t *testing.T) {
 		Name:     "lumo",
 		Host:     pullSrv.URL,
 		ClientID: "web-lumo",
+		Version:  "1.3.3.4",
 	}
 
-	// Execute the fork.
 	child, childKeyPass, err := ForkSessionWithKeyPass(
 		context.Background(), parent, targetSvc, DefaultVersion,
 		[]byte("test-salted-key-pass"),
@@ -113,15 +110,12 @@ func TestIntegration_FullForkFlow(t *testing.T) {
 	}
 	defer child.Stop()
 
-	// Verify push request.
 	if pushReceived.ChildClientID != "web-lumo" {
 		t.Errorf("push ChildClientID = %q, want %q", pushReceived.ChildClientID, "web-lumo")
 	}
 	if pushReceived.Independent != 0 {
 		t.Errorf("push Independent = %d, want 0", pushReceived.Independent)
 	}
-
-	// Verify child session.
 	if child.Auth.UID != "child-uid" {
 		t.Errorf("child UID = %q, want %q", child.Auth.UID, "child-uid")
 	}
@@ -131,8 +125,6 @@ func TestIntegration_FullForkFlow(t *testing.T) {
 	if child.BaseURL != pullSrv.URL {
 		t.Errorf("child BaseURL = %q, want %q", child.BaseURL, pullSrv.URL)
 	}
-
-	// Verify decrypted key pass matches what we sent.
 	if string(childKeyPass) != "test-salted-key-pass" {
 		t.Errorf("childKeyPass = %q, want %q", string(childKeyPass), "test-salted-key-pass")
 	}
@@ -148,28 +140,26 @@ func TestIntegration_AutoForkOnFirstUse(t *testing.T) {
 	var capturedPayload string
 	var forkPushCalled atomic.Bool
 
-	// Mock push endpoint (parent host).
-	pushSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		forkPushCalled.Store(true)
-		var req ForkPushReq
-		body := make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(body)
-		_ = json.Unmarshal(body, &req)
-		capturedPayload = req.Payload
+	// Mock target service host — handles both push and pull.
+	targetSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			forkPushCalled.Store(true)
+			var req ForkPushReq
+			body := make([]byte, r.ContentLength)
+			_, _ = r.Body.Read(body)
+			_ = json.Unmarshal(body, &req)
+			capturedPayload = req.Payload
 
-		if req.ChildClientID != "web-lumo" {
-			t.Errorf("push ChildClientID = %q, want %q", req.ChildClientID, "web-lumo")
+			if req.ChildClientID != "web-lumo" {
+				t.Errorf("push ChildClientID = %q, want %q", req.ChildClientID, "web-lumo")
+			}
+
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Code":     1000,
+				"Selector": "auto-fork-sel",
+			})
+			return
 		}
-
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"Code":     1000,
-			"Selector": "auto-fork-sel",
-		})
-	}))
-	defer pushSrv.Close()
-
-	// Mock pull endpoint (child host).
-	pullSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"Code":         1000,
 			"UID":          "lumo-uid",
@@ -178,26 +168,24 @@ func TestIntegration_AutoForkOnFirstUse(t *testing.T) {
 			"Payload":      capturedPayload,
 		})
 	}))
-	defer pullSrv.Close()
+	defer targetSrv.Close()
 
-	// Simulate: account session exists, no service session.
 	jar, _ := cookiejar.New(nil)
 	parent := &Session{
 		Auth: proton.Auth{
 			UID:         "acct-uid",
 			AccessToken: "acct-at",
 		},
-		BaseURL:   pushSrv.URL,
+		BaseURL:   targetSrv.URL,
 		cookieJar: jar,
 	}
 
 	targetSvc := ServiceConfig{
 		Name:     "lumo",
-		Host:     pullSrv.URL,
+		Host:     targetSrv.URL,
 		ClientID: "web-lumo",
 	}
 
-	// Fork — simulating what RestoreServiceSession does when no service session exists.
 	child, keyPass, err := ForkSessionWithKeyPass(
 		context.Background(), parent, targetSvc, DefaultVersion,
 		[]byte("account-keypass"),
@@ -213,14 +201,13 @@ func TestIntegration_AutoForkOnFirstUse(t *testing.T) {
 	if child.Auth.UID != "lumo-uid" {
 		t.Errorf("child UID = %q, want %q", child.Auth.UID, "lumo-uid")
 	}
-	if child.BaseURL != pullSrv.URL {
-		t.Errorf("child BaseURL = %q, want %q", child.BaseURL, pullSrv.URL)
+	if child.BaseURL != targetSrv.URL {
+		t.Errorf("child BaseURL = %q, want %q", child.BaseURL, targetSrv.URL)
 	}
 	if string(keyPass) != "account-keypass" {
 		t.Errorf("keyPass = %q, want %q", string(keyPass), "account-keypass")
 	}
 
-	// Verify the child session can be saved and loaded.
 	store := &mockStore{}
 	if err := SessionSave(store, child, keyPass); err != nil {
 		t.Fatalf("SessionSave: %v", err)
@@ -264,21 +251,20 @@ func TestIntegration_ReForkOnStale(t *testing.T) {
 	var capturedPayload string
 	var forkCount atomic.Int32
 
-	pushSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		forkCount.Add(1)
-		var req ForkPushReq
-		body := make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(body)
-		_ = json.Unmarshal(body, &req)
-		capturedPayload = req.Payload
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"Code":     1000,
-			"Selector": "refork-sel",
-		})
-	}))
-	defer pushSrv.Close()
-
-	pullSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	targetSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			forkCount.Add(1)
+			var req ForkPushReq
+			body := make([]byte, r.ContentLength)
+			_, _ = r.Body.Read(body)
+			_ = json.Unmarshal(body, &req)
+			capturedPayload = req.Payload
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Code":     1000,
+				"Selector": "refork-sel",
+			})
+			return
+		}
 		//nolint:gosec // G101: test fixture data, not real credentials.
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"Code":         1000,
@@ -288,7 +274,7 @@ func TestIntegration_ReForkOnStale(t *testing.T) {
 			"Payload":      capturedPayload,
 		})
 	}))
-	defer pullSrv.Close()
+	defer targetSrv.Close()
 
 	jar, _ := cookiejar.New(nil)
 	parent := &Session{
@@ -296,13 +282,13 @@ func TestIntegration_ReForkOnStale(t *testing.T) {
 			UID:         "acct-uid",
 			AccessToken: "acct-at",
 		},
-		BaseURL:   pushSrv.URL,
+		BaseURL:   targetSrv.URL,
 		cookieJar: jar,
 	}
 
 	targetSvc := ServiceConfig{
 		Name:     "drive",
-		Host:     pullSrv.URL,
+		Host:     targetSrv.URL,
 		ClientID: "web-drive",
 	}
 
@@ -406,20 +392,19 @@ func TestIntegration_ProactiveRefreshCascade(t *testing.T) {
 func TestIntegration_BackwardCompatWildcard(t *testing.T) {
 	var capturedPayload string
 
-	pushSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req ForkPushReq
-		body := make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(body)
-		_ = json.Unmarshal(body, &req)
-		capturedPayload = req.Payload
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"Code":     1000,
-			"Selector": "compat-sel",
-		})
-	}))
-	defer pushSrv.Close()
-
-	pullSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	targetSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var req ForkPushReq
+			body := make([]byte, r.ContentLength)
+			_, _ = r.Body.Read(body)
+			_ = json.Unmarshal(body, &req)
+			capturedPayload = req.Payload
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Code":     1000,
+				"Selector": "compat-sel",
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"Code":         1000,
 			"UID":          "drive-uid",
@@ -428,9 +413,8 @@ func TestIntegration_BackwardCompatWildcard(t *testing.T) {
 			"Payload":      capturedPayload,
 		})
 	}))
-	defer pullSrv.Close()
+	defer targetSrv.Close()
 
-	// Simulate a wildcard session (the old format).
 	wildcardConfig := &SessionConfig{
 		UID:           "wildcard-uid",
 		AccessToken:   "wildcard-at",
@@ -439,20 +423,19 @@ func TestIntegration_BackwardCompatWildcard(t *testing.T) {
 		LastRefresh:   time.Now(),
 	}
 
-	// The wildcard session serves as the account session.
 	jar, _ := cookiejar.New(nil)
 	parent := &Session{
 		Auth: proton.Auth{
 			UID:         wildcardConfig.UID,
 			AccessToken: wildcardConfig.AccessToken,
 		},
-		BaseURL:   pushSrv.URL,
+		BaseURL:   targetSrv.URL,
 		cookieJar: jar,
 	}
 
 	targetSvc := ServiceConfig{
 		Name:     "drive",
-		Host:     pullSrv.URL,
+		Host:     targetSrv.URL,
 		ClientID: "web-drive",
 	}
 
@@ -470,8 +453,8 @@ func TestIntegration_BackwardCompatWildcard(t *testing.T) {
 	if child.Auth.UID != "drive-uid" {
 		t.Errorf("child UID = %q, want %q", child.Auth.UID, "drive-uid")
 	}
-	if child.BaseURL != pullSrv.URL {
-		t.Errorf("child BaseURL = %q, want %q", child.BaseURL, pullSrv.URL)
+	if child.BaseURL != targetSrv.URL {
+		t.Errorf("child BaseURL = %q, want %q", child.BaseURL, targetSrv.URL)
 	}
 	if string(childKeyPass) != "wildcard-keypass" {
 		t.Errorf("childKeyPass = %q, want %q", string(childKeyPass), "wildcard-keypass")

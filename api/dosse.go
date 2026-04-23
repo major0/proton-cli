@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -54,6 +55,8 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
+	slog.Debug("doSSE.request", "url", reqURL, "appversion", s.AppVersion)
+
 	httpClient := &http.Client{Jar: s.cookieJar}
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -69,6 +72,7 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 		// Try to extract an API error message from the response body.
 		var envelope apiEnvelope
 		if json.Unmarshal(respBody, &envelope) == nil && envelope.Code != 0 {
+			slog.Debug("doSSE.error", "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
 			return nil, &Error{
 				Status:  resp.StatusCode,
 				Code:    envelope.Code,
