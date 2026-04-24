@@ -105,7 +105,7 @@ func TestSecretLogging_SessionRestore(t *testing.T) {
 	}}
 
 	// Will fail at GetUser, but exercises the logging path.
-	_, _ = SessionRestore(context.Background(), nil, store, nil)
+	_, _ = SessionRestore(context.Background(), nil, store, nil, nil)
 
 	output := buf.String()
 	scanForSentinels(t, output, sentinelAccess, sentinelRefresh)

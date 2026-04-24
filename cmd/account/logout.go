@@ -3,11 +3,24 @@ package accountCmd
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	common "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
+
+// logoutAccountStoreFn loads the account config to check CookieAuth.
+// It is a variable so tests can replace it.
+var logoutAccountStoreFn = func() (*common.SessionConfig, error) {
+	return cli.AccountStoreVar.Load()
+}
+
+// logoutCookieDeleteFn deletes the cookie store entry.
+// It is a variable so tests can replace it.
+var logoutCookieDeleteFn = func() error {
+	return cli.CookieStoreVar.Delete()
+}
 
 var authLogoutForce = false
 var authLogoutCmd = &cobra.Command{
@@ -23,7 +36,16 @@ var authLogoutCmd = &cobra.Command{
 			return err
 		}
 
-		return common.SessionRevoke(ctx, session, cli.SessionStoreVar, authLogoutForce)
+		if err := common.SessionRevoke(ctx, session, cli.SessionStoreVar, authLogoutForce); err != nil {
+			return err
+		}
+
+		// Clean up cookie store. Log warning on failure — don't fail the logout.
+		if err := logoutCookieDeleteFn(); err != nil {
+			slog.Warn("logout: cookie store delete failed", "error", err)
+		}
+
+		return nil
 	},
 }
 

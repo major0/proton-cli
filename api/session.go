@@ -297,7 +297,11 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	}
 
 	req.Header.Set("x-pm-uid", s.Auth.UID)
-	req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
+	// Only set Bearer auth when we have a token. Cookie-mode sessions
+	// have empty AccessToken — auth is provided via cookies in the jar.
+	if s.Auth.AccessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
+	}
 	appVer := s.resolveAppVersion(reqURL)
 	if appVer != "" {
 		req.Header.Set("x-pm-appversion", appVer)
@@ -311,6 +315,18 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	req.Header.Set("Accept", ProtonAccept)
 
 	slog.Debug("doJSON.request", "method", method, "url", reqURL, "appversion", appVer)
+
+	// Log outgoing cookie names for debugging.
+	if s.cookieJar != nil {
+		if reqParsed, parseErr := url.Parse(reqURL); parseErr == nil {
+			outCookies := s.cookieJar.Cookies(reqParsed)
+			names := make([]string, len(outCookies))
+			for i, c := range outCookies {
+				names[i] = c.Name
+			}
+			slog.Debug("doJSON.sending-cookies", "url", reqURL, "cookies", names)
+		}
+	}
 
 	httpClient := &http.Client{Jar: s.cookieJar}
 	resp, err := httpClient.Do(req)
@@ -392,8 +408,11 @@ func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, r
 	req.Header.Set("x-pm-uid", s.Auth.UID)
 	// Prefer cookie auth (AUTH-<uid>=<token>) but fall back to Bearer.
 	// The AUTH cookie is set by POST /core/v4/auth/cookies. If not present,
-	// Bearer auth works but grants restricted scopes.
-	req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
+	// Bearer auth works but grants restricted scopes. Cookie-mode sessions
+	// have empty AccessToken.
+	if s.Auth.AccessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
+	}
 	appVer := s.resolveAppVersion(reqURL)
 	if appVer != "" {
 		req.Header.Set("x-pm-appversion", appVer)
@@ -467,14 +486,21 @@ func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, r
 }
 
 // SessionRestore loads credentials from the store and creates an unlocked
-// session. Returns ErrNotLoggedIn if no session is stored.
-func SessionRestore(ctx context.Context, options []proton.Option, store SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
+// session. Returns ErrNotLoggedIn if no session is stored. When the loaded
+// config has CookieAuth=true and cookieStore is non-nil, the cookie restore
+// path is used instead of the Bearer path.
+func SessionRestore(ctx context.Context, options []proton.Option, store SessionStore, cookieStore SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
 	config, err := store.Load()
 	if err != nil {
 		if errors.Is(err, ErrKeyNotFound) {
 			return nil, ErrNotLoggedIn
 		}
 		return nil, err
+	}
+
+	// Route to cookie restore when CookieAuth=true.
+	if config.CookieAuth && cookieStore != nil {
+		return CookieSessionRestore(ctx, options, cookieStore, config, managerHook)
 	}
 
 	slog.Debug("SessionRestore", "uid", config.UID, "access_token", "<redacted>", "refresh_token", "<redacted>")
@@ -525,9 +551,10 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 // ReadySession restores a session from the store, registers auth/deauth
 // handlers, and returns a fully initialized Session ready for use.
 // This is the recommended entry point for consumers that need an
-// authenticated session.
-func ReadySession(ctx context.Context, options []proton.Option, store SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
-	session, err := SessionRestore(ctx, options, store, managerHook)
+// authenticated session. When cookieStore is non-nil and the session has
+// CookieAuth=true, the cookie restore path is used.
+func ReadySession(ctx context.Context, options []proton.Option, store SessionStore, cookieStore SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
+	session, err := SessionRestore(ctx, options, store, cookieStore, managerHook)
 	if err != nil {
 		return nil, err
 	}
@@ -598,6 +625,55 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 			return nil, ErrNotLoggedIn
 		}
 		return nil, fmt.Errorf("restore service session %q: account: %w", service, err)
+	}
+
+	// When CookieAuth=true, restore the cookie session and fork to get
+	// service-specific scopes (e.g., "lumo"). The fork push uses cookie
+	// auth, and the child session uses the parent's cookie jar with
+	// CookieTransport — cookies have Domain=proton.me so they work for
+	// all *.proton.me subdomains.
+	if acctConfig.CookieAuth && cookieStore != nil {
+		slog.Debug("restore service session: cookie auth mode", "service", service)
+
+		// Restore the cookie session for the fork push.
+		acctSession, err := CookieSessionRestore(ctx, options, cookieStore, acctConfig, managerHook)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: %w", service, err)
+		}
+
+		keypass, err := Base64Decode(acctConfig.SaltedKeyPass)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
+		}
+
+		// Cookie fork: push with AUTH cookie, pull gets service scopes.
+		child, childKeyPass, err := cookieFork(ctx, acctSession, acctConfig, svc, "", keypass, cookieStore)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
+		}
+
+		childUser, err := child.Client.GetUser(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: get user: %w", service, err)
+		}
+		child.user = childUser
+
+		if err := SessionSave(store, child, childKeyPass); err != nil {
+			return nil, fmt.Errorf("restore service session %q: save fork: %w", service, err)
+		}
+
+		addrs, err := child.Client.GetAddresses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
+		}
+		if err := child.Unlock(childKeyPass, addrs); err != nil {
+			return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
+		}
+
+		child.AddAuthHandler(NewAuthHandler(store, child))
+		child.AddDeauthHandler(NewDeauthHandler())
+
+		return child, nil
 	}
 
 	// Build account session using account-specific options (not the service options).
@@ -680,7 +756,7 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 		var child *Session
 		var childKeyPass []byte
 
-		if svc.CookieAuth && cookieStore != nil {
+		if acctConfig.CookieAuth && cookieStore != nil {
 			// Cookie-aware fork: use CookieSession for the fork push.
 			child, childKeyPass, err = cookieFork(ctx, acctSession, acctConfig, svc, version, keypass, cookieStore)
 		} else {

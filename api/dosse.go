@@ -43,7 +43,9 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 	}
 
 	req.Header.Set("x-pm-uid", s.Auth.UID)
-	req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
+	if s.Auth.AccessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
+	}
 	appVer := s.resolveAppVersion(reqURL)
 	if appVer != "" {
 		req.Header.Set("x-pm-appversion", appVer)

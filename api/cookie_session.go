@@ -14,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	proton "github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api/pool"
 )
 
 // AuthCookiesReq is the request body for POST /core/v4/auth/cookies.
@@ -36,6 +39,63 @@ type CookieSession struct {
 	UserAgent  string         // User-Agent header value
 	cookieJar  http.CookieJar // contains AUTH-<uid>, REFRESH-<uid>, Session-Id
 	mu         sync.Mutex     // serializes cookie refresh
+}
+
+// CookieDomain is the domain used for all Proton session cookies.
+// The server sets Domain=proton.me on Set-Cookie headers, making cookies
+// valid for all *.proton.me subdomains. We use this constant when loading
+// persisted cookies back into a jar so the domain scoping is preserved.
+const CookieDomain = "proton.me"
+
+// loadProtonCookies injects persisted cookies into the jar with correct
+// domain scoping. For Proton domains (*.proton.me), Domain is set to
+// proton.me so cookies match all subdomains. For other domains (e.g.,
+// localhost in tests), the original domain is preserved.
+func loadProtonCookies(jar http.CookieJar, cookies []serialCookie, baseURL string) {
+	if len(cookies) == 0 {
+		return
+	}
+
+	// Determine if this is a Proton domain.
+	isProton := false
+	u, err := url.Parse(baseURL)
+	if err == nil {
+		host := u.Hostname()
+		isProton = host == CookieDomain || strings.HasSuffix(host, "."+CookieDomain)
+	}
+
+	// For Proton domains, use proton.me as the SetCookies URL so the jar
+	// accepts Domain=proton.me cookies. For other domains, use the baseURL.
+	setCookieURL := u
+	if isProton {
+		setCookieURL, _ = url.Parse("https://proton.me/")
+	}
+
+	httpCookies := make([]*http.Cookie, len(cookies))
+	for i, c := range cookies {
+		path := c.Path
+		if path == "" && isProton {
+			switch {
+			case strings.HasPrefix(c.Name, "REFRESH-"):
+				path = "/api/auth/refresh"
+			case strings.HasPrefix(c.Name, "AUTH-"):
+				path = "/api/"
+			default:
+				path = "/"
+			}
+		}
+		domain := c.Domain
+		if isProton && (domain == "" || domain == CookieDomain || strings.HasSuffix(domain, "."+CookieDomain)) {
+			domain = CookieDomain
+		}
+		httpCookies[i] = &http.Cookie{
+			Name:   c.Name,
+			Value:  c.Value,
+			Domain: domain,
+			Path:   path,
+		}
+	}
+	jar.SetCookies(setCookieURL, httpCookies)
 }
 
 // cookieQueryURL returns a URL suitable for querying the cookie jar.
@@ -253,6 +313,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 		return fmt.Errorf("RefreshCookies: %w", err)
 	}
 
+	//nolint:gosec // G706: uid is from our own cookie jar, not user input.
 	slog.Debug("cookieSession.RefreshCookies", "uid", uid)
 
 	reqBody := AuthCookiesReq{
@@ -271,6 +332,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 	}
 
 	reqURL := cs.buildURL("/core/v4/auth/cookies")
+	//nolint:gosec // G704: reqURL is built from our own BaseURL, not user input.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("RefreshCookies: new request: %w", err)
@@ -289,7 +351,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 	// No Authorization: Bearer header — cookie auth only.
 
 	httpClient := &http.Client{Jar: cs.cookieJar}
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // G704: URL built from our BaseURL
 	if err != nil {
 		return fmt.Errorf("RefreshCookies: POST auth/cookies: %w", err)
 	}
@@ -317,7 +379,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 	// Set-Cookie headers automatically. No manual validation needed — the
 	// jar handles path-scoped storage and the http.Client sends the right
 	// cookies on subsequent requests.
-	slog.Debug("cookieSession.RefreshCookies.complete", "uid", uid)
+	slog.Debug("cookieSession.RefreshCookies.complete", "uid", uid) //nolint:gosec // G706: uid from cookie jar
 
 	return nil
 }
@@ -469,18 +531,147 @@ func (cs *CookieSession) Config() *CookieSessionConfig {
 // host (e.g., "https://account.proton.me/api").
 func CookieSessionFromConfig(config *CookieSessionConfig, baseURL string) *CookieSession {
 	jar, _ := cookiejar.New(nil)
-	// Load cookies with path=/ so they match all request paths.
-	// cookieQueryURL is only for querying — loading needs a root path
-	// because serialized cookies have empty Path (jar.Cookies doesn't
-	// return it), and SetCookies uses defaultPath(url.Path) for cookies
-	// with empty Path.
-	u := cookieQueryURL(baseURL)
-	u.Path = "/"
-	loadCookies(jar, config.Cookies, u)
+	loadProtonCookies(jar, config.Cookies, baseURL)
 
 	return &CookieSession{
 		UID:       config.UID,
 		BaseURL:   baseURL,
 		cookieJar: jar,
 	}
+}
+
+// CookieLoginSave persists both the cookie session and account metadata after
+// a login-time cookie transition. The cookieStore receives the serialized
+// cookies, and the accountStore receives CookieAuth=true with empty Bearer
+// tokens (they are invalid after transition).
+func CookieLoginSave(cookieStore, accountStore SessionStore, session *Session, cookieSess *CookieSession, keypass []byte) error {
+	cfg := cookieSess.Config()
+	saltedKeyPass := Base64Encode(keypass)
+
+	cookieConfig := &SessionConfig{
+		UID:           cfg.UID,
+		Cookies:       cfg.Cookies,
+		SaltedKeyPass: saltedKeyPass,
+		LastRefresh:   cfg.LastRefresh,
+		CookieAuth:    true,
+	}
+	if err := cookieStore.Save(cookieConfig); err != nil {
+		return fmt.Errorf("cookie login save: cookie store: %w", err)
+	}
+
+	accountConfig := &SessionConfig{
+		UID:           session.Auth.UID,
+		AccessToken:   "",
+		RefreshToken:  "",
+		SaltedKeyPass: saltedKeyPass,
+		LastRefresh:   cfg.LastRefresh,
+		CookieAuth:    true,
+	}
+	if err := accountStore.Save(accountConfig); err != nil {
+		return fmt.Errorf("cookie login save: account store: %w", err)
+	}
+
+	return nil
+}
+
+// CookieSessionRestore restores a cookie-mode session from the cookie store.
+// It loads persisted cookies, optionally performs a proactive refresh, builds
+// a proton.Manager with CookieTransport, and unlocks keyrings. The returned
+// Session uses cookie auth for all Resty-based API calls (GetUser,
+// GetAddresses, etc.). Session.Auth holds the UID but empty Bearer tokens.
+func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieStore SessionStore, acctConfig *SessionConfig, managerHook func(*proton.Manager)) (*Session, error) {
+	cookieConfig, err := cookieStore.Load()
+	if err != nil {
+		if errors.Is(err, ErrKeyNotFound) {
+			return nil, ErrNotLoggedIn
+		}
+		return nil, fmt.Errorf("cookie session restore: load: %w", err)
+	}
+
+	acctSvc, _ := LookupService("account")
+
+	// Build cookie jar and inject persisted cookies.
+	jar, _ := cookiejar.New(nil)
+	loadProtonCookies(jar, cookieConfig.Cookies, acctSvc.Host)
+
+	// Proactive refresh: if cookies are stale, refresh before building the session.
+	if NeedsProactiveRefresh(cookieConfig.LastRefresh) {
+		slog.Debug("cookieSessionRestore.proactiveRefresh", "age", time.Since(cookieConfig.LastRefresh))
+
+		cs := &CookieSession{
+			UID:        cookieConfig.UID,
+			BaseURL:    acctSvc.Host,
+			AppVersion: acctSvc.AppVersion(""),
+			cookieJar:  jar,
+		}
+		if refreshErr := cs.RefreshCookies(ctx); refreshErr != nil {
+			return nil, fmt.Errorf("cookie session restore: proactive refresh (run `proton account login`): %w", refreshErr)
+		}
+
+		// Persist updated cookies.
+		refreshedCfg := cs.Config()
+		cookieConfig.Cookies = refreshedCfg.Cookies
+		cookieConfig.LastRefresh = refreshedCfg.LastRefresh
+		if saveErr := cookieStore.Save(cookieConfig); saveErr != nil {
+			slog.Error("cookie session restore: persist refreshed cookies", "error", saveErr)
+		}
+	}
+
+	// Build proton.Manager with CookieTransport so Resty-based calls use cookie auth.
+	ct := &CookieTransport{Base: http.DefaultTransport}
+	managerOpts := []proton.Option{
+		proton.WithTransport(ct),
+		proton.WithCookieJar(jar),
+		proton.WithHostURL(acctSvc.Host),
+		proton.WithAppVersion(acctSvc.AppVersion("")),
+	}
+	managerOpts = append(managerOpts, options...)
+
+	session := &Session{}
+	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
+	session.Pool = pool.New(ctx, DefaultMaxWorkers, pool.WithThrottle(session.Throttle))
+	session.cookieJar = jar
+
+	session.manager = proton.New(managerOpts...)
+	if managerHook != nil {
+		managerHook(session.manager)
+	}
+
+	// Attach cookie refresh handler to the transport for 401 retry.
+	attachCookieRefresh(ctx, cookieConfig, jar, ct, cookieStore)
+
+	// Create client with UID for x-pm-uid header, empty tokens (Bearer is dead).
+	session.Client = session.manager.NewClient(cookieConfig.UID, "", "")
+	session.Auth = proton.Auth{
+		UID:          cookieConfig.UID,
+		AccessToken:  "",
+		RefreshToken: "",
+	}
+
+	// Fetch user and addresses via the cookie-authed client.
+	user, err := session.Client.GetUser(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("cookie session restore: get user: %w", err)
+	}
+	session.user = user
+
+	addrs, err := session.Client.GetAddresses(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("cookie session restore: get addresses: %w", err)
+	}
+
+	// Unlock keyrings using SaltedKeyPass from the account config.
+	keypass, err := Base64Decode(acctConfig.SaltedKeyPass)
+	if err != nil {
+		return nil, fmt.Errorf("cookie session restore: decode keypass: %w", err)
+	}
+	if err := session.Unlock(keypass, addrs); err != nil {
+		return nil, fmt.Errorf("cookie session restore: unlock: %w", err)
+	}
+
+	// Set BaseURL and AppVersion from the account service registry.
+	session.BaseURL = acctSvc.Host
+	session.AppVersion = acctSvc.AppVersion("")
+
+	return session, nil
 }

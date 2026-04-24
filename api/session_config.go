@@ -13,4 +13,5 @@ type SessionConfig struct {
 	Cookies       []serialCookie `json:"cookies,omitempty"`
 	LastRefresh   time.Time      `json:"last_refresh,omitempty"`
 	Service       string         `json:"service,omitempty"`
+	CookieAuth    bool           `json:"cookie_auth,omitempty"`
 }

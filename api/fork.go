@@ -359,10 +359,8 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCo
 		return nil, nil, fmt.Errorf("%w: encrypt blob: %w", ErrForkFailed, err)
 	}
 
-	// Fork push via CookieSession's cookie jar. We build the request
-	// manually (not via DoJSON) to set Origin and Referer headers that
-	// the Proton API requires for scope grants. The Referer must contain
-	// app=proton-<service> for the server to grant service-specific scopes.
+	// Fork push via CookieSession's cookie jar. Build the request to match
+	// the browser's fork push exactly — every header, every cookie path.
 	pushReq := ForkPushReq{
 		ChildClientID: targetService.ClientID,
 		Independent:   0,
@@ -383,17 +381,27 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCo
 		return nil, nil, fmt.Errorf("%w: new push request: %w", ErrForkFailed, err)
 	}
 
-	// Match the browser's headers exactly.
-	httpReq.Header.Set("x-pm-uid", cookieSess.UID)
+	// Match the browser's headers exactly (from HAR analysis).
+	httpReq.Header.Set("accept", "application/vnd.protonmail.v1+json")
+	httpReq.Header.Set("accept-language", "en-US,en;q=0.9")
+	httpReq.Header.Set("cache-control", "no-cache")
+	httpReq.Header.Set("content-type", "application/json")
+	httpReq.Header.Set("origin", "https://account.proton.me")
+	httpReq.Header.Set("pragma", "no-cache")
+	httpReq.Header.Set("referer", "https://account.proton.me/authorize?app=proton-"+targetService.Name)
+	httpReq.Header.Set("user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36")
 	httpReq.Header.Set("x-pm-appversion", acctSvc.AppVersion(""))
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/vnd.protonmail.v1+json")
-	httpReq.Header.Set("Origin", acctSvc.Host)
-	// The Referer with app=proton-<service> tells the server which scopes
-	// to grant on the child session. Without it, "lumo" scope is missing.
-	httpReq.Header.Set("Referer", acctSvc.Host+"/authorize?app=proton-"+targetService.Name)
-	if cookieSess.UserAgent != "" {
-		httpReq.Header.Set("User-Agent", cookieSess.UserAgent)
+	httpReq.Header.Set("x-pm-locale", "en_US")
+	httpReq.Header.Set("x-pm-uid", cookieSess.UID)
+
+	// Log what cookies the jar will send for this URL.
+	if pushParsed, parseErr := url.Parse(pushURL); parseErr == nil {
+		jarCookies := cookieSess.cookieJar.Cookies(pushParsed)
+		names := make([]string, len(jarCookies))
+		for i, c := range jarCookies {
+			names[i] = c.Name
+		}
+		slog.Debug("cookieFork.push.jar-cookies", "url", pushURL, "cookies", names)
 	}
 
 	httpClient := &http.Client{Jar: cookieSess.cookieJar}
@@ -437,7 +445,23 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCo
 		return nil, nil, fmt.Errorf("%w: decrypt blob: %w", ErrForkFailed, err)
 	}
 
-	child := CookieSessionFromForkPull(pullResp, targetService, cookieSess.cookieJar)
+	// The fork pull returns Bearer tokens for the child session. Like the
+	// browser, we must transition the child to cookies via auth/cookies on
+	// the target service host. This gives us AUTH-<child-uid> cookies.
+	childBearer := SessionFromForkPull(pullResp, targetService, "")
+	childBearer.BaseURL = targetService.Host
+	childBearer.AppVersion = targetService.AppVersion("")
+
+	slog.Debug("cookieFork.child.transition", "uid", pullResp.UID, "host", targetService.Host)
+
+	childCookieSess, err := TransitionToCookies(ctx, childBearer)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: child cookie transition: %w", ErrForkFailed, err)
+	}
+
+	// Build the final child session with CookieTransport using the child's
+	// own cookie jar (has AUTH-<child-uid> for the target service).
+	child := CookieSessionFromForkPull(pullResp, targetService, childCookieSess.cookieJar)
 	return child, []byte(decryptedBlob.KeyPassword), nil
 }
 

@@ -19,11 +19,12 @@ import (
 var userPromptFn = internal.UserPrompt
 
 var authLoginParams = struct {
-	username  string
-	password  string
-	mboxpass  string
-	twoFA     string
-	noBrowser bool
+	username      string
+	password      string
+	mboxpass      string
+	twoFA         string
+	noBrowser     bool
+	cookieSession bool
 }{}
 
 // hasCaptchaMethod reports whether "captcha" is among the HV methods.
@@ -49,6 +50,10 @@ var authLoginCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
 		defer cancel()
 
+		if authLoginParams.cookieSession {
+			return cookieLogin(ctx, username, password, authLoginParams.mboxpass)
+		}
+
 		session, err := attemptLogin(ctx, username, password)
 		if err != nil {
 			return err
@@ -61,7 +66,7 @@ var authLoginCmd = &cobra.Command{
 			return err
 		}
 
-		if err := deriveAndSave(ctx, session, password, authLoginParams.mboxpass); err != nil {
+		if err := deriveAndSave(ctx, session, password, authLoginParams.mboxpass, false); err != nil {
 			return err
 		}
 
@@ -186,7 +191,24 @@ var sessionSaveFn = func(session *common.Session, keypass []byte) error {
 	return common.SessionSave(cli.SessionStoreVar, session, keypass)
 }
 
-func deriveAndSave(ctx context.Context, session *common.Session, password, mboxpass string) error {
+// transitionToCookiesFn is the function used to transition a Bearer session to cookie auth.
+// It is a variable so tests can replace it without making real API calls.
+var transitionToCookiesFn = common.TransitionToCookies
+
+// cookieLoginSaveFn is the function used to save a cookie session after login.
+// It is a variable so tests can replace it without real persistence.
+var cookieLoginSaveFn = func(session *common.Session, cookieSess *common.CookieSession, keypass []byte) error {
+	return common.CookieLoginSave(cli.CookieStoreVar, cli.AccountStoreVar, session, cookieSess, keypass)
+}
+
+// cookieStoreDeleteFn deletes the cookie store entry. Used during re-login
+// with cookieAuth=false to clean up stale cookie sessions.
+// It is a variable so tests can replace it.
+var cookieStoreDeleteFn = func() error {
+	return cli.CookieStoreVar.Delete()
+}
+
+func deriveAndSave(ctx context.Context, session *common.Session, password, mboxpass string, cookieAuth bool) error {
 	passBytes, err := selectKeyPassword(session.Auth.PasswordMode, password, mboxpass)
 	if err != nil {
 		return err
@@ -197,7 +219,89 @@ func deriveAndSave(ctx context.Context, session *common.Session, password, mboxp
 		return err
 	}
 
+	if cookieAuth {
+		// Set BaseURL and AppVersion for the account service — the session
+		// from SessionFromLogin uses proton.DefaultHostURL (mail.proton.me)
+		// and has no AppVersion set. TransitionToCookies needs the account
+		// host and a valid app version for the auth/cookies POST.
+		acctSvc, _ := common.LookupService("account")
+		session.BaseURL = acctSvc.Host
+		session.AppVersion = acctSvc.AppVersion("")
+
+		cookieSess, err := transitionToCookiesFn(ctx, session)
+		if err != nil {
+			return fmt.Errorf("cookie transition: %w", err)
+		}
+		return cookieLoginSaveFn(session, cookieSess, keypass)
+	}
+
+	// When switching from cookie→bearer, clean up any stale cookie session.
+	// Ignore errors — the cookie store may not exist if this is a fresh login.
+	_ = cookieStoreDeleteFn()
+
 	return sessionSaveFn(session, keypass)
+}
+
+// createAnonSessionFn is the function used to create an anonymous session.
+// It is a variable so tests can replace it.
+var createAnonSessionFn = common.CreateAnonSession
+
+// cookieLogin performs the browser-matching cookie login flow:
+// 1. Create anonymous session on account.proton.me
+// 2. SRP login using the anonymous session's Bearer tokens
+// 3. 2FA if needed
+// 4. Transition to cookies
+// 5. Save cookie session
+func cookieLogin(ctx context.Context, username, password, mboxpass string) error {
+	// Step 1: Create anonymous session on account.proton.me.
+	anon, _, err := createAnonSessionFn(ctx)
+	if err != nil {
+		return fmt.Errorf("cookie login: %w", err)
+	}
+
+	slog.Debug("cookieLogin: anonymous session created", "uid", anon.UID)
+
+	// Step 2: SRP login using the anonymous session's tokens.
+	// Point go-proton-api at account.proton.me with the account app version.
+	acctSvc, _ := common.LookupService("account")
+	loginOpts := []proton.Option{
+		proton.WithHostURL(acctSvc.Host),
+		proton.WithAppVersion(acctSvc.AppVersion("")),
+		proton.WithUserAgent(cli.UserAgent),
+	}
+	if cli.DebugHTTP {
+		loginOpts = append(loginOpts, proton.WithDebug(true))
+	}
+
+	// SessionFromLogin creates a new Manager+Client. We need to inject
+	// the anonymous session's tokens so the Resty client authenticates
+	// with them during SRP. go-proton-api's login flow creates its own
+	// session via auth/v4/sessions internally — but we already have one.
+	// Use the anonymous tokens directly with the Manager.
+	session, err := sessionFromLoginFn(ctx, loginOpts, username, password, nil, nil)
+	if err != nil {
+		return fmt.Errorf("cookie login: SRP: %w", err)
+	}
+
+	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
+	session.AddDeauthHandler(common.NewDeauthHandler())
+
+	// Step 3: 2FA if needed.
+	if err := handleTwoFA(ctx, session); err != nil {
+		return fmt.Errorf("cookie login: 2FA: %w", err)
+	}
+
+	// Step 4: Transition to cookies.
+	// Set BaseURL and AppVersion for the account service.
+	session.BaseURL = acctSvc.Host
+	session.AppVersion = acctSvc.AppVersion("")
+
+	if err := deriveAndSave(ctx, session, password, mboxpass, true); err != nil {
+		return err
+	}
+
+	logLoginDiagnostics()
+	return nil
 }
 
 // logLoginDiagnostics prints session diagnostic info when verbose mode is enabled.
@@ -227,4 +331,5 @@ func init() {
 	authLoginCmd.Flags().StringVarP(&authLoginParams.mboxpass, "mboxpass", "m", "", "Required of 2 password mode is enabled.")
 	authLoginCmd.Flags().StringVarP(&authLoginParams.twoFA, "2fa", "2", "", "2FA code")
 	cli.BoolFlag(authLoginCmd.Flags(), &authLoginParams.noBrowser, "no-browser", false, "Do not open browser for CAPTCHA; print URL and prompt for token")
+	cli.BoolFlag(authLoginCmd.Flags(), &authLoginParams.cookieSession, "cookie-session", false, "Use cookie-based auth instead of Bearer tokens")
 }

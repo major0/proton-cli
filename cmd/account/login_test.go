@@ -733,9 +733,11 @@ func TestDeriveAndSave(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			origSalt := saltKeyPassFn
 			origSave := sessionSaveFn
+			origCookieDelete := cookieStoreDeleteFn
 			t.Cleanup(func() {
 				saltKeyPassFn = origSalt
 				sessionSaveFn = origSave
+				cookieStoreDeleteFn = origCookieDelete
 			})
 
 			var gotSalted string
@@ -754,12 +756,14 @@ func TestDeriveAndSave(t *testing.T) {
 				return tt.saveErr
 			}
 
+			cookieStoreDeleteFn = func() error { return nil }
+
 			session := &common.Session{
 				Auth: proton.Auth{PasswordMode: tt.passMode},
 			}
 
 			ctx := context.Background()
-			err := deriveAndSave(ctx, session, tt.password, tt.mboxpass)
+			err := deriveAndSave(ctx, session, tt.password, tt.mboxpass, false)
 
 			if tt.wantErr != "" {
 				if err == nil {
@@ -906,14 +910,17 @@ func TestAuthLogoutCmd_RestoreError(t *testing.T) {
 func TestAuthLogoutCmd_NotLoggedIn(t *testing.T) {
 	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
+	origCookieDelete := logoutCookieDeleteFn
 	t.Cleanup(func() {
 		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
+		logoutCookieDeleteFn = origCookieDelete
 	})
 
 	// ErrKeyNotFound triggers ErrNotLoggedIn in RestoreSession.
 	cli.SessionStoreVar = &failingStore{err: common.ErrKeyNotFound}
 	authLogoutForce = false
+	logoutCookieDeleteFn = func() error { return nil }
 
 	// When not logged in and not forced, it proceeds to SessionRevoke
 	// with nil session, which calls store.Delete().
@@ -927,13 +934,16 @@ func TestAuthLogoutCmd_NotLoggedIn(t *testing.T) {
 func TestAuthLogoutCmd_ForceWithError(t *testing.T) {
 	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
+	origCookieDelete := logoutCookieDeleteFn
 	t.Cleanup(func() {
 		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
+		logoutCookieDeleteFn = origCookieDelete
 	})
 
 	cli.SessionStoreVar = &failingStore{err: fmt.Errorf("some error")}
 	authLogoutForce = true
+	logoutCookieDeleteFn = func() error { return nil }
 
 	// With force=true, even non-ErrNotLoggedIn errors are ignored
 	// and SessionRevoke is called with nil session.
@@ -1022,12 +1032,14 @@ func TestAuthLoginCmd_RunE_FullPath(t *testing.T) {
 	origSave := sessionSaveFn
 	origParams := authLoginParams
 	origStore := cli.SessionStoreVar
+	origCookieDelete := cookieStoreDeleteFn
 	t.Cleanup(func() {
 		sessionFromLoginFn = origLogin
 		saltKeyPassFn = origSalt
 		sessionSaveFn = origSave
 		authLoginParams = origParams
 		cli.SessionStoreVar = origStore
+		cookieStoreDeleteFn = origCookieDelete
 	})
 
 	authLoginParams.username = "testuser"
@@ -1056,6 +1068,8 @@ func TestAuthLoginCmd_RunE_FullPath(t *testing.T) {
 	sessionSaveFn = func(_ *common.Session, _ []byte) error {
 		return nil
 	}
+
+	cookieStoreDeleteFn = func() error { return nil }
 
 	cli.SessionStoreVar = &successStore{accounts: []string{}}
 
@@ -1329,5 +1343,327 @@ func TestLoginUsesAccountService(t *testing.T) {
 	// ProtonOpts should be non-empty after SetService.
 	if len(cli.ProtonOpts) == 0 {
 		t.Error("ProtonOpts is empty after SetService(account)")
+	}
+}
+
+// --- Cookie transition login flow tests (Task 4.1) ---
+
+// TestDeriveAndSave_CookieSession_Success verifies that when cookieAuth=true,
+// TransitionToCookies is called and CookieLoginSave is called.
+func TestDeriveAndSave_CookieSession_Success(t *testing.T) {
+	origSalt := saltKeyPassFn
+	origSave := sessionSaveFn
+	origTransition := transitionToCookiesFn
+	origCookieSave := cookieLoginSaveFn
+	t.Cleanup(func() {
+		saltKeyPassFn = origSalt
+		sessionSaveFn = origSave
+		transitionToCookiesFn = origTransition
+		cookieLoginSaveFn = origCookieSave
+	})
+
+	saltKeyPassFn = func(_ context.Context, _ *common.Session, _ []byte) ([]byte, error) {
+		return []byte("derived-key"), nil
+	}
+
+	var bearerSaveCalled bool
+	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+		bearerSaveCalled = true
+		return nil
+	}
+
+	var transitionCalled bool
+	wantCookieSess := &common.CookieSession{}
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+		transitionCalled = true
+		return wantCookieSess, nil
+	}
+
+	var cookieSaveCalled bool
+	cookieLoginSaveFn = func(_ *common.Session, cs *common.CookieSession, keypass []byte) error {
+		cookieSaveCalled = true
+		if cs != wantCookieSess {
+			t.Error("CookieLoginSave received wrong CookieSession")
+		}
+		if string(keypass) != "derived-key" {
+			t.Errorf("keypass = %q, want %q", string(keypass), "derived-key")
+		}
+		return nil
+	}
+
+	session := &common.Session{
+		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
+	}
+
+	err := deriveAndSave(context.Background(), session, "pass", "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !transitionCalled {
+		t.Error("TransitionToCookies was not called")
+	}
+	if !cookieSaveCalled {
+		t.Error("CookieLoginSave was not called")
+	}
+	if bearerSaveCalled {
+		t.Error("Bearer sessionSaveFn should not be called when cookieAuth=true")
+	}
+}
+
+// TestDeriveAndSave_CookieSession_TransitionError verifies that when
+// TransitionToCookies fails, the error is returned and no saves happen.
+func TestDeriveAndSave_CookieSession_TransitionError(t *testing.T) {
+	origSalt := saltKeyPassFn
+	origSave := sessionSaveFn
+	origTransition := transitionToCookiesFn
+	origCookieSave := cookieLoginSaveFn
+	t.Cleanup(func() {
+		saltKeyPassFn = origSalt
+		sessionSaveFn = origSave
+		transitionToCookiesFn = origTransition
+		cookieLoginSaveFn = origCookieSave
+	})
+
+	saltKeyPassFn = func(_ context.Context, _ *common.Session, _ []byte) ([]byte, error) {
+		return []byte("derived-key"), nil
+	}
+
+	var bearerSaveCalled bool
+	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+		bearerSaveCalled = true
+		return nil
+	}
+
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+		return nil, fmt.Errorf("transition failed: server error")
+	}
+
+	var cookieSaveCalled bool
+	cookieLoginSaveFn = func(_ *common.Session, _ *common.CookieSession, _ []byte) error {
+		cookieSaveCalled = true
+		return nil
+	}
+
+	session := &common.Session{
+		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
+	}
+
+	err := deriveAndSave(context.Background(), session, "pass", "", true)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "transition failed") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "transition failed")
+	}
+	if bearerSaveCalled {
+		t.Error("Bearer save should not be called on transition failure")
+	}
+	if cookieSaveCalled {
+		t.Error("CookieLoginSave should not be called on transition failure")
+	}
+}
+
+// TestDeriveAndSave_NoCookieSession_BearerPath verifies that when
+// cookieAuth=false, the existing Bearer save path is used unchanged.
+func TestDeriveAndSave_NoCookieSession_BearerPath(t *testing.T) {
+	origSalt := saltKeyPassFn
+	origSave := sessionSaveFn
+	origTransition := transitionToCookiesFn
+	origCookieSave := cookieLoginSaveFn
+	origCookieDelete := cookieStoreDeleteFn
+	t.Cleanup(func() {
+		saltKeyPassFn = origSalt
+		sessionSaveFn = origSave
+		transitionToCookiesFn = origTransition
+		cookieLoginSaveFn = origCookieSave
+		cookieStoreDeleteFn = origCookieDelete
+	})
+
+	saltKeyPassFn = func(_ context.Context, _ *common.Session, _ []byte) ([]byte, error) {
+		return []byte("derived-key"), nil
+	}
+
+	var bearerSaveCalled bool
+	sessionSaveFn = func(_ *common.Session, keypass []byte) error {
+		bearerSaveCalled = true
+		if string(keypass) != "derived-key" {
+			t.Errorf("keypass = %q, want %q", string(keypass), "derived-key")
+		}
+		return nil
+	}
+
+	var transitionCalled bool
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+		transitionCalled = true
+		return nil, nil
+	}
+
+	var cookieSaveCalled bool
+	cookieLoginSaveFn = func(_ *common.Session, _ *common.CookieSession, _ []byte) error {
+		cookieSaveCalled = true
+		return nil
+	}
+
+	cookieStoreDeleteFn = func() error { return nil }
+
+	session := &common.Session{
+		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
+	}
+
+	err := deriveAndSave(context.Background(), session, "pass", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bearerSaveCalled {
+		t.Error("Bearer sessionSaveFn was not called")
+	}
+	if transitionCalled {
+		t.Error("TransitionToCookies should not be called when cookieAuth=false")
+	}
+	if cookieSaveCalled {
+		t.Error("CookieLoginSave should not be called when cookieAuth=false")
+	}
+}
+
+// --- Re-login auth mode overwrite tests (Task 13.1) ---
+
+// TestDeriveAndSave_CookieAuthFalse_DeletesCookieStore verifies that when
+// cookieAuth=false, the cookie store is deleted to clean up any stale cookie
+// session from a previous --cookie-session login.
+func TestDeriveAndSave_CookieAuthFalse_DeletesCookieStore(t *testing.T) {
+	origSalt := saltKeyPassFn
+	origSave := sessionSaveFn
+	origCookieDelete := cookieStoreDeleteFn
+	t.Cleanup(func() {
+		saltKeyPassFn = origSalt
+		sessionSaveFn = origSave
+		cookieStoreDeleteFn = origCookieDelete
+	})
+
+	saltKeyPassFn = func(_ context.Context, _ *common.Session, _ []byte) ([]byte, error) {
+		return []byte("derived-key"), nil
+	}
+
+	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+		return nil
+	}
+
+	var cookieDeleteCalled bool
+	cookieStoreDeleteFn = func() error {
+		cookieDeleteCalled = true
+		return nil
+	}
+
+	session := &common.Session{
+		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
+	}
+
+	err := deriveAndSave(context.Background(), session, "pass", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cookieDeleteCalled {
+		t.Error("cookie store Delete was not called when cookieAuth=false")
+	}
+}
+
+// TestDeriveAndSave_CookieAuthTrue_OverwritesAccountStore verifies that when
+// cookieAuth=true, CookieLoginSave is called which overwrites the account
+// store with CookieAuth=true (and the cookie store delete is NOT called).
+func TestDeriveAndSave_CookieAuthTrue_OverwritesAccountStore(t *testing.T) {
+	origSalt := saltKeyPassFn
+	origSave := sessionSaveFn
+	origTransition := transitionToCookiesFn
+	origCookieSave := cookieLoginSaveFn
+	origCookieDelete := cookieStoreDeleteFn
+	t.Cleanup(func() {
+		saltKeyPassFn = origSalt
+		sessionSaveFn = origSave
+		transitionToCookiesFn = origTransition
+		cookieLoginSaveFn = origCookieSave
+		cookieStoreDeleteFn = origCookieDelete
+	})
+
+	saltKeyPassFn = func(_ context.Context, _ *common.Session, _ []byte) ([]byte, error) {
+		return []byte("derived-key"), nil
+	}
+
+	var bearerSaveCalled bool
+	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+		bearerSaveCalled = true
+		return nil
+	}
+
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+		return &common.CookieSession{}, nil
+	}
+
+	var cookieSaveCalled bool
+	cookieLoginSaveFn = func(_ *common.Session, _ *common.CookieSession, _ []byte) error {
+		cookieSaveCalled = true
+		return nil
+	}
+
+	var cookieDeleteCalled bool
+	cookieStoreDeleteFn = func() error {
+		cookieDeleteCalled = true
+		return nil
+	}
+
+	session := &common.Session{
+		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
+	}
+
+	err := deriveAndSave(context.Background(), session, "pass", "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cookieSaveCalled {
+		t.Error("CookieLoginSave was not called when cookieAuth=true")
+	}
+	if bearerSaveCalled {
+		t.Error("Bearer save should not be called when cookieAuth=true")
+	}
+	if cookieDeleteCalled {
+		t.Error("cookie store Delete should not be called when cookieAuth=true")
+	}
+}
+
+// TestDeriveAndSave_CookieAuthFalse_DeleteErrorIgnored verifies that a
+// cookie store delete error during bearer re-login is silently ignored.
+func TestDeriveAndSave_CookieAuthFalse_DeleteErrorIgnored(t *testing.T) {
+	origSalt := saltKeyPassFn
+	origSave := sessionSaveFn
+	origCookieDelete := cookieStoreDeleteFn
+	t.Cleanup(func() {
+		saltKeyPassFn = origSalt
+		sessionSaveFn = origSave
+		cookieStoreDeleteFn = origCookieDelete
+	})
+
+	saltKeyPassFn = func(_ context.Context, _ *common.Session, _ []byte) ([]byte, error) {
+		return []byte("derived-key"), nil
+	}
+
+	var bearerSaveCalled bool
+	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+		bearerSaveCalled = true
+		return nil
+	}
+
+	cookieStoreDeleteFn = func() error {
+		return fmt.Errorf("cookie store not found")
+	}
+
+	session := &common.Session{
+		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
+	}
+
+	err := deriveAndSave(context.Background(), session, "pass", "", false)
+	if err != nil {
+		t.Fatalf("cookie delete error should be ignored, got: %v", err)
+	}
+	if !bearerSaveCalled {
+		t.Error("Bearer save should still be called despite cookie delete error")
 	}
 }

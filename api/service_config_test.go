@@ -45,7 +45,7 @@ func TestServicesRegistry(t *testing.T) {
 		version    string
 		cookieAuth bool
 	}{
-		{"account", "https://account.proton.me/api", "web-account", "5.2.0", true},
+		{"account", "https://account.proton.me/api", "web-account", "5.0.367.1", true},
 		{"drive", "https://drive-api.proton.me/api", "web-drive", "5.2.0", false},
 		{"lumo", "https://lumo.proton.me/api", "web-lumo", "1.3.3.4", true},
 	}

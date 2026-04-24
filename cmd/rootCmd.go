@@ -189,7 +189,7 @@ func RestoreSession(ctx context.Context) (*common.Session, error) {
 		return session, nil
 	}
 
-	session, err := common.ReadySession(ctx, ProtonOpts, SessionStoreVar, nil)
+	session, err := common.ReadySession(ctx, ProtonOpts, SessionStoreVar, CookieStoreVar, nil)
 	if err != nil {
 		return nil, err
 	}
