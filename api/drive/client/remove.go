@@ -27,21 +27,72 @@ func (c *Client) Remove(ctx context.Context, share *drive.Share, link *drive.Lin
 		}
 	}
 
-	if opts.Permanent {
+	shareID := share.ProtonShare().ShareID
+	linkID := link.ProtonLink().LinkID
+
+	switch {
+	case link.State() == proton.LinkStateTrashed && opts.Permanent:
+		// Trashed links must be deleted via the trash endpoint.
+		return c.deleteTrashedLinks(ctx, share.ProtonShare().VolumeID, linkID)
+
+	case link.State() == proton.LinkStateTrashed:
+		// Already trashed — nothing to do.
+		return nil
+
+	case link.State() == proton.LinkStateDraft && opts.Permanent:
+		// Drafts are deleted from the parent folder.
 		return c.Session.Client.DeleteChildren(
-			ctx,
-			share.ProtonShare().ShareID,
+			ctx, shareID,
 			link.ParentLink().ProtonLink().LinkID,
-			link.ProtonLink().LinkID,
+			linkID,
+		)
+
+	case opts.Permanent:
+		// Active links: permanent delete from parent.
+		return c.Session.Client.DeleteChildren(
+			ctx, shareID,
+			link.ParentLink().ProtonLink().LinkID,
+			linkID,
+		)
+
+	default:
+		// Active links: move to trash.
+		return c.Session.Client.TrashChildren(
+			ctx, shareID,
+			link.ParentLink().ProtonLink().LinkID,
+			linkID,
 		)
 	}
+}
 
-	return c.Session.Client.TrashChildren(
-		ctx,
-		share.ProtonShare().ShareID,
-		link.ParentLink().ProtonLink().LinkID,
-		link.ProtonLink().LinkID,
-	)
+// deleteTrashedLinks permanently deletes trashed links via the v2
+// volume-based trash endpoint.
+func (c *Client) deleteTrashedLinks(ctx context.Context, volumeID string, linkIDs ...string) error {
+	req := struct {
+		LinkIDs []string
+	}{LinkIDs: linkIDs}
+
+	var res struct {
+		Code      int
+		Responses []struct {
+			LinkID   string
+			Response struct {
+				Code  int
+				Error string
+			}
+		}
+	}
+
+	if err := c.Session.DoJSON(ctx, "POST", "/drive/v2/volumes/"+volumeID+"/trash/delete_multiple", req, &res); err != nil {
+		return fmt.Errorf("delete trashed links: %w", err)
+	}
+
+	for _, r := range res.Responses {
+		if r.Response.Code != int(proton.SuccessCode) {
+			return fmt.Errorf("delete trashed link %s: %s (Code=%d)", r.LinkID, r.Response.Error, r.Response.Code)
+		}
+	}
+	return nil
 }
 
 // EmptyTrash permanently deletes all items in the trash for the given share.
