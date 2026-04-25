@@ -142,6 +142,59 @@ func (c *Client) CreateSpace(ctx context.Context, name string, isProject bool) (
 	return &resp.Space, nil
 }
 
+// UpdateSpace updates a space's encrypted metadata.
+func (c *Client) UpdateSpace(ctx context.Context, spaceID string, req lumo.UpdateSpaceReq) error {
+	err := c.Session.DoJSON(ctx, "PUT", c.url("/lumo/v1/spaces/"+spaceID), req, nil)
+	if err != nil {
+		return fmt.Errorf("lumo: update space: %w", mapCRUDError(err))
+	}
+	return nil
+}
+
+// DecryptSpacePriv decrypts a space's encrypted metadata.
+func (c *Client) DecryptSpacePriv(ctx context.Context, space *lumo.Space) (*lumo.SpacePriv, error) {
+	if space.Encrypted == "" {
+		return &lumo.SpacePriv{}, nil
+	}
+
+	dek, err := c.deriveSpaceDEK(ctx, space)
+	if err != nil {
+		return nil, fmt.Errorf("lumo: decrypt space priv: %w", err)
+	}
+
+	ad := lumo.SpaceAD(space.SpaceTag)
+	privJSON, err := lumo.DecryptString(space.Encrypted, dek, ad)
+	if err != nil {
+		return nil, fmt.Errorf("lumo: decrypt space priv: %w", err)
+	}
+
+	var priv lumo.SpacePriv
+	if err := json.Unmarshal([]byte(privJSON), &priv); err != nil {
+		return nil, fmt.Errorf("lumo: decrypt space priv: unmarshal: %w", err)
+	}
+	return &priv, nil
+}
+
+// EncryptSpacePriv encrypts SpacePriv metadata for a space.
+func (c *Client) EncryptSpacePriv(ctx context.Context, space *lumo.Space, priv *lumo.SpacePriv) (string, error) {
+	dek, err := c.deriveSpaceDEK(ctx, space)
+	if err != nil {
+		return "", fmt.Errorf("lumo: encrypt space priv: %w", err)
+	}
+
+	privJSON, err := json.Marshal(priv)
+	if err != nil {
+		return "", fmt.Errorf("lumo: encrypt space priv: marshal: %w", err)
+	}
+
+	ad := lumo.SpaceAD(space.SpaceTag)
+	encrypted, err := lumo.EncryptString(string(privJSON), dek, ad)
+	if err != nil {
+		return "", fmt.Errorf("lumo: encrypt space priv: %w", err)
+	}
+	return encrypted, nil
+}
+
 // DeleteSpace deletes a space by ID.
 func (c *Client) DeleteSpace(ctx context.Context, spaceID string) error {
 	err := c.Session.DoJSON(ctx, "DELETE", c.url("/lumo/v1/spaces/"+spaceID), nil, nil)
@@ -159,11 +212,6 @@ func (c *Client) GetDefaultSpace(ctx context.Context) (*lumo.Space, error) {
 		return nil, fmt.Errorf("lumo: get default space: %w", err)
 	}
 
-	masterKey, err := c.GetMasterKey(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("lumo: get default space: %w", err)
-	}
-
 	for i := range spaces {
 		s := &spaces[i]
 		if s.Encrypted == "" {
@@ -171,7 +219,7 @@ func (c *Client) GetDefaultSpace(ctx context.Context) (*lumo.Space, error) {
 			return s, nil
 		}
 
-		isProject, err := c.isProjectSpace(masterKey, s)
+		isProject, err := c.isProjectSpace(ctx, s)
 		if err != nil {
 			continue // skip spaces we can't decrypt
 		}
@@ -190,33 +238,11 @@ func (c *Client) GetDefaultSpace(ctx context.Context) (*lumo.Space, error) {
 
 // isProjectSpace decrypts a space's metadata and returns whether it's
 // a project space. The decrypted content is discarded after inspection.
-func (c *Client) isProjectSpace(masterKey []byte, s *lumo.Space) (bool, error) {
-	wrappedKey, err := base64.StdEncoding.DecodeString(s.SpaceKey)
+func (c *Client) isProjectSpace(ctx context.Context, s *lumo.Space) (bool, error) {
+	priv, err := c.DecryptSpacePriv(ctx, s)
 	if err != nil {
 		return false, err
 	}
-
-	spaceKey, err := lumo.UnwrapSpaceKey(masterKey, wrappedKey)
-	if err != nil {
-		return false, err
-	}
-
-	dek, err := lumo.DeriveDataEncryptionKey(spaceKey)
-	if err != nil {
-		return false, err
-	}
-
-	ad := lumo.SpaceAD(s.SpaceTag)
-	privJSON, err := lumo.DecryptString(s.Encrypted, dek, ad)
-	if err != nil {
-		return false, err
-	}
-
-	var priv lumo.SpacePriv
-	if err := json.Unmarshal([]byte(privJSON), &priv); err != nil {
-		return false, err
-	}
-
 	return priv.IsProject != nil && *priv.IsProject, nil
 }
 

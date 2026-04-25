@@ -107,6 +107,11 @@ type CreateMessageReq struct {
 	ParentID       string `json:"ParentID,omitempty"`
 }
 
+// UpdateSpaceReq is the PUT body for updating a space.
+type UpdateSpaceReq struct {
+	Encrypted string `json:"Encrypted,omitempty"` // re-encrypted SpacePriv
+}
+
 // CreateMasterKeyReq is the POST body for creating a master key.
 type CreateMasterKeyReq struct {
 	MasterKey string `json:"MasterKey"` // PGP-armored

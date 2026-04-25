@@ -2,7 +2,6 @@ package lumoCmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -25,6 +24,8 @@ func init() {
 	AddCommand(spaceCmd)
 	spaceCmd.AddCommand(spaceListCmd)
 	spaceCmd.AddCommand(spaceDeleteCmd)
+	spaceCmd.AddCommand(spaceCreateCmd)
+	spaceCmd.AddCommand(spaceConfigCmd)
 }
 
 // --- space list ---
@@ -205,17 +206,8 @@ func classifySpace(ctx context.Context, client *lumoClient.Client, s *lumo.Space
 	if s.Encrypted == "" {
 		return "simple"
 	}
-	dek, err := client.DeriveSpaceDEK(ctx, s)
+	priv, err := client.DecryptSpacePriv(ctx, s)
 	if err != nil {
-		return "unknown"
-	}
-	ad := lumo.SpaceAD(s.SpaceTag)
-	plainJSON, err := lumo.DecryptString(s.Encrypted, dek, ad)
-	if err != nil {
-		return "unknown"
-	}
-	var priv lumo.SpacePriv
-	if err := json.Unmarshal([]byte(plainJSON), &priv); err != nil {
 		return "unknown"
 	}
 	if priv.IsProject != nil && *priv.IsProject {
@@ -285,19 +277,8 @@ func decryptSpaceName(ctx context.Context, client *lumoClient.Client, s *lumo.Sp
 		return "(empty)"
 	}
 
-	dek, err := client.DeriveSpaceDEK(ctx, s)
+	priv, err := client.DecryptSpacePriv(ctx, s)
 	if err != nil {
-		return "(encrypted)"
-	}
-
-	ad := lumo.SpaceAD(s.SpaceTag)
-	plainJSON, err := lumo.DecryptString(s.Encrypted, dek, ad)
-	if err != nil {
-		return "(encrypted)"
-	}
-
-	var priv lumo.SpacePriv
-	if err := json.Unmarshal([]byte(plainJSON), &priv); err != nil {
 		return "(encrypted)"
 	}
 
@@ -306,6 +287,10 @@ func decryptSpaceName(ctx context.Context, client *lumoClient.Client, s *lumo.Sp
 	}
 
 	// Simple space — derive name from the first conversation's title.
+	dek, err := client.DeriveSpaceDEK(ctx, s)
+	if err != nil {
+		return "(encrypted)"
+	}
 	for _, c := range s.Conversations {
 		if c.Encrypted == "" || c.DeleteTime != "" {
 			continue
@@ -388,5 +373,142 @@ func runSpaceDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	_, _ = fmt.Fprintf(os.Stderr, "Space %s deleted.\n", spaceID)
+	return nil
+}
+
+// --- space create ---
+
+var spaceCreateProject bool
+
+var spaceCreateCmd = &cobra.Command{
+	Use:   "create <name>",
+	Short: "Create a new space",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSpaceCreate,
+}
+
+func init() {
+	spaceCreateCmd.Flags().BoolVar(&spaceCreateProject, "project", false, "Create a project space")
+}
+
+func runSpaceCreate(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	client, err := restoreClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	name := args[0]
+	space, err := client.CreateSpace(ctx, name, spaceCreateProject)
+	if err != nil {
+		return fmt.Errorf("creating space: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(os.Stdout, space.ID)
+	return nil
+}
+
+// --- space config ---
+
+var (
+	spaceConfigName         string
+	spaceConfigInstructions string
+	spaceConfigIcon         string
+)
+
+var spaceConfigCmd = &cobra.Command{
+	Use:   "config <space-id>",
+	Short: "View or update space configuration",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSpaceConfig,
+}
+
+func init() {
+	spaceConfigCmd.Flags().StringVar(&spaceConfigName, "name", "", "Set the space name")
+	spaceConfigCmd.Flags().StringVar(&spaceConfigInstructions, "instructions", "", "Set project instructions")
+	spaceConfigCmd.Flags().StringVar(&spaceConfigIcon, "icon", "", "Set the space icon")
+}
+
+func runSpaceConfig(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	client, err := restoreClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	spaceID := args[0]
+
+	// Find the space via ListSpaces (GetSpace is unreliable).
+	spaces, err := client.ListSpaces(ctx)
+	if err != nil {
+		return fmt.Errorf("listing spaces: %w", err)
+	}
+	var space *lumo.Space
+	for i := range spaces {
+		if spaces[i].ID == spaceID {
+			space = &spaces[i]
+			break
+		}
+	}
+	if space == nil {
+		return fmt.Errorf("space %s not found", spaceID)
+	}
+
+	priv, err := client.DecryptSpacePriv(ctx, space)
+	if err != nil {
+		return fmt.Errorf("decrypting space config: %w", err)
+	}
+
+	// No flags set — view mode.
+	hasUpdate := cmd.Flags().Changed("name") || cmd.Flags().Changed("instructions") || cmd.Flags().Changed("icon")
+	if !hasUpdate {
+		return printSpaceConfig(priv)
+	}
+
+	// Update mode — modify the specified fields.
+	if cmd.Flags().Changed("name") {
+		priv.ProjectName = spaceConfigName
+	}
+	if cmd.Flags().Changed("instructions") {
+		priv.ProjectInstructions = spaceConfigInstructions
+	}
+	if cmd.Flags().Changed("icon") {
+		priv.ProjectIcon = spaceConfigIcon
+	}
+
+	encrypted, err := client.EncryptSpacePriv(ctx, space, priv)
+	if err != nil {
+		return fmt.Errorf("encrypting space config: %w", err)
+	}
+
+	if err := client.UpdateSpace(ctx, spaceID, lumo.UpdateSpaceReq{Encrypted: encrypted}); err != nil {
+		return fmt.Errorf("updating space: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "Space %s updated.\n", spaceID)
+	return nil
+}
+
+// printSpaceConfig prints the decrypted SpacePriv fields.
+func printSpaceConfig(priv *lumo.SpacePriv) error {
+	var b strings.Builder
+	if priv.IsProject != nil && *priv.IsProject {
+		fmt.Fprintf(&b, "Type:         project\n")
+	} else {
+		fmt.Fprintf(&b, "Type:         simple\n")
+	}
+	if priv.ProjectName != "" {
+		fmt.Fprintf(&b, "Name:         %s\n", priv.ProjectName)
+	}
+	if priv.ProjectInstructions != "" {
+		fmt.Fprintf(&b, "Instructions: %s\n", priv.ProjectInstructions)
+	}
+	if priv.ProjectIcon != "" {
+		fmt.Fprintf(&b, "Icon:         %s\n", priv.ProjectIcon)
+	}
+	if priv.LinkedDriveFolder != nil {
+		fmt.Fprintf(&b, "Drive Folder: %s (%s)\n", priv.LinkedDriveFolder.FolderName, priv.LinkedDriveFolder.FolderPath)
+	}
+	_, _ = fmt.Fprint(os.Stdout, b.String())
 	return nil
 }
