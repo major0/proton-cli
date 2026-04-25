@@ -52,15 +52,45 @@ func (c *Client) CreateConversation(ctx context.Context, spaceID, title string) 
 	return &resp.Conversation, nil
 }
 
-// ListConversations returns conversations for a space. Conversations are
-// embedded in the spaces response, so this fetches the space and returns
-// its Conversations field.
+// ListConversations returns conversations for a space. The Lumo API
+// embeds conversations in the list-spaces response, so this fetches all
+// spaces and returns conversations from the matching space.
 func (c *Client) ListConversations(ctx context.Context, spaceID string) ([]lumo.Conversation, error) {
-	space, err := c.GetSpace(ctx, spaceID)
+	spaces, err := c.ListSpaces(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: list conversations: %w", err)
 	}
-	return space.Conversations, nil
+	for _, s := range spaces {
+		if s.ID == spaceID {
+			return s.Conversations, nil
+		}
+	}
+	return nil, fmt.Errorf("lumo: list conversations: space %s not found", spaceID)
+}
+
+// ListAllConversations returns conversations from all spaces, paired with
+// their parent space for decryption context.
+func (c *Client) ListAllConversations(ctx context.Context) ([]SpaceConversation, error) {
+	spaces, err := c.ListSpaces(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lumo: list all conversations: %w", err)
+	}
+	var result []SpaceConversation
+	for i := range spaces {
+		for _, conv := range spaces[i].Conversations {
+			result = append(result, SpaceConversation{
+				Space:        &spaces[i],
+				Conversation: conv,
+			})
+		}
+	}
+	return result, nil
+}
+
+// SpaceConversation pairs a conversation with its parent space.
+type SpaceConversation struct {
+	Space        *lumo.Space
+	Conversation lumo.Conversation
 }
 
 // GetConversation fetches a conversation by ID.

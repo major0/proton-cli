@@ -192,9 +192,10 @@ func decryptMessageContent(msg lumo.Message, dek []byte, convTag string) string 
 // --- chat list ---
 
 var chatListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List conversations in a space",
-	RunE:  runChatList,
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List conversations",
+	RunE:    runChatList,
 }
 
 func init() {
@@ -208,11 +209,16 @@ func runChatList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	spaceID, err := resolveSpace(ctx, client)
-	if err != nil {
-		return err
+	// When --space is set, list conversations in that space only.
+	// Otherwise, list all conversations across all spaces.
+	if chatSpaceFlag != "" {
+		return runChatListSpace(ctx, client, chatSpaceFlag)
 	}
+	return runChatListAll(ctx, client)
+}
 
+// runChatListSpace lists conversations in a single space.
+func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID string) error {
 	convs, err := client.ListConversations(ctx, spaceID)
 	if err != nil {
 		return fmt.Errorf("listing conversations: %w", err)
@@ -220,7 +226,6 @@ func runChatList(cmd *cobra.Command, _ []string) error {
 
 	active := FilterActiveConversations(convs)
 
-	// Derive DEK for title decryption.
 	space, err := client.GetSpace(ctx, spaceID)
 	if err != nil {
 		return fmt.Errorf("loading space: %w", err)
@@ -238,6 +243,43 @@ func runChatList(cmd *cobra.Command, _ []string) error {
 			Title:      decryptConversationTitle(c, dek, space.SpaceTag),
 			CreateTime: c.CreateTime,
 		}
+	}
+
+	_, _ = fmt.Fprint(os.Stdout, FormatConversationList(rows))
+	return nil
+}
+
+// runChatListAll lists conversations across all spaces.
+func runChatListAll(ctx context.Context, client *lumoClient.Client) error {
+	pairs, err := client.ListAllConversations(ctx)
+	if err != nil {
+		return fmt.Errorf("listing conversations: %w", err)
+	}
+
+	// Build rows, decrypting titles per-space.
+	dekCache := map[string][]byte{} // spaceID → DEK
+	var rows []ConversationRow
+	for _, p := range pairs {
+		conv := p.Conversation
+		if conv.DeleteTime != "" {
+			continue
+		}
+
+		dek, ok := dekCache[p.Space.ID]
+		if !ok {
+			d, err := client.DeriveSpaceDEK(ctx, p.Space)
+			if err != nil {
+				continue // skip spaces we can't decrypt
+			}
+			dek = d
+			dekCache[p.Space.ID] = dek
+		}
+
+		rows = append(rows, ConversationRow{
+			ID:         conv.ID,
+			Title:      decryptConversationTitle(conv, dek, p.Space.SpaceTag),
+			CreateTime: conv.CreateTime,
+		})
 	}
 
 	_, _ = fmt.Fprint(os.Stdout, FormatConversationList(rows))
