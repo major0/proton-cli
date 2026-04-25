@@ -119,11 +119,16 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 			return fmt.Errorf("space %s has 0 conversations but %d assets — not empty", s.ID, len(s.Assets))
 		}
 
+		// Hide deleted spaces unless -A is set.
+		if !spaceShowAll && s.DeleteTime != "" {
+			continue
+		}
+
 		stype := classifySpace(ctx, client, &s)
 
-		// Filter by type flags: --simple shows simple only,
-		// default (no -A, no --simple) shows projects only,
-		// -A shows all (including unknown).
+		// Filter by type: --simple shows simple only,
+		// default (no --simple) shows projects only,
+		// -A relaxes the type filter to show all types.
 		if !spaceShowAll {
 			if spaceShowSimple && stype != "simple" {
 				continue
@@ -155,49 +160,63 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 	fmt.Fprintf(&b, "\n%d empty spaces found out of %d total.\n", len(verified), total)
 
 	// Detailed breakdown for cross-checking against the webapp.
-	nonEmpty := total - len(verified)
-	simpleWithConvs := 0
-	projectWithConvs := 0
-	unknownWithConvs := 0
-	totalConvs := 0
-	deletedConvs := 0
-	simpleConvs := 0
-	projectConvs := 0
-	unknownConvs := 0
+	simpleActive, simpleDeleted := 0, 0
+	projectActive, projectDeleted := 0, 0
+	unknownActive, unknownDeleted := 0, 0
+	totalConvs, deletedConvs := 0, 0
+	simpleConvs, projectConvs, unknownConvs := 0, 0, 0
 	for _, s := range spaces {
-		convs := s.Conversations
-		if len(convs) == 0 {
-			continue
-		}
 		stype := classifySpace(ctx, client, &s)
-		activeConvs := 0
-		for _, c := range convs {
+		deleted := s.DeleteTime != ""
+
+		switch stype {
+		case "simple":
+			if deleted {
+				simpleDeleted++
+			} else {
+				simpleActive++
+			}
+		case "project":
+			if deleted {
+				projectDeleted++
+			} else {
+				projectActive++
+			}
+		default:
+			if deleted {
+				unknownDeleted++
+			} else {
+				unknownActive++
+			}
+		}
+
+		for _, c := range s.Conversations {
 			totalConvs++
 			if c.DeleteTime != "" {
 				deletedConvs++
-			} else {
-				activeConvs++
+				continue
+			}
+			switch stype {
+			case "project":
+				projectConvs++
+			case "simple":
+				simpleConvs++
+			default:
+				unknownConvs++
 			}
 		}
-		switch stype {
-		case "project":
-			projectWithConvs++
-			projectConvs += activeConvs
-		case "simple":
-			simpleWithConvs++
-			simpleConvs += activeConvs
-		default:
-			unknownWithConvs++
-			unknownConvs += activeConvs
-		}
 	}
-	fmt.Fprintf(&b, "\nNon-empty spaces: %d\n", nonEmpty)
-	fmt.Fprintf(&b, "  Simple chat spaces: %d (%d active conversations)\n", simpleWithConvs, simpleConvs)
-	fmt.Fprintf(&b, "  Project spaces:     %d (%d active conversations)\n", projectWithConvs, projectConvs)
-	if unknownWithConvs > 0 {
-		fmt.Fprintf(&b, "  Unknown (decrypt failed): %d (%d active conversations)\n", unknownWithConvs, unknownConvs)
+
+	totalSimple := simpleActive + simpleDeleted
+	totalProject := projectActive + projectDeleted
+	totalUnknown := unknownActive + unknownDeleted
+
+	fmt.Fprintf(&b, "\nSimple spaces:  %d (active: %d, deleted: %d, conversations: %d)\n", totalSimple, simpleActive, simpleDeleted, simpleConvs)
+	fmt.Fprintf(&b, "Project spaces: %d (active: %d, deleted: %d, conversations: %d)\n", totalProject, projectActive, projectDeleted, projectConvs)
+	if totalUnknown > 0 {
+		fmt.Fprintf(&b, "Unknown spaces: %d (active: %d, deleted: %d, conversations: %d)\n", totalUnknown, unknownActive, unknownDeleted, unknownConvs)
 	}
-	fmt.Fprintf(&b, "  Total conversations: %d (active: %d, deleted: %d)\n", totalConvs, totalConvs-deletedConvs, deletedConvs)
+	fmt.Fprintf(&b, "Total conversations: %d (active: %d, deleted: %d)\n", totalConvs, totalConvs-deletedConvs, deletedConvs)
 	fmt.Fprintf(&b, "\nBrowser History should show: %d simple chats\n", simpleConvs)
 	_, _ = fmt.Fprint(os.Stdout, b.String())
 	return nil
