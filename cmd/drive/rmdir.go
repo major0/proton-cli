@@ -55,39 +55,27 @@ func runRmdir(_ *cobra.Command, args []string) error {
 }
 
 func rmdirOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
-	if !strings.HasPrefix(rawPath, "proton://") {
-		return fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
+	sharePart, pathPart, err := parseProtonURI(rawPath)
+	if err != nil {
+		return fmt.Errorf("rmdir: %w", err)
 	}
-
-	path := parsePath(rawPath)
-	if path == "" {
+	if pathPart == "" {
 		return fmt.Errorf("rmdir: missing directory name")
 	}
 
-	parts := strings.SplitN(path, "/", 2)
-	shareName := parts[0]
-	relPath := ""
-	if len(parts) > 1 {
-		relPath = parts[1]
-	}
-
-	share, err := dc.ResolveShare(ctx, shareName, true)
+	share, err := dc.ResolveShareComponent(ctx, sharePart)
 	if err != nil {
-		return fmt.Errorf("rmdir: %s: %w", shareName, err)
+		return fmt.Errorf("rmdir: %s: %w", sharePart, err)
 	}
 
-	if relPath == "" {
-		return fmt.Errorf("rmdir: cannot remove share root")
-	}
-
-	relPath = strings.TrimSuffix(relPath, "/")
-	link, err := share.Link.ResolvePath(ctx, relPath, true)
+	pathPart = strings.TrimSuffix(pathPart, "/")
+	link, err := share.Link.ResolvePath(ctx, pathPart, true)
 	if err != nil {
-		return fmt.Errorf("rmdir: %s: %w", relPath, err)
+		return fmt.Errorf("rmdir: %s: %w", pathPart, err)
 	}
 
 	if link.Type() != proton.LinkTypeFolder {
-		return fmt.Errorf("rmdir: %s: not a directory", relPath)
+		return fmt.Errorf("rmdir: %s: not a directory", pathPart)
 	}
 
 	err = dc.Remove(ctx, share, link, drive.RemoveOpts{
