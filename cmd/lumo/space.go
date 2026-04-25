@@ -29,11 +29,17 @@ func init() {
 
 // --- space list ---
 
+var spaceShowAll bool
+
 var spaceListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   "List all spaces",
+	Short:   "List spaces (projects only; -A for all)",
 	RunE:    runSpaceList,
+}
+
+func init() {
+	spaceListCmd.Flags().BoolVarP(&spaceShowAll, "all", "A", false, "Show all spaces including simple chat spaces")
 }
 
 func runSpaceList(cmd *cobra.Command, _ []string) error {
@@ -46,6 +52,10 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 	spaces, err := client.ListSpaces(ctx)
 	if err != nil {
 		return fmt.Errorf("listing spaces: %w", err)
+	}
+
+	if !spaceShowAll {
+		spaces = filterProjectSpaces(ctx, client, spaces)
 	}
 
 	rows := buildSpaceRows(ctx, client, spaces)
@@ -77,6 +87,36 @@ func buildSpaceRows(ctx context.Context, client *lumoClient.Client, spaces []lum
 		}
 	}
 	return rows
+}
+
+// filterProjectSpaces returns only spaces that are project spaces
+// (isProject=true in encrypted metadata). Simple chat spaces and
+// spaces that can't be decrypted are excluded.
+func filterProjectSpaces(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) []lumo.Space {
+	var result []lumo.Space
+	for i := range spaces {
+		s := &spaces[i]
+		if s.Encrypted == "" {
+			continue
+		}
+		dek, err := client.DeriveSpaceDEK(ctx, s)
+		if err != nil {
+			continue
+		}
+		ad := lumo.SpaceAD(s.SpaceTag)
+		plainJSON, err := lumo.DecryptString(s.Encrypted, dek, ad)
+		if err != nil {
+			continue
+		}
+		var priv lumo.SpacePriv
+		if err := json.Unmarshal([]byte(plainJSON), &priv); err != nil {
+			continue
+		}
+		if priv.IsProject != nil && *priv.IsProject {
+			result = append(result, spaces[i])
+		}
+	}
+	return result
 }
 
 // decryptSpaceName resolves a display name for a space. For project
