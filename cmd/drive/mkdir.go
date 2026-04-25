@@ -55,44 +55,32 @@ func runMkdir(_ *cobra.Command, args []string) error {
 }
 
 func mkdirOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
-	if !strings.HasPrefix(rawPath, "proton://") {
-		return fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
+	sharePart, pathPart, err := parseProtonURI(rawPath)
+	if err != nil {
+		return fmt.Errorf("mkdir: %w", err)
 	}
-
-	path := parsePath(rawPath)
-	if path == "" {
+	if pathPart == "" {
 		return fmt.Errorf("mkdir: missing directory name")
 	}
 
-	parts := strings.SplitN(path, "/", 2)
-	shareName := parts[0]
-	relPath := ""
-	if len(parts) > 1 {
-		relPath = parts[1]
-	}
-
-	share, err := dc.ResolveShare(ctx, shareName, true)
+	share, err := dc.ResolveShareComponent(ctx, sharePart)
 	if err != nil {
-		return fmt.Errorf("mkdir: %s: %w", shareName, err)
-	}
-
-	if relPath == "" {
-		return fmt.Errorf("mkdir: cannot create share root")
+		return fmt.Errorf("mkdir: %s: %w", sharePart, err)
 	}
 
 	if mkdirFlags.parents {
-		_, err := dc.MkDirAll(ctx, share, share.Link, relPath)
+		_, err := dc.MkDirAll(ctx, share, share.Link, pathPart)
 		if err != nil {
 			return err
 		}
 		if mkdirFlags.verbose {
 			shareName, _ := share.GetName(ctx)
-			fmt.Printf("mkdir: created directory '%s/%s'\n", shareName, relPath)
+			fmt.Printf("mkdir: created directory '%s/%s'\n", shareName, pathPart)
 		}
 		return nil
 	}
 
-	return mkdirSingle(ctx, dc, share, relPath)
+	return mkdirSingle(ctx, dc, share, pathPart)
 }
 
 func mkdirSingle(ctx context.Context, dc *driveClient.Client, share *drive.Share, relPath string) error {

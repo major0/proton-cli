@@ -15,7 +15,7 @@ func TestMkdirOneValidation(t *testing.T) {
 		wantErr string
 	}{
 		{"invalid prefix", "/local/path", "invalid path"},
-		{"bare proton://", "proton://", "missing directory name"},
+		{"bare proton://", "proton://", "no share specified"},
 		{"triple-slash root only", "proton:///", "missing directory name"},
 	}
 
