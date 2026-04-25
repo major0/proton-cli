@@ -115,14 +115,9 @@ func runChatResume(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading messages: %w", err)
 	}
 
-	space, err := client.GetSpace(ctx, conv.SpaceID)
+	space, dek, err := resolveSpaceAndDEK(ctx, client, conv.SpaceID)
 	if err != nil {
 		return fmt.Errorf("loading space: %w", err)
-	}
-
-	dek, err := client.DeriveSpaceDEK(ctx, space)
-	if err != nil {
-		return fmt.Errorf("deriving decryption key: %w", err)
 	}
 
 	decrypt := func(msg lumo.Message) string {
@@ -227,14 +222,9 @@ func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID st
 
 	active := FilterActiveConversations(convs)
 
-	space, err := client.GetSpace(ctx, spaceID)
+	space, dek, err := resolveSpaceAndDEK(ctx, client, spaceID)
 	if err != nil {
 		return fmt.Errorf("loading space: %w", err)
-	}
-
-	dek, err := client.DeriveSpaceDEK(ctx, space)
-	if err != nil {
-		return fmt.Errorf("deriving decryption key: %w", err)
 	}
 
 	rows := make([]ConversationRow, len(active))

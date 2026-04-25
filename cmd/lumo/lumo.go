@@ -1,8 +1,10 @@
 package lumoCmd
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/major0/proton-cli/api/lumo"
 	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -42,4 +44,17 @@ func restoreClient(cmd *cobra.Command) (*lumoClient.Client, error) {
 // AddCommand registers a subcommand under the lumo command group.
 func AddCommand(cmd *cobra.Command) {
 	lumoCmd.AddCommand(cmd)
+}
+
+// resolveSpaceAndDEK loads a space by ID and derives its decryption key.
+func resolveSpaceAndDEK(ctx context.Context, client *lumoClient.Client, spaceID string) (*lumo.Space, []byte, error) {
+	space, err := client.GetSpace(ctx, spaceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading space: %w", err)
+	}
+	dek, err := client.DeriveSpaceDEK(ctx, space)
+	if err != nil {
+		return nil, nil, fmt.Errorf("deriving decryption key: %w", err)
+	}
+	return space, dek, nil
 }
