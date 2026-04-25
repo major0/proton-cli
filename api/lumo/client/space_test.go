@@ -7,10 +7,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	pgpcrypto "github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api/lumo"
+	"pgregory.net/rapid"
 )
 
 // testCryptoChain sets up a master key and returns the raw key bytes
@@ -315,4 +317,193 @@ func TestCreateSpace_Conflict(t *testing.T) {
 	if !errors.Is(err, lumo.ErrConflict) {
 		t.Fatalf("expected ErrConflict, got: %v", err)
 	}
+}
+
+func TestUpdateSpace_Success(t *testing.T) {
+	var capturedMethod string
+	var capturedPath string
+	var capturedReq lumo.UpdateSpaceReq
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&capturedReq); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		writeJSON(t, w, map[string]any{"Code": 1000})
+	}))
+	defer srv.Close()
+
+	sess := testSession(t)
+	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
+
+	req := lumo.UpdateSpaceReq{Encrypted: "some-encrypted-data"}
+	err := c.UpdateSpace(context.Background(), "space-42", req)
+	if err != nil {
+		t.Fatalf("UpdateSpace: %v", err)
+	}
+	if capturedMethod != "PUT" {
+		t.Fatalf("method = %q, want PUT", capturedMethod)
+	}
+	if capturedPath != "/api/lumo/v1/spaces/space-42" {
+		t.Fatalf("path = %q, want /api/lumo/v1/spaces/space-42", capturedPath)
+	}
+	if capturedReq.Encrypted != "some-encrypted-data" {
+		t.Fatalf("Encrypted = %q, want %q", capturedReq.Encrypted, "some-encrypted-data")
+	}
+}
+
+func TestDecryptSpacePriv_Success(t *testing.T) {
+	tc := newTestCryptoChain(t)
+
+	isProject := true
+	space := tc.makeEncryptedSpace(t, "s1", "tag1", true)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tc.masterKeyHandler(t)(w, nil)
+	}))
+	defer srv.Close()
+
+	sess := testSession(t)
+	sess.UserKeyRing = tc.kr
+	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
+
+	priv, err := c.DecryptSpacePriv(context.Background(), &space)
+	if err != nil {
+		t.Fatalf("DecryptSpacePriv: %v", err)
+	}
+	if priv.IsProject == nil || *priv.IsProject != isProject {
+		t.Fatalf("IsProject = %v, want %v", priv.IsProject, &isProject)
+	}
+}
+
+func TestDecryptSpacePriv_EmptyEncrypted(t *testing.T) {
+	space := lumo.Space{ID: "s1", SpaceTag: "tag1"}
+
+	sess := testSession(t)
+	c := NewClient(sess)
+
+	priv, err := c.DecryptSpacePriv(context.Background(), &space)
+	if err != nil {
+		t.Fatalf("DecryptSpacePriv: %v", err)
+	}
+	if priv.IsProject != nil {
+		t.Fatalf("expected nil IsProject, got %v", priv.IsProject)
+	}
+	if priv.ProjectName != "" {
+		t.Fatalf("expected empty ProjectName, got %q", priv.ProjectName)
+	}
+}
+
+func TestEncryptSpacePriv_RoundTrip(t *testing.T) {
+	tc := newTestCryptoChain(t)
+
+	space := tc.makeEncryptedSpace(t, "s1", "tag1", false)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tc.masterKeyHandler(t)(w, nil)
+	}))
+	defer srv.Close()
+
+	sess := testSession(t)
+	sess.UserKeyRing = tc.kr
+	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
+
+	isProject := true
+	original := &lumo.SpacePriv{
+		IsProject:           &isProject,
+		ProjectName:         "My Project",
+		ProjectInstructions: "Do the thing",
+		ProjectIcon:         "rocket",
+	}
+
+	encrypted, err := c.EncryptSpacePriv(context.Background(), &space, original)
+	if err != nil {
+		t.Fatalf("EncryptSpacePriv: %v", err)
+	}
+	if encrypted == "" {
+		t.Fatal("encrypted is empty")
+	}
+
+	// Decrypt and verify round-trip.
+	space.Encrypted = encrypted
+	got, err := c.DecryptSpacePriv(context.Background(), &space)
+	if err != nil {
+		t.Fatalf("DecryptSpacePriv: %v", err)
+	}
+	if got.ProjectName != original.ProjectName {
+		t.Fatalf("ProjectName = %q, want %q", got.ProjectName, original.ProjectName)
+	}
+	if got.ProjectInstructions != original.ProjectInstructions {
+		t.Fatalf("ProjectInstructions = %q, want %q", got.ProjectInstructions, original.ProjectInstructions)
+	}
+	if got.ProjectIcon != original.ProjectIcon {
+		t.Fatalf("ProjectIcon = %q, want %q", got.ProjectIcon, original.ProjectIcon)
+	}
+	if got.IsProject == nil || !*got.IsProject {
+		t.Fatal("IsProject should be true")
+	}
+}
+
+// TestEncryptSpacePriv_DecryptSpacePriv_RoundTrip_Property verifies that
+// for any valid SpacePriv, encrypting then decrypting produces an equal
+// value.
+//
+// **Validates: Requirements 3.5**
+func TestEncryptSpacePriv_DecryptSpacePriv_RoundTrip_Property(t *testing.T) {
+	tc := newTestCryptoChain(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tc.masterKeyHandler(t)(w, nil)
+	}))
+	defer srv.Close()
+
+	sess := testSession(t)
+	sess.UserKeyRing = tc.kr
+	c := NewClient(sess)
+	c.BaseURL = srv.URL + "/api"
+
+	// Create a space once — reuse for all iterations.
+	space := tc.makeEncryptedSpace(t, "prop-space", "prop-tag", false)
+
+	rapid.Check(t, func(rt *rapid.T) {
+		orig := genSpacePrivForClient(rt)
+
+		encrypted, err := c.EncryptSpacePriv(context.Background(), &space, &orig)
+		if err != nil {
+			rt.Fatalf("EncryptSpacePriv: %v", err)
+		}
+
+		s := space
+		s.Encrypted = encrypted
+		got, err := c.DecryptSpacePriv(context.Background(), &s)
+		if err != nil {
+			rt.Fatalf("DecryptSpacePriv: %v", err)
+		}
+		if !reflect.DeepEqual(orig, *got) {
+			rt.Fatalf("round-trip mismatch:\norig: %+v\ngot:  %+v", orig, *got)
+		}
+	})
+}
+
+// genSpacePrivForClient generates a random SpacePriv for property testing.
+func genSpacePrivForClient(t *rapid.T) lumo.SpacePriv {
+	sp := lumo.SpacePriv{}
+	switch rapid.IntRange(0, 2).Draw(t, "is_project_case") {
+	case 0:
+		// nil — omitted
+	case 1:
+		f := false
+		sp.IsProject = &f
+	case 2:
+		tr := true
+		sp.IsProject = &tr
+		sp.ProjectName = rapid.StringMatching(`[a-zA-Z0-9 ]{0,16}`).Draw(t, "project_name")
+		sp.ProjectInstructions = rapid.StringMatching(`[a-zA-Z0-9 ]{0,32}`).Draw(t, "project_instructions")
+		sp.ProjectIcon = rapid.StringMatching(`[a-z]{0,8}`).Draw(t, "project_icon")
+	}
+	return sp
 }

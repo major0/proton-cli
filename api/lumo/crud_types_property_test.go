@@ -211,6 +211,18 @@ func TestCRUDTypes_JSONRoundTrip_Property(t *testing.T) {
 			assertJSONRoundTrip(t, orig)
 		})
 	})
+
+	// Feature: lumo-space, Property 4: UpdateSpaceReq JSON round-trip
+	//
+	// **Validates: Requirements 3.5**
+	t.Run("UpdateSpaceReq", func(t *testing.T) {
+		rapid.Check(t, func(t *rapid.T) {
+			orig := UpdateSpaceReq{
+				Encrypted: rapid.StringMatching(`[a-zA-Z0-9+/=]{0,64}`).Draw(t, "encrypted"),
+			}
+			assertJSONRoundTrip(t, orig)
+		})
+	})
 }
 
 // assertJSONRoundTrip marshals v to JSON, unmarshals into a new value
