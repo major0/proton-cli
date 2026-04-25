@@ -68,7 +68,7 @@ func (c *Client) CreateFile(ctx context.Context, share *drive.Share, parentLink 
 		return nil, fmt.Errorf("drive.CreateFile: content key packet: %w", err)
 	}
 
-	if err := req.SetName(name, addrKR, nodeKR); err != nil {
+	if err := req.SetName(name, addrKR, parentKR); err != nil {
 		return nil, fmt.Errorf("drive.CreateFile: encrypt name: %w", err)
 	}
 
