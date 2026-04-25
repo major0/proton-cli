@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -95,10 +96,14 @@ func TestGetMasterKey_CreatePath(t *testing.T) {
 			if req.MasterKey == "" {
 				t.Error("POST body missing MasterKey")
 			}
-			msg, err := pgpcrypto.NewPGPMessageFromArmored(req.MasterKey)
+			// The key is now base64-encoded binary PGP, not armored.
+			raw, err := base64.StdEncoding.DecodeString(req.MasterKey)
 			if err != nil {
-				t.Errorf("parse armored key: %v", err)
+				t.Errorf("decode base64 key: %v", err)
+				http.Error(w, "bad key encoding", http.StatusBadRequest)
+				return
 			}
+			msg := pgpcrypto.NewPGPMessage(raw)
 			if _, err = kr.Decrypt(msg, nil, 0); err != nil {
 				t.Errorf("decrypt posted key: %v", err)
 			}

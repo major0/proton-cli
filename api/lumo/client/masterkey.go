@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 
 	pgpcrypto "github.com/ProtonMail/gopenpgp/v2/crypto"
@@ -59,12 +60,23 @@ func (c *Client) fetchMasterKey(ctx context.Context) ([]byte, error) {
 	return c.unwrapMasterKey(best.MasterKey)
 }
 
-// unwrapMasterKey PGP-decrypts an armored master key using the session's
-// user keyring.
-func (c *Client) unwrapMasterKey(armoredKey string) ([]byte, error) {
-	msg, err := pgpcrypto.NewPGPMessageFromArmored(armoredKey)
-	if err != nil {
-		return nil, fmt.Errorf("lumo: parse master key: %w", err)
+// unwrapMasterKey PGP-decrypts a master key using the session's user keyring.
+// The key may be ASCII-armored or base64-encoded binary PGP.
+func (c *Client) unwrapMasterKey(key string) ([]byte, error) {
+	var msg *pgpcrypto.PGPMessage
+
+	if strings.HasPrefix(key, "-----BEGIN") {
+		var err error
+		msg, err = pgpcrypto.NewPGPMessageFromArmored(key)
+		if err != nil {
+			return nil, fmt.Errorf("lumo: parse master key: %w", err)
+		}
+	} else {
+		raw, err := base64.StdEncoding.DecodeString(key)
+		if err != nil {
+			return nil, fmt.Errorf("lumo: decode master key: %w", err)
+		}
+		msg = pgpcrypto.NewPGPMessage(raw)
 	}
 
 	plain, err := c.Session.UserKeyRing.Decrypt(msg, nil, 0)
@@ -83,19 +95,17 @@ func (c *Client) createMasterKey(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("lumo: generate master key: %w", err)
 	}
 
-	// PGP-encrypt the raw key bytes.
+	// PGP-encrypt the raw key bytes and base64-encode the binary output
+	// to match the API's format (base64 binary PGP, not ASCII armor).
 	plainMsg := pgpcrypto.NewPlainMessage(key)
 	encMsg, err := c.Session.UserKeyRing.Encrypt(plainMsg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: encrypt master key: %w", err)
 	}
 
-	armored, err := encMsg.GetArmored()
-	if err != nil {
-		return nil, fmt.Errorf("lumo: armor master key: %w", err)
-	}
+	encoded := base64.StdEncoding.EncodeToString(encMsg.GetBinary())
 
-	req := lumo.CreateMasterKeyReq{MasterKey: armored}
+	req := lumo.CreateMasterKeyReq{MasterKey: encoded}
 	err = c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/masterkeys"), req, nil)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create master key: %w", err)
