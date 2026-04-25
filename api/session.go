@@ -375,7 +375,7 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 		return fmt.Errorf("doJSON: unmarshal envelope: %w", err)
 	}
 
-	if envelope.Code != 1000 {
+	if envelope.Code != 1000 && envelope.Code != 1001 {
 		slog.Debug("doJSON.error", "method", method, "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
 		return &Error{
 			Status:  resp.StatusCode,
@@ -484,7 +484,7 @@ func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, r
 		return fmt.Errorf("doJSONCookie: unmarshal envelope: %w", err)
 	}
 
-	if envelope.Code != 1000 {
+	if envelope.Code != 1000 && envelope.Code != 1001 {
 		slog.Debug("doJSONCookie.error", "method", method, "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
 		return &Error{
 			Status:  resp.StatusCode,
