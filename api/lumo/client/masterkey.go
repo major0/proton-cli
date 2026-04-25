@@ -43,7 +43,7 @@ func (c *Client) fetchMasterKey(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("lumo: get master keys: %w", err)
 	}
 
-	if resp.Eligibility != lumo.EligibilityEligible {
+	if resp.Eligibility != lumo.EligibilityEligible && len(resp.MasterKeys) == 0 {
 		return nil, fmt.Errorf("lumo: get master keys: %w", lumo.ErrNotEligible)
 	}
 
