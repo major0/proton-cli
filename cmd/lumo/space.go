@@ -330,9 +330,9 @@ func FormatSpaceList(rows []SpaceRow) string {
 var spaceForceDelete bool
 
 var spaceDeleteCmd = &cobra.Command{
-	Use:   "delete <space-id>",
-	Short: "Delete a space (must be empty unless -f)",
-	Args:  cobra.ExactArgs(1),
+	Use:   "delete <space-id> [<space-id>...]",
+	Short: "Delete spaces (must be empty unless -f)",
+	Args:  cobra.MinimumNArgs(1),
 	RunE:  runSpaceDelete,
 }
 
@@ -347,32 +347,35 @@ func runSpaceDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	spaceID := args[0]
-
+	var spaces []lumo.Space
 	if !spaceForceDelete {
-		// Check if the space is empty before deleting.
-		spaces, err := client.ListSpaces(ctx)
+		spaces, err = client.ListSpaces(ctx)
 		if err != nil {
-			return fmt.Errorf("checking space: %w", err)
+			return fmt.Errorf("checking spaces: %w", err)
 		}
-		for _, s := range spaces {
-			if s.ID == spaceID {
-				if len(s.Conversations) > 0 {
-					return fmt.Errorf("space has %d conversations — use -f to force delete", len(s.Conversations))
+	}
+
+	for _, spaceID := range args {
+		if !spaceForceDelete {
+			for _, s := range spaces {
+				if s.ID == spaceID {
+					if len(s.Conversations) > 0 {
+						return fmt.Errorf("space %s has %d conversations — use -f to force delete", spaceID, len(s.Conversations))
+					}
+					if len(s.Assets) > 0 {
+						return fmt.Errorf("space %s has %d assets — use -f to force delete", spaceID, len(s.Assets))
+					}
+					break
 				}
-				if len(s.Assets) > 0 {
-					return fmt.Errorf("space has %d assets — use -f to force delete", len(s.Assets))
-				}
-				break
 			}
 		}
+
+		if err := client.DeleteSpace(ctx, spaceID); err != nil {
+			return fmt.Errorf("deleting space %s: %w", spaceID, err)
+		}
+		_, _ = fmt.Fprintf(os.Stderr, "Space %s deleted.\n", spaceID)
 	}
 
-	if err := client.DeleteSpace(ctx, spaceID); err != nil {
-		return fmt.Errorf("deleting space: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(os.Stderr, "Space %s deleted.\n", spaceID)
 	return nil
 }
 
