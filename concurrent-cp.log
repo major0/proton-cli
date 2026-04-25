@@ -1,0 +1,218 @@
+time=2026-04-25T14:09:43.863-07:00 level=DEBUG msg=verbosity log_level=DEBUG verbose=0
+time=2026-04-25T14:09:43.867-07:00 level=DEBUG msg="session.refresh client"
+time=2026-04-25T14:09:43.867-07:00 level=DEBUG msg=session.config uid=c2ug7ftehzjao52ye5nuiq5kzkvkhobc access_token=<redacted> refresh_token=<redacted>
+time=2026-04-25T14:09:43.867-07:00 level=DEBUG msg=session.GetUser
+time=2026-04-25T14:09:44.695-07:00 level=DEBUG msg="service session has no service field, will fork" service=drive
+time=2026-04-25T14:09:44.695-07:00 level=DEBUG msg=fork.cookies host=https://drive-api.proton.me/api cookies=[Session-Id]
+time=2026-04-25T14:09:44.695-07:00 level=WARN msg="fork.push: no AUTH-* cookie in jar — child session may have restricted scopes" service=drive
+time=2026-04-25T14:09:44.695-07:00 level=DEBUG msg=doJSONCookie.request method=POST url=https://account.proton.me/api/auth/v4/sessions/forks appversion=web-account@5.0.367.1
+time=2026-04-25T14:09:44.695-07:00 level=DEBUG msg=doJSONCookie.sending-cookies url=https://account.proton.me/api/auth/v4/sessions/forks cookies="[Session-Id Tag]"
+time=2026-04-25T14:09:44.962-07:00 level=DEBUG msg=doJSONCookie.set-cookie url=https://account.proton.me/api/auth/v4/sessions/forks cookies="[Session-Id Tag]"
+time=2026-04-25T14:09:44.962-07:00 level=DEBUG msg=fork.push selector=txtulzj4d34yfjr7o2sdef5kjlu4bzua service=drive child_client_id=web-drive push_host=https://account.proton.me/api
+time=2026-04-25T14:09:44.962-07:00 level=DEBUG msg=fork.pull.request url=https://drive-api.proton.me/api/auth/v4/sessions/forks/txtulzj4d34yfjr7o2sdef5kjlu4bzua appversion=web-drive@5.2.0
+time=2026-04-25T14:09:44.962-07:00 level=DEBUG msg=fork.pull.cookies host=https://drive-api.proton.me/api cookies="[Session-Id Tag]"
+time=2026-04-25T14:09:46.482-07:00 level=DEBUG msg=fork.pull uid=jbqkpppf2gjllur6gwrk5jzkur4pgpuz service=drive scopes="[full self organization payments keys parent user loggedin paid nondelinquent mail calendar drive docs verified settings meet]"
+time=2026-04-25T14:09:51.944-07:00 level=DEBUG msg=fork.unlock service=drive child_uid=jbqkpppf2gjllur6gwrk5jzkur4pgpuz keypass_len=31 num_addresses=9
+time=2026-04-25T14:10:00.375-07:00 level=DEBUG msg=link.ResolvePath path=test1/
+time=2026-04-25T14:10:00.375-07:00 level=DEBUG msg=link.Readdir linkID="jVuuiUFQGFPfoB2lJJ1_bou3NyfuYiOqNLLXnnWCfKUKy27FQ1O6WC7dmbXeCZNe76we2jpRhHm_B-jzobLEqw=="
+time=2026-04-25T14:10:03.231-07:00 level=DEBUG msg=pipeline.worker.start worker=3
+time=2026-04-25T14:10:03.231-07:00 level=DEBUG msg=pipeline.worker.start worker=2
+time=2026-04-25T14:10:03.231-07:00 level=DEBUG msg=pipeline.worker.start worker=1
+time=2026-04-25T14:10:03.231-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=0
+time=2026-04-25T14:10:03.231-07:00 level=DEBUG msg=pipeline.worker.block.start worker=1 block=2
+time=2026-04-25T14:10:03.231-07:00 level=DEBUG msg=pipeline.worker.start worker=0
+time=2026-04-25T14:10:03.231-07:00 level=DEBUG msg=pipeline.worker.block.start worker=2 block=1
+time=2026-04-25T14:10:03.233-07:00 level=DEBUG msg=pipeline.worker.block.start worker=0 block=3
+time=2026-04-25T14:10:03.235-07:00 level=DEBUG msg=writeBlock.start block=2 size=4194304
+time=2026-04-25T14:10:03.235-07:00 level=DEBUG msg=writeBlock.start block=1 size=4194304
+time=2026-04-25T14:10:03.236-07:00 level=DEBUG msg=writeBlock.start block=3 size=4194304
+time=2026-04-25T14:10:03.237-07:00 level=DEBUG msg=writeBlock.start block=4 size=4194304
+time=2026-04-25T14:10:03.671-07:00 level=DEBUG msg=writeBlock.crypto block=1 elapsed=63.262307ms
+time=2026-04-25T14:10:03.678-07:00 level=DEBUG msg=writeBlock.crypto block=4 elapsed=70.145552ms
+time=2026-04-25T14:10:03.679-07:00 level=DEBUG msg=writeBlock.crypto block=3 elapsed=71.075174ms
+time=2026-04-25T14:10:03.680-07:00 level=DEBUG msg=writeBlock.crypto block=2 elapsed=72.259766ms
+time=2026-04-25T14:10:04.167-07:00 level=DEBUG msg=writeBlock.requestUpload block=4 elapsed=486.098931ms
+time=2026-04-25T14:10:04.206-07:00 level=DEBUG msg=writeBlock.requestUpload block=3 elapsed=523.140452ms
+time=2026-04-25T14:10:04.247-07:00 level=DEBUG msg=writeBlock.requestUpload block=2 elapsed=564.190289ms
+time=2026-04-25T14:10:04.303-07:00 level=DEBUG msg=writeBlock.requestUpload block=1 elapsed=629.20879ms
+time=2026-04-25T14:10:07.367-07:00 level=DEBUG msg=writeBlock.upload block=1 elapsed=3.0642988s encSize=4194360
+1/32 blocks, 4.0 MiB, 990.1 KiB/stime=2026-04-25T14:10:07.367-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=0
+time=2026-04-25T14:10:07.368-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=4
+time=2026-04-25T14:10:07.368-07:00 level=DEBUG msg=writeBlock.start block=5 size=4194304
+time=2026-04-25T14:10:07.409-07:00 level=DEBUG msg=writeBlock.crypto block=5 elapsed=40.241836ms
+time=2026-04-25T14:10:07.410-07:00 level=DEBUG msg=writeBlock.upload block=4 elapsed=3.243370525s encSize=4194360
+time=2026-04-25T14:10:07.410-07:00 level=DEBUG msg=pipeline.worker.block.done worker=0 block=3
+time=2026-04-25T14:10:07.411-07:00 level=DEBUG msg=pipeline.worker.block.start worker=0 block=5
+time=2026-04-25T14:10:07.411-07:00 level=DEBUG msg=writeBlock.start block=6 size=4194304
+time=2026-04-25T14:10:07.449-07:00 level=DEBUG msg=writeBlock.upload block=3 elapsed=3.243343925s encSize=4194360
+time=2026-04-25T14:10:07.449-07:00 level=DEBUG msg=pipeline.worker.block.done worker=1 block=2
+time=2026-04-25T14:10:07.449-07:00 level=DEBUG msg=pipeline.worker.block.start worker=1 block=6
+time=2026-04-25T14:10:07.450-07:00 level=DEBUG msg=writeBlock.start block=7 size=4194304
+time=2026-04-25T14:10:07.453-07:00 level=DEBUG msg=writeBlock.crypto block=6 elapsed=41.891181ms
+time=2026-04-25T14:10:07.493-07:00 level=DEBUG msg=writeBlock.crypto block=7 elapsed=43.397633ms
+time=2026-04-25T14:10:07.978-07:00 level=DEBUG msg=writeBlock.requestUpload block=5 elapsed=565.897712ms
+time=2026-04-25T14:10:08.022-07:00 level=DEBUG msg=writeBlock.requestUpload block=6 elapsed=565.538362ms
+time=2026-04-25T14:10:08.071-07:00 level=DEBUG msg=writeBlock.requestUpload block=7 elapsed=574.026921ms
+time=2026-04-25T14:10:10.273-07:00 level=DEBUG msg=writeBlock.upload block=6 elapsed=2.250531922s encSize=4194360
+4/32 blocks, 16.0 MiB, 2.3 MiB/stime=2026-04-25T14:10:10.273-07:00 level=DEBUG msg=pipeline.worker.block.done worker=0 block=5
+time=2026-04-25T14:10:10.273-07:00 level=DEBUG msg=pipeline.worker.block.start worker=0 block=7
+time=2026-04-25T14:10:10.274-07:00 level=DEBUG msg=writeBlock.start block=8 size=4194304
+time=2026-04-25T14:10:10.316-07:00 level=DEBUG msg=writeBlock.crypto block=8 elapsed=42.658382ms
+time=2026-04-25T14:10:10.544-07:00 level=DEBUG msg=writeBlock.upload block=5 elapsed=2.565560613s encSize=4194360
+5/32 blocks, 20.0 MiB, 2.7 MiB/stime=2026-04-25T14:10:10.544-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=4
+time=2026-04-25T14:10:10.544-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=8
+time=2026-04-25T14:10:10.545-07:00 level=DEBUG msg=writeBlock.start block=9 size=4194304
+time=2026-04-25T14:10:10.587-07:00 level=DEBUG msg=writeBlock.crypto block=9 elapsed=41.7841ms
+time=2026-04-25T14:10:10.818-07:00 level=DEBUG msg=writeBlock.upload block=7 elapsed=2.747566187s encSize=4194360
+6/32 blocks, 24.0 MiB, 3.2 MiB/stime=2026-04-25T14:10:10.818-07:00 level=DEBUG msg=pipeline.worker.block.done worker=1 block=6
+time=2026-04-25T14:10:10.818-07:00 level=DEBUG msg=pipeline.worker.block.start worker=1 block=9
+time=2026-04-25T14:10:10.819-07:00 level=DEBUG msg=writeBlock.start block=10 size=4194304
+time=2026-04-25T14:10:10.851-07:00 level=DEBUG msg=writeBlock.crypto block=10 elapsed=32.203479ms
+time=2026-04-25T14:10:10.890-07:00 level=DEBUG msg=writeBlock.requestUpload block=8 elapsed=569.9288ms
+time=2026-04-25T14:10:11.134-07:00 level=DEBUG msg=writeBlock.requestUpload block=9 elapsed=543.645983ms
+time=2026-04-25T14:10:11.427-07:00 level=DEBUG msg=writeBlock.requestUpload block=10 elapsed=572.316588ms
+time=2026-04-25T14:10:13.498-07:00 level=DEBUG msg=writeBlock.upload block=8 elapsed=2.608361527s encSize=4194360
+7/32 blocks, 28.0 MiB, 2.7 MiB/stime=2026-04-25T14:10:13.498-07:00 level=DEBUG msg=pipeline.worker.block.done worker=0 block=7
+time=2026-04-25T14:10:13.499-07:00 level=DEBUG msg=pipeline.worker.block.start worker=0 block=10
+time=2026-04-25T14:10:13.499-07:00 level=DEBUG msg=writeBlock.start block=11 size=4194304
+time=2026-04-25T14:10:13.541-07:00 level=DEBUG msg=writeBlock.crypto block=11 elapsed=41.68176ms
+time=2026-04-25T14:10:13.903-07:00 level=DEBUG msg=writeBlock.upload block=9 elapsed=2.769211777s encSize=4194360
+8/32 blocks, 32.0 MiB, 3.0 MiB/stime=2026-04-25T14:10:13.903-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=8
+time=2026-04-25T14:10:13.904-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=11
+time=2026-04-25T14:10:13.904-07:00 level=DEBUG msg=writeBlock.start block=12 size=4194304
+time=2026-04-25T14:10:13.945-07:00 level=DEBUG msg=writeBlock.crypto block=12 elapsed=41.101909ms
+time=2026-04-25T14:10:14.034-07:00 level=DEBUG msg=writeBlock.requestUpload block=11 elapsed=488.643397ms
+time=2026-04-25T14:10:14.430-07:00 level=DEBUG msg=writeBlock.requestUpload block=12 elapsed=480.757848ms
+time=2026-04-25T14:10:15.139-07:00 level=DEBUG msg=writeBlock.upload block=10 elapsed=3.712288933s encSize=4194360
+9/32 blocks, 36.0 MiB, 3.0 MiB/stime=2026-04-25T14:10:15.139-07:00 level=DEBUG msg=pipeline.worker.block.done worker=1 block=9
+time=2026-04-25T14:10:15.139-07:00 level=DEBUG msg=pipeline.worker.block.start worker=1 block=12
+time=2026-04-25T14:10:15.140-07:00 level=DEBUG msg=writeBlock.start block=13 size=4194304
+time=2026-04-25T14:10:15.192-07:00 level=DEBUG msg=writeBlock.crypto block=13 elapsed=52.426573ms
+time=2026-04-25T14:10:15.738-07:00 level=DEBUG msg=writeBlock.requestUpload block=13 elapsed=541.989572ms
+time=2026-04-25T14:10:16.147-07:00 level=DEBUG msg=writeBlock.upload block=2 elapsed=11.899694372s encSize=4194360
+10/32 blocks, 40.0 MiB, 3.1 MiB/stime=2026-04-25T14:10:16.147-07:00 level=DEBUG msg=pipeline.worker.block.done worker=2 block=1
+time=2026-04-25T14:10:16.147-07:00 level=DEBUG msg=pipeline.worker.block.start worker=2 block=13
+time=2026-04-25T14:10:16.148-07:00 level=DEBUG msg=writeBlock.start block=14 size=4194304
+time=2026-04-25T14:10:16.190-07:00 level=DEBUG msg=writeBlock.crypto block=14 elapsed=42.442301ms
+time=2026-04-25T14:10:16.748-07:00 level=DEBUG msg=writeBlock.requestUpload block=14 elapsed=553.486947ms
+time=2026-04-25T14:10:17.089-07:00 level=DEBUG msg=writeBlock.upload block=11 elapsed=3.055583672s encSize=4194360
+11/32 blocks, 44.0 MiB, 3.2 MiB/stime=2026-04-25T14:10:17.089-07:00 level=DEBUG msg=pipeline.worker.block.done worker=0 block=10
+time=2026-04-25T14:10:17.090-07:00 level=DEBUG msg=pipeline.worker.block.start worker=0 block=14
+time=2026-04-25T14:10:17.090-07:00 level=DEBUG msg=writeBlock.start block=15 size=4194304
+time=2026-04-25T14:10:17.132-07:00 level=DEBUG msg=writeBlock.crypto block=15 elapsed=41.415979ms
+time=2026-04-25T14:10:17.581-07:00 level=DEBUG msg=writeBlock.upload block=12 elapsed=3.150452339s encSize=4194360
+12/32 blocks, 48.0 MiB, 3.3 MiB/stime=2026-04-25T14:10:17.581-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=11
+time=2026-04-25T14:10:17.581-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=15
+time=2026-04-25T14:10:17.581-07:00 level=DEBUG msg=writeBlock.start block=16 size=4194304
+time=2026-04-25T14:10:17.624-07:00 level=DEBUG msg=writeBlock.crypto block=16 elapsed=43.044862ms
+time=2026-04-25T14:10:17.766-07:00 level=DEBUG msg=writeBlock.requestUpload block=15 elapsed=630.791602ms
+time=2026-04-25T14:10:18.145-07:00 level=DEBUG msg=writeBlock.requestUpload block=16 elapsed=516.882267ms
+time=2026-04-25T14:10:18.640-07:00 level=DEBUG msg=writeBlock.upload block=13 elapsed=2.902548352s encSize=4194360
+13/32 blocks, 52.0 MiB, 3.4 MiB/stime=2026-04-25T14:10:18.640-07:00 level=DEBUG msg=pipeline.worker.block.done worker=1 block=12
+time=2026-04-25T14:10:18.641-07:00 level=DEBUG msg=pipeline.worker.block.start worker=1 block=16
+time=2026-04-25T14:10:18.641-07:00 level=DEBUG msg=writeBlock.start block=17 size=4194304
+time=2026-04-25T14:10:18.682-07:00 level=DEBUG msg=writeBlock.crypto block=17 elapsed=40.351837ms
+time=2026-04-25T14:10:19.260-07:00 level=DEBUG msg=writeBlock.requestUpload block=17 elapsed=574.552721ms
+time=2026-04-25T14:10:20.588-07:00 level=DEBUG msg=writeBlock.upload block=15 elapsed=2.822147745s encSize=4194360
+14/32 blocks, 56.0 MiB, 3.2 MiB/stime=2026-04-25T14:10:20.588-07:00 level=DEBUG msg=pipeline.worker.block.done worker=0 block=14
+time=2026-04-25T14:10:20.589-07:00 level=DEBUG msg=pipeline.worker.block.start worker=0 block=17
+time=2026-04-25T14:10:20.589-07:00 level=DEBUG msg=writeBlock.start block=18 size=4194304
+time=2026-04-25T14:10:20.630-07:00 level=DEBUG msg=writeBlock.crypto block=18 elapsed=40.457007ms
+time=2026-04-25T14:10:21.199-07:00 level=DEBUG msg=writeBlock.requestUpload block=18 elapsed=565.03666ms
+time=2026-04-25T14:10:21.405-07:00 level=DEBUG msg=writeBlock.upload block=16 elapsed=3.260547331s encSize=4194360
+15/32 blocks, 60.0 MiB, 3.3 MiB/stime=2026-04-25T14:10:21.405-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=15
+time=2026-04-25T14:10:21.406-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=18
+time=2026-04-25T14:10:21.406-07:00 level=DEBUG msg=writeBlock.start block=19 size=4194304
+time=2026-04-25T14:10:21.448-07:00 level=DEBUG msg=writeBlock.crypto block=19 elapsed=41.66174ms
+time=2026-04-25T14:10:21.995-07:00 level=DEBUG msg=writeBlock.requestUpload block=19 elapsed=543.460894ms
+time=2026-04-25T14:10:22.212-07:00 level=DEBUG msg=writeBlock.upload block=17 elapsed=2.951694864s encSize=4194360
+16/32 blocks, 64.0 MiB, 3.4 MiB/stime=2026-04-25T14:10:22.212-07:00 level=DEBUG msg=pipeline.worker.block.done worker=1 block=16
+time=2026-04-25T14:10:22.212-07:00 level=DEBUG msg=pipeline.worker.block.start worker=1 block=19
+time=2026-04-25T14:10:22.213-07:00 level=DEBUG msg=writeBlock.start block=20 size=4194304
+time=2026-04-25T14:10:22.253-07:00 level=DEBUG msg=writeBlock.crypto block=20 elapsed=40.341957ms
+time=2026-04-25T14:10:22.785-07:00 level=DEBUG msg=writeBlock.requestUpload block=20 elapsed=528.484492ms
+time=2026-04-25T14:10:24.351-07:00 level=DEBUG msg=writeBlock.upload block=18 elapsed=3.152853099s encSize=4194360
+17/32 blocks, 68.0 MiB, 3.2 MiB/stime=2026-04-25T14:10:24.352-07:00 level=DEBUG msg=pipeline.worker.block.done worker=0 block=17
+time=2026-04-25T14:10:24.352-07:00 level=DEBUG msg=pipeline.worker.block.start worker=0 block=20
+time=2026-04-25T14:10:24.352-07:00 level=DEBUG msg=writeBlock.start block=21 size=4194304
+time=2026-04-25T14:10:24.385-07:00 level=DEBUG msg=writeBlock.upload block=14 elapsed=7.637463565s encSize=4194360
+time=2026-04-25T14:10:24.385-07:00 level=DEBUG msg=pipeline.worker.block.done worker=2 block=13
+time=2026-04-25T14:10:24.386-07:00 level=DEBUG msg=pipeline.worker.block.start worker=2 block=21
+time=2026-04-25T14:10:24.386-07:00 level=DEBUG msg=writeBlock.start block=22 size=4194304
+time=2026-04-25T14:10:24.401-07:00 level=DEBUG msg=writeBlock.crypto block=21 elapsed=48.672335ms
+time=2026-04-25T14:10:24.435-07:00 level=DEBUG msg=writeBlock.crypto block=22 elapsed=48.757455ms
+time=2026-04-25T14:10:24.902-07:00 level=DEBUG msg=writeBlock.requestUpload block=21 elapsed=496.716583ms
+time=2026-04-25T14:10:25.167-07:00 level=DEBUG msg=writeBlock.requestUpload block=22 elapsed=729.307915ms
+time=2026-04-25T14:10:25.719-07:00 level=DEBUG msg=writeBlock.upload block=19 elapsed=3.723690912s encSize=4194360
+19/32 blocks, 76.0 MiB, 3.4 MiB/stime=2026-04-25T14:10:25.719-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=18
+time=2026-04-25T14:10:25.719-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=22
+time=2026-04-25T14:10:25.720-07:00 level=DEBUG msg=writeBlock.start block=23 size=4194304
+time=2026-04-25T14:10:25.760-07:00 level=DEBUG msg=writeBlock.crypto block=23 elapsed=39.866606ms
+time=2026-04-25T14:10:26.236-07:00 level=DEBUG msg=writeBlock.upload block=20 elapsed=3.451631854s encSize=4194360
+20/32 blocks, 80.0 MiB, 3.5 MiB/stime=2026-04-25T14:10:26.236-07:00 level=DEBUG msg=pipeline.worker.block.done worker=1 block=19
+time=2026-04-25T14:10:26.237-07:00 level=DEBUG msg=pipeline.worker.block.start worker=1 block=23
+time=2026-04-25T14:10:26.237-07:00 level=DEBUG msg=writeBlock.start block=24 size=4194304
+time=2026-04-25T14:10:26.267-07:00 level=DEBUG msg=writeBlock.requestUpload block=23 elapsed=503.968308ms
+time=2026-04-25T14:10:26.283-07:00 level=DEBUG msg=writeBlock.crypto block=24 elapsed=45.264747ms
+time=2026-04-25T14:10:26.823-07:00 level=DEBUG msg=writeBlock.requestUpload block=24 elapsed=535.286576ms
+time=2026-04-25T14:10:28.485-07:00 level=DEBUG msg=writeBlock.upload block=22 elapsed=3.317539834s encSize=4194360
+21/32 blocks, 84.0 MiB, 3.3 MiB/stime=2026-04-25T14:10:28.485-07:00 level=DEBUG msg=pipeline.worker.block.done worker=2 block=21
+time=2026-04-25T14:10:28.485-07:00 level=DEBUG msg=pipeline.worker.block.start worker=2 block=24
+time=2026-04-25T14:10:28.486-07:00 level=DEBUG msg=writeBlock.start block=25 size=4194304
+time=2026-04-25T14:10:28.528-07:00 level=DEBUG msg=writeBlock.crypto block=25 elapsed=41.89157ms
+time=2026-04-25T14:10:29.008-07:00 level=DEBUG msg=writeBlock.requestUpload block=25 elapsed=476.023838ms
+time=2026-04-25T14:10:31.525-07:00 level=DEBUG msg=writeBlock.upload block=23 elapsed=5.25772421s encSize=4194360
+22/32 blocks, 88.0 MiB, 3.1 MiB/stime=2026-04-25T14:10:31.525-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=22
+time=2026-04-25T14:10:31.525-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=25
+time=2026-04-25T14:10:31.526-07:00 level=DEBUG msg=writeBlock.start block=26 size=4194304
+time=2026-04-25T14:10:31.567-07:00 level=DEBUG msg=writeBlock.crypto block=26 elapsed=41.347609ms
+time=2026-04-25T14:10:32.174-07:00 level=DEBUG msg=writeBlock.requestUpload block=26 elapsed=603.272424ms
+time=2026-04-25T14:10:32.862-07:00 level=DEBUG msg=writeBlock.upload block=25 elapsed=3.853945897s encSize=4194360
+23/32 blocks, 92.0 MiB, 3.1 MiB/stime=2026-04-25T14:10:32.862-07:00 level=DEBUG msg=pipeline.worker.block.done worker=2 block=24
+time=2026-04-25T14:10:32.862-07:00 level=DEBUG msg=pipeline.worker.block.start worker=2 block=26
+time=2026-04-25T14:10:32.863-07:00 level=DEBUG msg=writeBlock.start block=27 size=4194304
+time=2026-04-25T14:10:32.903-07:00 level=DEBUG msg=writeBlock.crypto block=27 elapsed=40.540027ms
+time=2026-04-25T14:10:33.448-07:00 level=DEBUG msg=writeBlock.requestUpload block=27 elapsed=540.693118ms
+time=2026-04-25T14:10:38.665-07:00 level=DEBUG msg=writeBlock.upload block=27 elapsed=5.21681895s encSize=4194360
+24/32 blocks, 96.0 MiB, 2.7 MiB/stime=2026-04-25T14:10:38.665-07:00 level=DEBUG msg=pipeline.worker.block.done worker=2 block=26
+time=2026-04-25T14:10:38.665-07:00 level=DEBUG msg=pipeline.worker.block.start worker=2 block=27
+time=2026-04-25T14:10:38.666-07:00 level=DEBUG msg=writeBlock.start block=28 size=4194304
+time=2026-04-25T14:10:38.706-07:00 level=DEBUG msg=writeBlock.crypto block=28 elapsed=39.987846ms
+time=2026-04-25T14:10:39.200-07:00 level=DEBUG msg=writeBlock.requestUpload block=28 elapsed=490.893661ms
+time=2026-04-25T14:10:40.013-07:00 level=DEBUG msg=writeBlock.upload block=26 elapsed=7.838391512s encSize=4194360
+25/32 blocks, 100.0 MiB, 2.7 MiB/stime=2026-04-25T14:10:40.013-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=25
+time=2026-04-25T14:10:40.013-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=28
+time=2026-04-25T14:10:40.014-07:00 level=DEBUG msg=writeBlock.start block=29 size=4194304
+time=2026-04-25T14:10:40.044-07:00 level=DEBUG msg=writeBlock.crypto block=29 elapsed=30.019165ms
+time=2026-04-25T14:10:40.590-07:00 level=DEBUG msg=writeBlock.requestUpload block=29 elapsed=544.579977ms
+time=2026-04-25T14:10:44.568-07:00 level=DEBUG msg=writeBlock.upload block=24 elapsed=17.744988307s encSize=4194360
+26/32 blocks, 104.0 MiB, 2.5 MiB/stime=2026-04-25T14:10:44.568-07:00 level=DEBUG msg=pipeline.worker.block.done worker=1 block=23
+time=2026-04-25T14:10:44.568-07:00 level=DEBUG msg=pipeline.worker.block.start worker=1 block=29
+time=2026-04-25T14:10:44.569-07:00 level=DEBUG msg=writeBlock.start block=30 size=4194304
+time=2026-04-25T14:10:44.609-07:00 level=DEBUG msg=writeBlock.crypto block=30 elapsed=40.202207ms
+time=2026-04-25T14:10:45.184-07:00 level=DEBUG msg=writeBlock.requestUpload block=30 elapsed=570.956374ms
+time=2026-04-25T14:10:48.224-07:00 level=DEBUG msg=writeBlock.upload block=29 elapsed=7.634124505s encSize=4194360
+27/32 blocks, 108.0 MiB, 2.4 MiB/stime=2026-04-25T14:10:48.224-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=28
+time=2026-04-25T14:10:48.225-07:00 level=DEBUG msg=pipeline.worker.block.start worker=3 block=30
+time=2026-04-25T14:10:48.225-07:00 level=DEBUG msg=writeBlock.start block=31 size=4194304
+time=2026-04-25T14:10:48.262-07:00 level=DEBUG msg=writeBlock.crypto block=31 elapsed=36.98331ms
+time=2026-04-25T14:10:48.595-07:00 level=DEBUG msg=writeBlock.upload block=21 elapsed=23.693138058s encSize=4194360
+28/32 blocks, 112.0 MiB, 2.5 MiB/stime=2026-04-25T14:10:48.595-07:00 level=DEBUG msg=pipeline.worker.block.done worker=0 block=20
+time=2026-04-25T14:10:48.595-07:00 level=DEBUG msg=pipeline.worker.block.start worker=0 block=31
+time=2026-04-25T14:10:48.596-07:00 level=DEBUG msg=writeBlock.start block=32 size=4194304
+time=2026-04-25T14:10:48.637-07:00 level=DEBUG msg=writeBlock.crypto block=32 elapsed=41.42364ms
+time=2026-04-25T14:10:48.760-07:00 level=DEBUG msg=writeBlock.requestUpload block=31 elapsed=495.32832ms
+time=2026-04-25T14:10:48.887-07:00 level=DEBUG msg=writeBlock.upload block=28 elapsed=9.687618971s encSize=4194360
+29/32 blocks, 116.0 MiB, 2.5 MiB/stime=2026-04-25T14:10:48.887-07:00 level=DEBUG msg=pipeline.worker.block.done worker=2 block=27
+time=2026-04-25T14:10:48.888-07:00 level=DEBUG msg=pipeline.worker.done worker=2
+time=2026-04-25T14:10:49.103-07:00 level=DEBUG msg=writeBlock.requestUpload block=32 elapsed=461.862417ms
+time=2026-04-25T14:10:54.897-07:00 level=DEBUG msg=writeBlock.upload block=30 elapsed=9.71324565s encSize=4194360
+30/32 blocks, 120.0 MiB, 2.3 MiB/stime=2026-04-25T14:10:54.897-07:00 level=DEBUG msg=pipeline.worker.block.done worker=1 block=29
+time=2026-04-25T14:10:54.897-07:00 level=DEBUG msg=pipeline.worker.done worker=1
+time=2026-04-25T14:10:57.935-07:00 level=DEBUG msg=writeBlock.upload block=32 elapsed=8.832375993s encSize=4194360
+31/32 blocks, 124.0 MiB, 2.3 MiB/stime=2026-04-25T14:10:57.935-07:00 level=DEBUG msg=pipeline.worker.block.done worker=0 block=31
+time=2026-04-25T14:10:57.936-07:00 level=DEBUG msg=pipeline.worker.done worker=0
+time=2026-04-25T14:11:09.038-07:00 level=DEBUG msg=writeBlock.upload block=31 elapsed=20.27810404s encSize=4194360
+32/32 blocks, 128.0 MiB, 1.9 MiB/s
+time=2026-04-25T14:11:09.038-07:00 level=DEBUG msg=pipeline.worker.block.done worker=3 block=30
+time=2026-04-25T14:11:09.038-07:00 level=DEBUG msg=pipeline.worker.done worker=3
