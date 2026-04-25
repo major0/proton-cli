@@ -295,7 +295,36 @@ func cookieLogin(ctx context.Context, username, password, mboxpass string) error
 	// Step 4: SRP login within cookie session.
 	auth, err := cookieSRPAuthFn(ctx, cookieSess, username, []byte(password))
 	if err != nil {
-		return fmt.Errorf("cookie login: SRP: %w", err)
+		// Check for HV error (code 9001).
+		var apiErr *common.Error
+		if !errors.As(err, &apiErr) || !apiErr.IsHVError() {
+			return fmt.Errorf("cookie login: SRP: %w", err)
+		}
+
+		hv, hvErr := apiErr.GetHVDetails()
+		if hvErr != nil {
+			return fmt.Errorf("cookie login: extracting HV details: %w", hvErr)
+		}
+
+		if !hasCaptchaMethod(hv.Methods) {
+			return fmt.Errorf("cookie login: unsupported HV methods: %v", hv.Methods)
+		}
+
+		solvedToken, solveErr := SolveCaptcha(hv, authLoginParams.noBrowser)
+		if solveErr != nil {
+			return fmt.Errorf("cookie login: CAPTCHA: %w", solveErr)
+		}
+
+		hv.Token = solvedToken
+		fmt.Println("Authenticating ...")
+
+		// Set HV details on the cookie session for the retry.
+		cookieSess.HVDetails = hv
+		auth, err = cookieSRPAuthFn(ctx, cookieSess, username, []byte(password))
+		cookieSess.HVDetails = nil // Clear after use.
+		if err != nil {
+			return fmt.Errorf("cookie login: SRP retry: %w", err)
+		}
 	}
 
 	// Step 5: 2FA if needed.

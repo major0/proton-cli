@@ -273,8 +273,9 @@ func (s *Session) resolveAppVersion(reqURL string) string {
 
 // apiEnvelope is the standard Proton API response wrapper.
 type apiEnvelope struct {
-	Code  int    `json:"Code"`
-	Error string `json:"Error,omitempty"`
+	Code    int             `json:"Code"`
+	Error   string          `json:"Error,omitempty"`
+	Details json.RawMessage `json:"Details,omitempty"`
 }
 
 // DoJSON executes an authenticated JSON API request against the Proton API.
@@ -375,6 +376,7 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,
+			Details: envelope.Details,
 		}
 	}
 
@@ -483,6 +485,7 @@ func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, r
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,
+			Details: envelope.Details,
 		}
 	}
 

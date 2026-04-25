@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+
+	proton "github.com/ProtonMail/go-proton-api"
 )
 
 var (
@@ -20,9 +23,10 @@ var (
 
 // Error represents a non-success response from the Proton API.
 type Error struct {
-	Status  int    // HTTP status code
-	Code    int    // Proton API error code
-	Message string // error description from the API
+	Status  int             // HTTP status code
+	Code    int             // Proton API error code
+	Message string          // error description from the API
+	Details json.RawMessage // optional error details from the API
 }
 
 func (e *Error) Error() string {
@@ -30,4 +34,22 @@ func (e *Error) Error() string {
 		return fmt.Sprintf("api: %d/%d: %s", e.Status, e.Code, e.Message)
 	}
 	return fmt.Sprintf("api: %d/%d", e.Status, e.Code)
+}
+
+// IsHVError reports whether this error is a Human Verification challenge (code 9001).
+func (e *Error) IsHVError() bool {
+	return e.Code == 9001
+}
+
+// GetHVDetails parses the Details field into an APIHVDetails struct.
+// Returns an error if this is not an HV error or if Details cannot be parsed.
+func (e *Error) GetHVDetails() (*proton.APIHVDetails, error) {
+	if !e.IsHVError() {
+		return nil, errors.New("not an HV error")
+	}
+	var hv proton.APIHVDetails
+	if err := json.Unmarshal(e.Details, &hv); err != nil {
+		return nil, fmt.Errorf("unmarshal HV details: %w", err)
+	}
+	return &hv, nil
 }

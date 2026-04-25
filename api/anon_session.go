@@ -62,7 +62,7 @@ func CreateAnonSession(ctx context.Context) (*AnonSessionResp, http.CookieJar, e
 	if resp.StatusCode != http.StatusOK {
 		var envelope apiEnvelope
 		if json.Unmarshal(body, &envelope) == nil && envelope.Code != 0 {
-			return nil, nil, &Error{Status: resp.StatusCode, Code: envelope.Code, Message: envelope.Error}
+			return nil, nil, &Error{Status: resp.StatusCode, Code: envelope.Code, Message: envelope.Error, Details: envelope.Details}
 		}
 		return nil, nil, fmt.Errorf("anon session: HTTP %d", resp.StatusCode)
 	}

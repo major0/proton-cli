@@ -257,6 +257,7 @@ func forkPull(ctx context.Context, parent *Session, host, selector, appVersion s
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,
+			Details: envelope.Details,
 		}
 	}
 
@@ -421,7 +422,7 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCo
 		return nil, nil, fmt.Errorf("%w: unmarshal push envelope: %w", ErrForkFailed, err)
 	}
 	if envelope.Code != 1000 {
-		return nil, nil, &Error{Status: resp.StatusCode, Code: envelope.Code, Message: envelope.Error}
+		return nil, nil, &Error{Status: resp.StatusCode, Code: envelope.Code, Message: envelope.Error, Details: envelope.Details}
 	}
 
 	var pushResp ForkPushResp
@@ -462,6 +463,13 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCo
 	// Build the final child session with CookieTransport using the child's
 	// own cookie jar (has AUTH-<child-uid> for the target service).
 	child := CookieSessionFromForkPull(pullResp, targetService, childCookieSess.cookieJar)
+
+	// Clear Bearer tokens — after cookie transition, auth is provided
+	// exclusively via cookies. Services like Lumo reject Bearer auth
+	// entirely, so Session.DoJSON must not send an Authorization header.
+	child.Auth.AccessToken = ""
+	child.Auth.RefreshToken = ""
+
 	return child, []byte(decryptedBlob.KeyPassword), nil
 }
 

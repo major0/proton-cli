@@ -33,12 +33,13 @@ type AuthCookiesReq struct {
 // require cookie auth (e.g., Lumo). Created from a Bearer session via
 // TransitionToCookies, or restored from persisted cookies.
 type CookieSession struct {
-	UID        string         // Proton UID
-	BaseURL    string         // API base URL (e.g., "https://account.proton.me/api")
-	AppVersion string         // x-pm-appversion header value
-	UserAgent  string         // User-Agent header value
-	cookieJar  http.CookieJar // contains AUTH-<uid>, REFRESH-<uid>, Session-Id
-	mu         sync.Mutex     // serializes cookie refresh
+	UID        string               // Proton UID
+	BaseURL    string               // API base URL (e.g., "https://account.proton.me/api")
+	AppVersion string               // x-pm-appversion header value
+	UserAgent  string               // User-Agent header value
+	HVDetails  *proton.APIHVDetails // when non-nil, HV headers are added to requests
+	cookieJar  http.CookieJar       // contains AUTH-<uid>, REFRESH-<uid>, Session-Id
+	mu         sync.Mutex           // serializes cookie refresh
 }
 
 // NewCookieSession creates a CookieSession with the given parameters.
@@ -231,6 +232,12 @@ func (cs *CookieSession) doJSONOnce(ctx context.Context, method, reqURL string, 
 	}
 	req.Header.Set("Accept", ProtonAccept)
 
+	// Add HV headers when a solved CAPTCHA token is present.
+	if cs.HVDetails != nil {
+		req.Header.Set("x-pm-human-verification-token", cs.HVDetails.Token)
+		req.Header.Set("x-pm-human-verification-token-type", "captcha")
+	}
+
 	slog.Debug("cookieSession.doJSONOnce.request", "method", method, "url", reqURL, "appversion", appVer)
 
 	// Log cookies being sent.
@@ -279,6 +286,7 @@ func (cs *CookieSession) doJSONOnce(ctx context.Context, method, reqURL string, 
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,
+			Details: envelope.Details,
 		}
 	}
 
@@ -383,6 +391,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,
+			Details: envelope.Details,
 		}
 	}
 
@@ -452,6 +461,7 @@ func (cs *CookieSession) DoSSE(ctx context.Context, path string, body any) (io.R
 				Status:  resp.StatusCode,
 				Code:    envelope.Code,
 				Message: envelope.Error,
+				Details: envelope.Details,
 			}
 		}
 		return nil, &Error{Status: resp.StatusCode}
