@@ -107,7 +107,7 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 
 		// Filter by type flags: --simple shows simple only,
 		// default (no -A, no --simple) shows projects only,
-		// -A shows all.
+		// -A shows all (including unknown).
 		if !spaceShowAll {
 			if spaceShowSimple && stype != "simple" {
 				continue
@@ -142,10 +142,12 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 	nonEmpty := total - len(verified)
 	simpleWithConvs := 0
 	projectWithConvs := 0
+	unknownWithConvs := 0
 	totalConvs := 0
 	deletedConvs := 0
 	simpleConvs := 0
 	projectConvs := 0
+	unknownConvs := 0
 	for _, s := range spaces {
 		convs := s.Conversations
 		if len(convs) == 0 {
@@ -165,38 +167,45 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 		case "project":
 			projectWithConvs++
 			projectConvs += activeConvs
-		default:
+		case "simple":
 			simpleWithConvs++
 			simpleConvs += activeConvs
+		default:
+			unknownWithConvs++
+			unknownConvs += activeConvs
 		}
 	}
 	fmt.Fprintf(&b, "\nNon-empty spaces: %d\n", nonEmpty)
 	fmt.Fprintf(&b, "  Simple chat spaces: %d (%d active conversations)\n", simpleWithConvs, simpleConvs)
 	fmt.Fprintf(&b, "  Project spaces:     %d (%d active conversations)\n", projectWithConvs, projectConvs)
+	if unknownWithConvs > 0 {
+		fmt.Fprintf(&b, "  Unknown (decrypt failed): %d (%d active conversations)\n", unknownWithConvs, unknownConvs)
+	}
 	fmt.Fprintf(&b, "  Total conversations: %d (active: %d, deleted: %d)\n", totalConvs, totalConvs-deletedConvs, deletedConvs)
 	fmt.Fprintf(&b, "\nBrowser History should show: %d simple chats\n", simpleConvs)
 	_, _ = fmt.Fprint(os.Stdout, b.String())
 	return nil
 }
 
-// classifySpace returns "project" or "simple" based on the space's
-// encrypted metadata. Unencrypted spaces are treated as simple.
+// classifySpace returns "project", "simple", or "unknown" based on the
+// space's encrypted metadata. Unencrypted spaces are "simple". Spaces
+// that can't be decrypted are "unknown".
 func classifySpace(ctx context.Context, client *lumoClient.Client, s *lumo.Space) string {
 	if s.Encrypted == "" {
 		return "simple"
 	}
 	dek, err := client.DeriveSpaceDEK(ctx, s)
 	if err != nil {
-		return "simple"
+		return "unknown"
 	}
 	ad := lumo.SpaceAD(s.SpaceTag)
 	plainJSON, err := lumo.DecryptString(s.Encrypted, dek, ad)
 	if err != nil {
-		return "simple"
+		return "unknown"
 	}
 	var priv lumo.SpacePriv
 	if err := json.Unmarshal([]byte(plainJSON), &priv); err != nil {
-		return "simple"
+		return "unknown"
 	}
 	if priv.IsProject != nil && *priv.IsProject {
 		return "project"
@@ -243,8 +252,8 @@ func filterProjectSpaces(ctx context.Context, client *lumoClient.Client, spaces 
 	return result
 }
 
-// filterSimpleSpaces returns only simple chat spaces (not projects,
-// not unencrypted orphans).
+// filterSimpleSpaces returns only spaces confirmed as simple chat spaces.
+// Spaces that can't be decrypted ("unknown") are excluded.
 func filterSimpleSpaces(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) []lumo.Space {
 	var result []lumo.Space
 	for i := range spaces {
