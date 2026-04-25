@@ -66,6 +66,7 @@ func (c *Client) CreateMessage(ctx context.Context, conversationID string, role 
 		ConversationID: conversationID,
 		MessageTag:     msgTag,
 		Role:           role,
+		Status:         2, // succeeded
 		Encrypted:      encrypted,
 	}
 

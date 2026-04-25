@@ -51,8 +51,9 @@ func restoreClient(cmd *cobra.Command) (*lumoClient.Client, error) {
 // --- chat create ---
 
 var chatCreateCmd = &cobra.Command{
-	Use:   "create",
+	Use:   "create <title>",
 	Short: "Create a new conversation and enter interactive chat",
+	Args:  cobra.ExactArgs(1),
 	RunE:  runChatCreate,
 }
 
@@ -60,8 +61,10 @@ func init() {
 	chatCmd.AddCommand(chatCreateCmd)
 }
 
-func runChatCreate(cmd *cobra.Command, _ []string) error {
+func runChatCreate(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	title := args[0]
+
 	client, err := restoreClient(cmd)
 	if err != nil {
 		return err
@@ -72,7 +75,7 @@ func runChatCreate(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	conv, err := client.CreateConversation(ctx, spaceID, "")
+	conv, err := client.CreateConversation(ctx, spaceID, title)
 	if err != nil {
 		return fmt.Errorf("creating conversation: %w", err)
 	}
@@ -150,13 +153,12 @@ func runChatResume(cmd *cobra.Command, args []string) error {
 	}
 
 	session := &ChatSession{
-		Client:         client,
-		Conversation:   conv,
-		SpaceID:        conv.SpaceID,
-		Turns:          turns,
-		Writer:         os.Stdout,
-		Reader:         os.Stdin,
-		TitleGenerated: len(turns) > 0,
+		Client:       client,
+		Conversation: conv,
+		SpaceID:      conv.SpaceID,
+		Turns:        turns,
+		Writer:       os.Stdout,
+		Reader:       os.Stdin,
 	}
 
 	return session.Run(ctx)

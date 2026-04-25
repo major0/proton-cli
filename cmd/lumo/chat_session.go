@@ -15,13 +15,12 @@ import (
 
 // ChatSession holds the state for a single interactive chat session.
 type ChatSession struct {
-	Client         *lumoClient.Client
-	Conversation   *lumo.Conversation
-	SpaceID        string
-	Turns          []lumo.Turn
-	Writer         io.Writer
-	Reader         io.Reader
-	TitleGenerated bool
+	Client       *lumoClient.Client
+	Conversation *lumo.Conversation
+	SpaceID      string
+	Turns        []lumo.Turn
+	Writer       io.Writer
+	Reader       io.Reader
 }
 
 // IsEmptyInput reports whether the input is empty or whitespace-only.
@@ -117,10 +116,6 @@ func (s *ChatSession) generate(ctx context.Context) (string, error) {
 	var response strings.Builder
 
 	targets := []lumo.GenerationTarget{lumo.TargetMessage}
-	if !s.TitleGenerated {
-		targets = append(targets, lumo.TargetTitle)
-		s.TitleGenerated = true
-	}
 
 	err := s.Client.Generate(genCtx, s.Turns, lumoClient.GenerateOpts{
 		Targets: targets,
