@@ -198,17 +198,19 @@ func decryptMessageContent(msg lumo.Message, dek []byte, convTag string) string 
 // --- chat list ---
 
 var chatShowAll bool
+var chatShowProject bool
 
 var chatListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   "List conversations (simple chats; -A for all; --space for a project)",
+	Short:   "List conversations (simple chats; --project for projects; -A for all)",
 	RunE:    runChatList,
 }
 
 func init() {
 	chatCmd.AddCommand(chatListCmd)
-	chatListCmd.Flags().BoolVarP(&chatShowAll, "all", "A", false, "Include project conversations")
+	chatListCmd.Flags().BoolVarP(&chatShowAll, "all", "A", false, "Include all conversations")
+	chatListCmd.Flags().BoolVar(&chatShowProject, "project", false, "Show project conversations only")
 }
 
 func runChatList(cmd *cobra.Command, _ []string) error {
@@ -275,14 +277,20 @@ func runChatListAll(ctx context.Context, client *lumoClient.Client) error {
 			continue
 		}
 
-		// Skip project space conversations unless -A is set.
+		// Skip project space conversations unless -A or --project is set.
+		// Skip simple space conversations when --project is set.
 		stype, ok := typeCache[p.Space.ID]
 		if !ok {
 			stype = classifySpace(ctx, client, p.Space)
 			typeCache[p.Space.ID] = stype
 		}
-		if !chatShowAll && stype == "project" {
-			continue
+		if !chatShowAll {
+			if chatShowProject && stype != "project" {
+				continue
+			}
+			if !chatShowProject && stype == "project" {
+				continue
+			}
 		}
 
 		dek, ok := dekCache[p.Space.ID]
