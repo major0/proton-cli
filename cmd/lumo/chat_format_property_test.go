@@ -78,7 +78,6 @@ func TestFormatConversationList_Property(t *testing.T) {
 				ID:         rapid.StringMatching(`[a-zA-Z0-9]{8,16}`).Draw(t, "id"),
 				Title:      rapid.StringMatching(`[a-zA-Z0-9 ]{0,20}`).Draw(t, "title"),
 				CreateTime: rapid.StringMatching(`2024-0[1-9]-[012][0-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "create_time"),
-				MsgCount:   rapid.IntRange(0, 100).Draw(t, "msg_count"),
 			}
 		}
 

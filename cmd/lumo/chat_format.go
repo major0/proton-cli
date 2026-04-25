@@ -15,7 +15,6 @@ type ConversationRow struct {
 	ID         string
 	Title      string
 	CreateTime string
-	MsgCount   int
 }
 
 // FormatStatusBar renders a status bar line:
@@ -83,13 +82,13 @@ func FormatConversationList(rows []ConversationRow) string {
 	})
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-36s  %-30s  %-20s  %s\n", "ID", "TITLE", "CREATED", "MESSAGES")
+	fmt.Fprintf(&b, "%-36s  %-30s  %s\n", "ID", "TITLE", "CREATED")
 	for _, r := range sorted {
 		title := r.Title
 		if title == "" {
 			title = "Untitled"
 		}
-		fmt.Fprintf(&b, "%-36s  %-30s  %-20s  %d\n", r.ID, title, r.CreateTime, r.MsgCount)
+		fmt.Fprintf(&b, "%-36s  %-30s  %s\n", r.ID, title, r.CreateTime)
 	}
 	return b.String()
 }
