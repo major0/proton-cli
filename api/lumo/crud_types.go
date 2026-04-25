@@ -16,13 +16,14 @@ type MasterKeyEntry struct {
 
 // Space is a space from the API.
 type Space struct {
-	ID         string `json:"ID"`
-	SpaceKey   string `json:"SpaceKey"`            // base64 AES-KW wrapped
-	SpaceTag   string `json:"SpaceTag"`            // local ID / AEAD AD
-	Encrypted  string `json:"Encrypted,omitempty"` // base64 AES-GCM(SpacePriv JSON)
-	CreateTime string `json:"CreateTime"`
-	UpdateTime string `json:"UpdateTime,omitempty"`
-	DeleteTime string `json:"DeleteTime,omitempty"`
+	ID            string         `json:"ID"`
+	SpaceKey      string         `json:"SpaceKey"`            // base64 AES-KW wrapped
+	SpaceTag      string         `json:"SpaceTag"`            // local ID / AEAD AD
+	Encrypted     string         `json:"Encrypted,omitempty"` // base64 AES-GCM(SpacePriv JSON)
+	CreateTime    string         `json:"CreateTime"`
+	UpdateTime    string         `json:"UpdateTime,omitempty"`
+	DeleteTime    string         `json:"DeleteTime,omitempty"`
+	Conversations []Conversation `json:"Conversations,omitempty"` // embedded by GET /spaces
 }
 
 // Conversation is a conversation from the API.

@@ -52,13 +52,15 @@ func (c *Client) CreateConversation(ctx context.Context, spaceID, title string) 
 	return &resp.Conversation, nil
 }
 
-// ListConversations fetches all conversations in a space.
+// ListConversations returns conversations for a space. Conversations are
+// embedded in the spaces response, so this fetches the space and returns
+// its Conversations field.
 func (c *Client) ListConversations(ctx context.Context, spaceID string) ([]lumo.Conversation, error) {
-	var resp lumo.ListConversationsResponse
-	if err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/spaces/"+spaceID+"/conversations"), nil, &resp); err != nil {
+	space, err := c.GetSpace(ctx, spaceID)
+	if err != nil {
 		return nil, fmt.Errorf("lumo: list conversations: %w", err)
 	}
-	return resp.Conversations, nil
+	return space.Conversations, nil
 }
 
 // GetConversation fetches a conversation by ID.
