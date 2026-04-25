@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 // CookieTransport is an http.RoundTripper that converts Bearer auth to
@@ -130,6 +131,7 @@ func persistCookieRefresh(cs *CookieSession, store SessionStore) {
 	}
 	u := cookieQueryURL(cs.BaseURL)
 	cfg.Cookies = serializeCookies(cs.cookieJar, u)
+	cfg.LastRefresh = time.Now()
 	if err := store.Save(cfg); err != nil {
 		slog.Error("cookieTransport: persist refreshed cookies", "error", err)
 	}
@@ -160,6 +162,7 @@ func attachCookieRefresh(ctx context.Context, cookieConfig *SessionConfig, jar h
 	_ = ctx // reserved for future use
 	cs := &CookieSession{
 		UID:       cookieConfig.UID,
+		Store:     cookieStore,
 		cookieJar: jar,
 	}
 	acctSvc, _ := LookupService("account")

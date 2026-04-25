@@ -43,6 +43,11 @@ const DefaultThrottleMaxDelay = 30 * time.Second
 // When age exceeds this value, a lightweight API call triggers token refresh.
 const ProactiveRefreshAge = 1 * time.Hour
 
+// CookieRefreshAge is the cookie age threshold for proactive refresh.
+// Cookie sessions expire faster than bearer tokens, so we refresh more
+// aggressively.
+const CookieRefreshAge = 5 * time.Minute
+
 // ProtonAccept is the Accept header value for Proton API requests.
 // The vendor media type triggers full API behavior including service-specific
 // scope grants on fork responses.
@@ -583,6 +588,15 @@ func NeedsProactiveRefresh(lastRefresh time.Time) bool {
 		return true
 	}
 	return time.Since(lastRefresh) > ProactiveRefreshAge
+}
+
+// NeedsCookieRefresh reports whether the cookie session's LastRefresh age
+// exceeds CookieRefreshAge. A zero-valued LastRefresh always triggers refresh.
+func NeedsCookieRefresh(lastRefresh time.Time) bool {
+	if lastRefresh.IsZero() {
+		return true
+	}
+	return time.Since(lastRefresh) > CookieRefreshAge
 }
 
 // IsStale reports whether a service session is stale relative to the account

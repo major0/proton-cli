@@ -38,6 +38,7 @@ type CookieSession struct {
 	AppVersion string               // x-pm-appversion header value
 	UserAgent  string               // User-Agent header value
 	HVDetails  *proton.APIHVDetails // when non-nil, HV headers are added to requests
+	Store      SessionStore         // when non-nil, cookies are persisted after refresh
 	cookieJar  http.CookieJar       // contains AUTH-<uid>, REFRESH-<uid>, Session-Id
 	mu         sync.Mutex           // serializes cookie refresh
 }
@@ -401,6 +402,20 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 	// cookies on subsequent requests.
 	slog.Debug("cookieSession.RefreshCookies.complete", "uid", uid) //nolint:gosec // G706: uid from cookie jar
 
+	// Persist refreshed cookies to the store so they survive CLI restarts.
+	if cs.Store != nil {
+		config, loadErr := cs.Store.Load()
+		if loadErr != nil {
+			slog.Error("RefreshCookies: load store for persist", "error", loadErr)
+		} else {
+			config.Cookies = serializeCookies(cs.cookieJar, cookieQueryURL(cs.BaseURL))
+			config.LastRefresh = time.Now()
+			if saveErr := cs.Store.Save(config); saveErr != nil {
+				slog.Error("RefreshCookies: persist cookies", "error", saveErr)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -616,7 +631,7 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 	loadProtonCookies(jar, cookieConfig.Cookies, acctSvc.Host)
 
 	// Proactive refresh: if cookies are stale, refresh before building the session.
-	if NeedsProactiveRefresh(cookieConfig.LastRefresh) {
+	if NeedsCookieRefresh(cookieConfig.LastRefresh) {
 		slog.Debug("cookieSessionRestore.proactiveRefresh", "age", time.Since(cookieConfig.LastRefresh))
 
 		cs := &CookieSession{
