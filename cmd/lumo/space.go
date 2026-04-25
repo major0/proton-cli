@@ -31,17 +31,19 @@ func init() {
 
 var spaceShowAll bool
 var spaceShowEmpty bool
+var spaceShowSimple bool
 
 var spaceListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   "List spaces (projects only; -A for all; --is-empty to find empty spaces)",
+	Short:   "List spaces (projects only; -A all; --simple chats; --is-empty empty)",
 	RunE:    runSpaceList,
 }
 
 func init() {
 	spaceListCmd.Flags().BoolVarP(&spaceShowAll, "all", "A", false, "Show all spaces including simple chat spaces")
 	spaceListCmd.Flags().BoolVar(&spaceShowEmpty, "is-empty", false, "Find and verify empty spaces")
+	spaceListCmd.Flags().BoolVar(&spaceShowSimple, "simple", false, "Show simple chat spaces only")
 }
 
 func runSpaceList(cmd *cobra.Command, _ []string) error {
@@ -60,8 +62,13 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 		return runSpaceListEmpty(ctx, client, spaces)
 	}
 
+	// Filter by type: -A shows all, --simple shows simple, default shows projects.
 	if !spaceShowAll {
-		spaces = filterProjectSpaces(ctx, client, spaces)
+		if spaceShowSimple {
+			spaces = filterSimpleSpaces(ctx, client, spaces)
+		} else {
+			spaces = filterProjectSpaces(ctx, client, spaces)
+		}
 	}
 
 	rows := buildSpaceRows(ctx, client, spaces)
@@ -83,9 +90,7 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 
 	_, _ = fmt.Fprintf(os.Stderr, "Scanning %d spaces, %d candidates with 0 embedded conversations...\n", total, len(candidates))
 
-	// Phase 2: verify each candidate.
-	// Check embedded Conversations (already 0), Assets, and attempt
-	// GetSpace for a fresh view. Any non-empty result is an error.
+	// Phase 2: verify each candidate and filter by type.
 	type emptySpace struct {
 		space     lumo.Space
 		spaceType string // "simple" or "project" or "unencrypted"
@@ -98,8 +103,20 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 			return fmt.Errorf("space %s has 0 conversations but %d assets — not empty", s.ID, len(s.Assets))
 		}
 
-		// Classify the space type.
 		stype := classifySpace(ctx, client, &s)
+
+		// Filter by type flags: --simple shows simple only,
+		// default (no -A, no --simple) shows projects only,
+		// -A shows all.
+		if !spaceShowAll {
+			if spaceShowSimple && stype != "simple" {
+				continue
+			}
+			if !spaceShowSimple && stype != "project" {
+				continue
+			}
+		}
+
 		verified = append(verified, emptySpace{space: s, spaceType: stype})
 	}
 
@@ -120,6 +137,44 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 		fmt.Fprintf(&b, "%-12s  %-20s  %s\n", v.spaceType, v.space.CreateTime, v.space.ID)
 	}
 	fmt.Fprintf(&b, "\n%d empty spaces found out of %d total.\n", len(verified), total)
+
+	// Detailed breakdown for cross-checking against the webapp.
+	nonEmpty := total - len(verified)
+	simpleWithConvs := 0
+	projectWithConvs := 0
+	totalConvs := 0
+	deletedConvs := 0
+	simpleConvs := 0
+	projectConvs := 0
+	for _, s := range spaces {
+		convs := s.Conversations
+		if len(convs) == 0 {
+			continue
+		}
+		stype := classifySpace(ctx, client, &s)
+		activeConvs := 0
+		for _, c := range convs {
+			totalConvs++
+			if c.DeleteTime != "" {
+				deletedConvs++
+			} else {
+				activeConvs++
+			}
+		}
+		switch stype {
+		case "project":
+			projectWithConvs++
+			projectConvs += activeConvs
+		default:
+			simpleWithConvs++
+			simpleConvs += activeConvs
+		}
+	}
+	fmt.Fprintf(&b, "\nNon-empty spaces: %d\n", nonEmpty)
+	fmt.Fprintf(&b, "  Simple chat spaces: %d (%d active conversations)\n", simpleWithConvs, simpleConvs)
+	fmt.Fprintf(&b, "  Project spaces:     %d (%d active conversations)\n", projectWithConvs, projectConvs)
+	fmt.Fprintf(&b, "  Total conversations: %d (active: %d, deleted: %d)\n", totalConvs, totalConvs-deletedConvs, deletedConvs)
+	fmt.Fprintf(&b, "\nBrowser History should show: %d simple chats\n", simpleConvs)
 	_, _ = fmt.Fprint(os.Stdout, b.String())
 	return nil
 }
@@ -181,24 +236,19 @@ func buildSpaceRows(ctx context.Context, client *lumoClient.Client, spaces []lum
 func filterProjectSpaces(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) []lumo.Space {
 	var result []lumo.Space
 	for i := range spaces {
-		s := &spaces[i]
-		if s.Encrypted == "" {
-			continue
+		if classifySpace(ctx, client, &spaces[i]) == "project" {
+			result = append(result, spaces[i])
 		}
-		dek, err := client.DeriveSpaceDEK(ctx, s)
-		if err != nil {
-			continue
-		}
-		ad := lumo.SpaceAD(s.SpaceTag)
-		plainJSON, err := lumo.DecryptString(s.Encrypted, dek, ad)
-		if err != nil {
-			continue
-		}
-		var priv lumo.SpacePriv
-		if err := json.Unmarshal([]byte(plainJSON), &priv); err != nil {
-			continue
-		}
-		if priv.IsProject != nil && *priv.IsProject {
+	}
+	return result
+}
+
+// filterSimpleSpaces returns only simple chat spaces (not projects,
+// not unencrypted orphans).
+func filterSimpleSpaces(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) []lumo.Space {
+	var result []lumo.Space
+	for i := range spaces {
+		if classifySpace(ctx, client, &spaces[i]) == "simple" {
 			result = append(result, spaces[i])
 		}
 	}
