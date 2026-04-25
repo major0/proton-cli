@@ -19,7 +19,11 @@ func TestCreateMessage_RequestBody(t *testing.T) {
 	c := NewClient(sess)
 	c.BaseURL = srv.URL + "/api"
 
-	msg, err := c.CreateMessage(context.Background(), "conv-1", RoleUser, "Hello!")
+	msg, err := c.CreateMessage(context.Background(), &mock.space, &lumo.Conversation{
+		ID:              "conv-1",
+		ConversationTag: "conv-tag-1",
+		SpaceID:         "space-1",
+	}, RoleUser, "Hello!")
 	if err != nil {
 		t.Fatalf("CreateMessage: %v", err)
 	}

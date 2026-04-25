@@ -16,6 +16,7 @@ import (
 // ChatSession holds the state for a single interactive chat session.
 type ChatSession struct {
 	Client       *lumoClient.Client
+	Space        *lumo.Space
 	Conversation *lumo.Conversation
 	SpaceID      string
 	Turns        []lumo.Turn
@@ -68,7 +69,7 @@ func (s *ChatSession) Run(ctx context.Context) error {
 		}
 
 		// Persist user message.
-		_, err := s.Client.CreateMessage(ctx, s.Conversation.ID, lumoClient.RoleUser, line)
+		_, err := s.Client.CreateMessage(ctx, s.Space, s.Conversation, lumoClient.RoleUser, line)
 		if err != nil {
 			_, _ = fmt.Fprintf(s.Writer, "Warning: failed to save message: %v\n", err)
 		}
@@ -84,7 +85,7 @@ func (s *ChatSession) Run(ctx context.Context) error {
 		}
 
 		if response != "" {
-			_, err = s.Client.CreateMessage(ctx, s.Conversation.ID, lumoClient.RoleAssistant, response)
+			_, err = s.Client.CreateMessage(ctx, s.Space, s.Conversation, lumoClient.RoleAssistant, response)
 			if err != nil {
 				_, _ = fmt.Fprintf(s.Writer, "Warning: failed to save response: %v\n", err)
 			}

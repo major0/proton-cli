@@ -116,7 +116,7 @@ func TestCreateConversation_RequestBody(t *testing.T) {
 	c := NewClient(sess)
 	c.BaseURL = srv.URL + "/api"
 
-	conv, err := c.CreateConversation(context.Background(), "space-1", "Hello World")
+	conv, err := c.CreateConversation(context.Background(), &mock.space, "Hello World")
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}

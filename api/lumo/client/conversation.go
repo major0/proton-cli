@@ -10,14 +10,8 @@ import (
 )
 
 // CreateConversation creates a conversation in the given space with an
-// encrypted title.
-func (c *Client) CreateConversation(ctx context.Context, spaceID, title string) (*lumo.Conversation, error) {
-	// Fetch the space to get its key and tag.
-	space, err := c.GetSpace(ctx, spaceID)
-	if err != nil {
-		return nil, fmt.Errorf("lumo: create conversation: %w", err)
-	}
-
+// encrypted title. The space object must include SpaceKey and SpaceTag.
+func (c *Client) CreateConversation(ctx context.Context, space *lumo.Space, title string) (*lumo.Conversation, error) {
 	dek, err := c.deriveSpaceDEK(ctx, space)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create conversation: %w", err)
@@ -39,13 +33,13 @@ func (c *Client) CreateConversation(ctx context.Context, spaceID, title string) 
 	}
 
 	req := lumo.CreateConversationReq{
-		SpaceID:         spaceID,
+		SpaceID:         space.ID,
 		ConversationTag: convTag,
 		Encrypted:       encrypted,
 	}
 
 	var resp lumo.GetConversationResponse
-	err = c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/spaces/"+spaceID+"/conversations"), req, &resp)
+	err = c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/spaces/"+space.ID+"/conversations"), req, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create conversation: %w", mapCRUDError(err))
 	}

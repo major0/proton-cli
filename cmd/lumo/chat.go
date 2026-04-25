@@ -77,13 +77,14 @@ func runChatCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating space: %w", err)
 	}
 
-	conv, err := client.CreateConversation(ctx, space.ID, title)
+	conv, err := client.CreateConversation(ctx, space, title)
 	if err != nil {
 		return fmt.Errorf("creating conversation: %w", err)
 	}
 
 	session := &ChatSession{
 		Client:       client,
+		Space:        space,
 		Conversation: conv,
 		SpaceID:      space.ID,
 		Writer:       os.Stdout,
@@ -156,6 +157,7 @@ func runChatResume(cmd *cobra.Command, args []string) error {
 
 	session := &ChatSession{
 		Client:       client,
+		Space:        space,
 		Conversation: conv,
 		SpaceID:      conv.SpaceID,
 		Turns:        turns,

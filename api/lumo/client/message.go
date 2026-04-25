@@ -28,20 +28,8 @@ func roleString(role int) string {
 }
 
 // CreateMessage creates a message in the given conversation with
-// encrypted content.
-func (c *Client) CreateMessage(ctx context.Context, conversationID string, role int, content string) (*lumo.Message, error) {
-	// Fetch the conversation to get its space and tag.
-	conv, err := c.GetConversation(ctx, conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("lumo: create message: %w", err)
-	}
-
-	// Fetch the space to get its key.
-	space, err := c.GetSpace(ctx, conv.SpaceID)
-	if err != nil {
-		return nil, fmt.Errorf("lumo: create message: %w", err)
-	}
-
+// encrypted content. The space object is needed for key derivation.
+func (c *Client) CreateMessage(ctx context.Context, space *lumo.Space, conv *lumo.Conversation, role int, content string) (*lumo.Message, error) {
 	dek, err := c.deriveSpaceDEK(ctx, space)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create message: %w", err)
@@ -63,7 +51,7 @@ func (c *Client) CreateMessage(ctx context.Context, conversationID string, role 
 	}
 
 	req := lumo.CreateMessageReq{
-		ConversationID: conversationID,
+		ConversationID: conv.ID,
 		MessageTag:     msgTag,
 		Role:           role,
 		Status:         2, // succeeded
@@ -71,7 +59,7 @@ func (c *Client) CreateMessage(ctx context.Context, conversationID string, role 
 	}
 
 	var resp lumo.GetMessageResponse
-	err = c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/conversations/"+conversationID+"/messages"), req, &resp)
+	err = c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/conversations/"+conv.ID+"/messages"), req, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lumo: create message: %w", mapCRUDError(err))
 	}
