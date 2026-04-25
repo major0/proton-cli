@@ -82,13 +82,13 @@ func FormatConversationList(rows []ConversationRow) string {
 	})
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-36s  %-30s  %s\n", "ID", "TITLE", "CREATED")
+	fmt.Fprintf(&b, "%-36s  %-20s  %s\n", "ID", "CREATED", "TITLE")
 	for _, r := range sorted {
 		title := r.Title
 		if title == "" {
 			title = "Untitled"
 		}
-		fmt.Fprintf(&b, "%-36s  %-30s  %s\n", r.ID, title, r.CreateTime)
+		fmt.Fprintf(&b, "%-36s  %-20s  %s\n", r.ID, r.CreateTime, title)
 	}
 	return b.String()
 }
