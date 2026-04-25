@@ -182,12 +182,9 @@ func TestCreateSpace_RequestBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decrypt metadata: %v", err)
 	}
-	var priv lumo.SpacePriv
-	if err := json.Unmarshal([]byte(privJSON), &priv); err != nil {
-		t.Fatalf("unmarshal priv: %v", err)
-	}
-	if priv.IsProject == nil || *priv.IsProject != false {
-		t.Fatalf("IsProject = %v, want *false", priv.IsProject)
+	// Simple spaces encrypt "{}" — no isProject field.
+	if privJSON != "{}" {
+		t.Fatalf("expected empty JSON object, got %q", privJSON)
 	}
 }
 

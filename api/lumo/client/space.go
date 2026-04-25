@@ -51,13 +51,17 @@ func (c *Client) CreateSpace(ctx context.Context, name string, isProject bool) (
 	spaceTag := GenerateTag()
 
 	// Build and encrypt SpacePriv metadata.
-	priv := lumo.SpacePriv{IsProject: &isProject}
-	if name != "" {
-		priv.ProjectName = name
-	}
-	privJSON, err := json.Marshal(priv)
-	if err != nil {
-		return nil, fmt.Errorf("lumo: create space: marshal priv: %w", err)
+	// Simple chat spaces use "{}" (matching the browser). Project spaces
+	// include the full SpacePriv with isProject and projectName.
+	var privJSON []byte
+	if isProject {
+		priv := lumo.SpacePriv{IsProject: &isProject, ProjectName: name}
+		privJSON, err = json.Marshal(priv)
+		if err != nil {
+			return nil, fmt.Errorf("lumo: create space: marshal priv: %w", err)
+		}
+	} else {
+		privJSON = []byte("{}")
 	}
 
 	dek, err := lumo.DeriveDataEncryptionKey(spaceKey)
