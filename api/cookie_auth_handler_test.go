@@ -19,8 +19,8 @@ func TestCookieTransport_401TriggersRefresh(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == "POST" && r.URL.Path == "/core/v4/auth/cookies":
-			// Cookie refresh endpoint: set new cookies.
+		case r.Method == "POST" && r.URL.Path == "/auth/refresh":
+			// Cookie refresh endpoint: set new cookies (no request body expected).
 			http.SetCookie(w, &http.Cookie{
 				Name: "AUTH-" + uid, Value: "refreshed-auth", Path: "/",
 			})
@@ -100,7 +100,7 @@ func TestCookieTransport_RefreshFailReturnsOriginal401(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == "POST" && r.URL.Path == "/core/v4/auth/cookies":
+		case r.Method == "POST" && r.URL.Path == "/auth/refresh":
 			// Refresh fails with 401 (expired REFRESH cookie).
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]any{"Code": 401, "Error": "Invalid refresh"})
@@ -158,7 +158,8 @@ func TestCookieTransport_SuccessfulRefreshPersistsCookies(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == "POST" && r.URL.Path == "/core/v4/auth/cookies":
+		case r.Method == "POST" && r.URL.Path == "/auth/refresh":
+			// Cookie refresh endpoint (no request body expected).
 			http.SetCookie(w, &http.Cookie{
 				Name: "AUTH-" + uid, Value: "new-auth-value", Path: "/",
 			})

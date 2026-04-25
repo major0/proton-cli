@@ -71,6 +71,17 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Hide empty spaces unless -A is set.
+	if !spaceShowAll {
+		var nonEmpty []lumo.Space
+		for _, s := range spaces {
+			if len(s.Conversations) > 0 {
+				nonEmpty = append(nonEmpty, s)
+			}
+		}
+		spaces = nonEmpty
+	}
+
 	rows := buildSpaceRows(ctx, client, spaces)
 	_, _ = fmt.Fprint(os.Stdout, FormatSpaceList(rows))
 	return nil

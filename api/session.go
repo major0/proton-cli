@@ -44,9 +44,9 @@ const DefaultThrottleMaxDelay = 30 * time.Second
 const ProactiveRefreshAge = 1 * time.Hour
 
 // CookieRefreshAge is the cookie age threshold for proactive refresh.
-// Cookie sessions expire faster than bearer tokens, so we refresh more
-// aggressively.
-const CookieRefreshAge = 5 * time.Minute
+// Cookie sessions use the same 1-hour threshold as bearer tokens —
+// the session lifetime is 24 hours for both.
+const CookieRefreshAge = 1 * time.Hour
 
 // ProtonAccept is the Accept header value for Proton API requests.
 // The vendor media type triggers full API behavior including service-specific

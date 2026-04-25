@@ -197,15 +197,18 @@ func decryptMessageContent(msg lumo.Message, dek []byte, convTag string) string 
 
 // --- chat list ---
 
+var chatShowAll bool
+
 var chatListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   "List conversations",
+	Short:   "List conversations (simple chats; -A for all; --space for a project)",
 	RunE:    runChatList,
 }
 
 func init() {
 	chatCmd.AddCommand(chatListCmd)
+	chatListCmd.Flags().BoolVarP(&chatShowAll, "all", "A", false, "Include project conversations")
 }
 
 func runChatList(cmd *cobra.Command, _ []string) error {
@@ -255,15 +258,16 @@ func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID st
 	return nil
 }
 
-// runChatListAll lists conversations across all spaces.
+// runChatListAll lists conversations across all simple (non-project) spaces.
 func runChatListAll(ctx context.Context, client *lumoClient.Client) error {
 	pairs, err := client.ListAllConversations(ctx)
 	if err != nil {
 		return fmt.Errorf("listing conversations: %w", err)
 	}
 
-	// Build rows, decrypting titles per-space.
-	dekCache := map[string][]byte{} // spaceID → DEK
+	// Build rows, skipping project spaces and decrypting titles per-space.
+	dekCache := map[string][]byte{}  // spaceID → DEK
+	typeCache := map[string]string{} // spaceID → "simple"/"project"/"unknown"
 	var rows []ConversationRow
 	for _, p := range pairs {
 		conv := p.Conversation
@@ -271,11 +275,21 @@ func runChatListAll(ctx context.Context, client *lumoClient.Client) error {
 			continue
 		}
 
+		// Skip project space conversations unless -A is set.
+		stype, ok := typeCache[p.Space.ID]
+		if !ok {
+			stype = classifySpace(ctx, client, p.Space)
+			typeCache[p.Space.ID] = stype
+		}
+		if !chatShowAll && stype == "project" {
+			continue
+		}
+
 		dek, ok := dekCache[p.Space.ID]
 		if !ok {
 			d, err := client.DeriveSpaceDEK(ctx, p.Space)
 			if err != nil {
-				continue // skip spaces we can't decrypt
+				continue
 			}
 			dek = d
 			dekCache[p.Space.ID] = dek

@@ -14,7 +14,7 @@ import (
 // endpoints needed for CookieSessionRestore testing:
 //   - GET /core/v4/users → returns a minimal user
 //   - GET /core/v4/addresses → returns empty addresses
-//   - POST /core/v4/auth/cookies → simulates cookie refresh (sets new cookies)
+//   - POST /auth/refresh → simulates cookie refresh (sets new cookies)
 func newCookieRestoreTestServer(t *testing.T, uid string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,8 +32,8 @@ func newCookieRestoreTestServer(t *testing.T, uid string) *httptest.Server {
 				"Code":      1000,
 				"Addresses": []any{},
 			})
-		case r.Method == "POST" && r.URL.Path == "/core/v4/auth/cookies":
-			// Simulate cookie refresh: set new AUTH/REFRESH cookies.
+		case r.Method == "POST" && r.URL.Path == "/auth/refresh":
+			// Simulate cookie refresh: set new AUTH/REFRESH cookies (no request body expected).
 			http.SetCookie(w, &http.Cookie{
 				Name: "AUTH-" + uid, Value: "refreshed-auth", Path: "/",
 			})

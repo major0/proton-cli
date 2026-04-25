@@ -629,18 +629,15 @@ func TestExtractRefreshCookie_Missing(t *testing.T) {
 
 func TestRefreshCookies_Success(t *testing.T) {
 	uid := "test-uid-123"
-	var gotBody AuthCookiesReq
 	var gotAuth string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/core/v4/auth/cookies" {
+		if r.URL.Path != "/auth/refresh" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		gotAuth = r.Header.Get("Authorization")
-		data, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(data, &gotBody)
 
-		// Return new cookies.
+		// Return new cookies (no request body expected — REFRESH cookie is the token).
 		http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth-token", Path: "/"})
 		http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh-token", Path: "/"})
 		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
@@ -665,17 +662,6 @@ func TestRefreshCookies_Success(t *testing.T) {
 	// Verify no Bearer header was sent.
 	if gotAuth != "" {
 		t.Fatalf("Authorization should be empty (cookie auth only), got %q", gotAuth)
-	}
-
-	// Verify request body.
-	if gotBody.UID != uid {
-		t.Fatalf("UID = %q, want %q", gotBody.UID, uid)
-	}
-	if gotBody.RefreshToken != "old-refresh-token" {
-		t.Fatalf("RefreshToken = %q, want %q", gotBody.RefreshToken, "old-refresh-token")
-	}
-	if gotBody.GrantType != "refresh_token" {
-		t.Fatalf("GrantType = %q, want %q", gotBody.GrantType, "refresh_token")
 	}
 
 	// Verify new cookies replaced old ones in the jar.
@@ -809,8 +795,8 @@ func TestDoJSON_401RetrySuccess(t *testing.T) {
 				"Name": "retried",
 			})
 
-		case "/core/v4/auth/cookies":
-			// Refresh endpoint: return new cookies.
+		case "/auth/refresh":
+			// Refresh endpoint: return new cookies (no request body expected).
 			http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth", Path: "/"})
 			http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh", Path: "/"})
 			_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
@@ -860,7 +846,7 @@ func TestDoJSON_401RetryStillFails(t *testing.T) {
 				"Error": "access token expired",
 			})
 
-		case "/core/v4/auth/cookies":
+		case "/auth/refresh":
 			// Refresh succeeds but the retry still gets 401.
 			http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth", Path: "/"})
 			http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh", Path: "/"})
@@ -943,7 +929,7 @@ func TestDoJSON_401RefreshFails(t *testing.T) {
 				"Error": "access token expired",
 			})
 
-		case "/core/v4/auth/cookies":
+		case "/auth/refresh":
 			// Refresh itself fails.
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]any{

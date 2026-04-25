@@ -328,7 +328,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	uid, token, err := cs.extractRefreshCookie()
+	uid, _, err := cs.extractRefreshCookie()
 	if err != nil {
 		return fmt.Errorf("RefreshCookies: %w", err)
 	}
@@ -336,24 +336,9 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 	//nolint:gosec // G706: uid is from our own cookie jar, not user input.
 	slog.Debug("cookieSession.RefreshCookies", "uid", uid)
 
-	reqBody := AuthCookiesReq{
-		UID:          uid,
-		RefreshToken: token,
-		GrantType:    "refresh_token",
-		ResponseType: "token",
-		RedirectURI:  "https://proton.me",
-		State:        uid,
-	}
-
-	//nolint:gosec // G117: reqBody contains RefreshToken for the auth/cookies API call.
-	data, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("RefreshCookies: marshal: %w", err)
-	}
-
-	reqURL := cs.buildURL("/core/v4/auth/cookies")
+	reqURL := cs.buildURL("/auth/refresh")
 	//nolint:gosec // G704: reqURL is built from our own BaseURL, not user input.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("RefreshCookies: new request: %w", err)
 	}
