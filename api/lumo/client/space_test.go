@@ -96,7 +96,12 @@ func TestListSpaces_HappyPath(t *testing.T) {
 		{ID: "s2", SpaceTag: "tag2", CreateTime: "2024-01-02T00:00:00Z"},
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return spaces on first call, empty on paginated calls.
+		if r.URL.Query().Get("CreateTimeUntil") != "" {
+			writeJSON(t, w, lumo.ListSpacesResponse{Code: 1000, Spaces: nil})
+			return
+		}
 		writeJSON(t, w, lumo.ListSpacesResponse{Code: 1000, Spaces: spaces})
 	}))
 	defer srv.Close()

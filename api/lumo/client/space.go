@@ -6,18 +6,55 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/lumo"
 )
 
-// ListSpaces fetches all spaces from the API.
+// ListSpaces fetches all spaces from the API, paginating with
+// CreateTimeUntil until no more results are returned.
 func (c *Client) ListSpaces(ctx context.Context) ([]lumo.Space, error) {
-	var resp lumo.ListSpacesResponse
-	if err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/spaces"), nil, &resp); err != nil {
-		return nil, fmt.Errorf("lumo: list spaces: %w", err)
+	var all []lumo.Space
+	var cursor string
+
+	for {
+		url := c.url("/lumo/v1/spaces")
+		if cursor != "" {
+			url += "?CreateTimeUntil=" + cursor
+		}
+
+		var resp lumo.ListSpacesResponse
+		if err := c.Session.DoJSON(ctx, "GET", url, nil, &resp); err != nil {
+			return nil, fmt.Errorf("lumo: list spaces: %w", err)
+		}
+
+		if len(resp.Spaces) == 0 {
+			break
+		}
+
+		all = append(all, resp.Spaces...)
+
+		// Use the last space's CreateTime as the pagination cursor.
+		last := resp.Spaces[len(resp.Spaces)-1]
+		nextCursor := dateToUnix(last.CreateTime)
+		if nextCursor == "" || nextCursor == cursor {
+			break // no progress, stop
+		}
+		cursor = nextCursor
 	}
-	return resp.Spaces, nil
+
+	return all, nil
+}
+
+// dateToUnix converts an ISO 8601 timestamp to a Unix timestamp string
+// for the CreateTimeUntil pagination parameter.
+func dateToUnix(iso string) string {
+	t, err := time.Parse(time.RFC3339, iso)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", t.Unix())
 }
 
 // GetSpace fetches a single space by ID.
