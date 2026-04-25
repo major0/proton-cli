@@ -12,6 +12,8 @@ const (
 	CmdExit
 	// CmdHelp indicates the /help command.
 	CmdHelp
+	// CmdWebSearch indicates the /websearch command.
+	CmdWebSearch
 	// CmdUnknown indicates an unrecognized slash command.
 	CmdUnknown
 )
@@ -42,6 +44,8 @@ func ClassifyCommand(cmd string) SlashCommand {
 		return CmdExit
 	case "help":
 		return CmdHelp
+	case "websearch":
+		return CmdWebSearch
 	default:
 		return CmdUnknown
 	}
@@ -50,6 +54,8 @@ func ClassifyCommand(cmd string) SlashCommand {
 // HelpText returns the help message for available slash commands.
 func HelpText() string {
 	return `Available commands:
-  /help   Show this help message
-  /exit   Exit the chat`
+  /help                  Show this help message
+  /websearch enable      Enable web search for this session
+  /websearch disable     Disable web search for this session
+  /exit                  Exit the chat`
 }

@@ -15,13 +15,14 @@ import (
 
 // ChatSession holds the state for a single interactive chat session.
 type ChatSession struct {
-	Client       *lumoClient.Client
-	Space        *lumo.Space
-	Conversation *lumo.Conversation
-	SpaceID      string
-	Turns        []lumo.Turn
-	Writer       io.Writer
-	Reader       io.Reader
+	Client           *lumoClient.Client
+	Space            *lumo.Space
+	Conversation     *lumo.Conversation
+	SpaceID          string
+	Turns            []lumo.Turn
+	Writer           io.Writer
+	Reader           io.Reader
+	WebSearchEnabled bool
 }
 
 // IsEmptyInput reports whether the input is empty or whitespace-only.
@@ -53,12 +54,29 @@ func (s *ChatSession) Run(ctx context.Context) error {
 			continue
 		}
 
-		if cmd, _, ok := ParseSlashCommand(line); ok {
+		if cmd, args, ok := ParseSlashCommand(line); ok {
 			switch ClassifyCommand(cmd) {
 			case CmdExit:
 				return nil
 			case CmdHelp:
 				_, _ = fmt.Fprintln(s.Writer, HelpText())
+				s.prompt()
+				continue
+			case CmdWebSearch:
+				switch strings.ToLower(strings.TrimSpace(args)) {
+				case "enable", "on":
+					s.WebSearchEnabled = true
+					_, _ = fmt.Fprintln(s.Writer, "Web search enabled.")
+				case "disable", "off":
+					s.WebSearchEnabled = false
+					_, _ = fmt.Fprintln(s.Writer, "Web search disabled.")
+				default:
+					if s.WebSearchEnabled {
+						_, _ = fmt.Fprintln(s.Writer, "Web search is enabled. Usage: /websearch enable|disable")
+					} else {
+						_, _ = fmt.Fprintln(s.Writer, "Web search is disabled. Usage: /websearch enable|disable")
+					}
+				}
 				s.prompt()
 				continue
 			default:
@@ -118,8 +136,14 @@ func (s *ChatSession) generate(ctx context.Context) (string, error) {
 
 	targets := []lumo.GenerationTarget{lumo.TargetMessage}
 
+	var tools []lumo.ToolName
+	if s.WebSearchEnabled {
+		tools = append(tools, lumo.ToolWebSearch)
+	}
+
 	err := s.Client.Generate(genCtx, s.Turns, lumoClient.GenerateOpts{
 		Targets: targets,
+		Tools:   tools,
 		ChunkCallback: func(msg lumo.GenerationResponseMessage) {
 			if msg.Type == "token_data" && msg.Target == lumo.TargetMessage && msg.Content != "" {
 				_, _ = fmt.Fprint(s.Writer, msg.Content)
