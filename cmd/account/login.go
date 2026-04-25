@@ -246,57 +246,109 @@ func deriveAndSave(ctx context.Context, session *common.Session, password, mboxp
 // It is a variable so tests can replace it.
 var createAnonSessionFn = common.CreateAnonSession
 
+// cookieSRPAuthFn is the function used to perform SRP authentication within a cookie session.
+// It is a variable so tests can replace it without making real API calls.
+var cookieSRPAuthFn = common.CookieSRPAuth
+
+// cookieTwoFAFn is the function used to submit a TOTP 2FA code within a cookie session.
+// It is a variable so tests can replace it without making real API calls.
+var cookieTwoFAFn = common.CookieTwoFA
+
 // cookieLogin performs the browser-matching cookie login flow:
 // 1. Create anonymous session on account.proton.me
-// 2. SRP login using the anonymous session's Bearer tokens
-// 3. 2FA if needed
-// 4. Transition to cookies
-// 5. Save cookie session
+// 2. Build temp Session from anon response, transition to cookies
+// 3. SRP auth within cookie session
+// 4. 2FA if needed
+// 5. Account ops (GetUser, GetAddresses, keys/salts) via cookie session
+// 6. Key derivation and save
 func cookieLogin(ctx context.Context, username, password, mboxpass string) error {
 	// Step 1: Create anonymous session on account.proton.me.
-	anon, _, err := createAnonSessionFn(ctx)
+	anon, jar, err := createAnonSessionFn(ctx)
 	if err != nil {
 		return fmt.Errorf("cookie login: %w", err)
 	}
 
 	slog.Debug("cookieLogin: anonymous session created", "uid", anon.UID)
 
-	// Step 2: SRP login using the anonymous session's tokens.
-	// Point go-proton-api at account.proton.me with the account app version.
+	// Step 2: Build a temporary Session for TransitionToCookies.
+	// TransitionToCookies needs a Session with Bearer tokens and a cookie jar.
 	acctSvc, _ := common.LookupService("account")
-	loginOpts := []proton.Option{
-		proton.WithHostURL(acctSvc.Host),
-		proton.WithAppVersion(acctSvc.AppVersion("")),
-		proton.WithUserAgent(cli.UserAgent),
+	tempSession := &common.Session{
+		Auth: proton.Auth{
+			UID:          anon.UID,
+			AccessToken:  anon.AccessToken,
+			RefreshToken: anon.RefreshToken,
+		},
+		BaseURL:    acctSvc.Host,
+		AppVersion: acctSvc.AppVersion(""),
+		UserAgent:  cli.UserAgent,
 	}
-	if cli.DebugHTTP {
-		loginOpts = append(loginOpts, proton.WithDebug(true))
+	tempSession.SetCookieJar(jar)
+
+	// Step 3: Transition anonymous session to cookies.
+	// Bearer tokens are now INVALID. All subsequent calls use cookieSess.DoJSON.
+	cookieSess, err := transitionToCookiesFn(ctx, tempSession)
+	if err != nil {
+		return fmt.Errorf("cookie login: transition: %w", err)
 	}
 
-	// SessionFromLogin creates a new Manager+Client. We need to inject
-	// the anonymous session's tokens so the Resty client authenticates
-	// with them during SRP. go-proton-api's login flow creates its own
-	// session via auth/v4/sessions internally — but we already have one.
-	// Use the anonymous tokens directly with the Manager.
-	session, err := sessionFromLoginFn(ctx, loginOpts, username, password, nil, nil)
+	// Step 4: SRP login within cookie session.
+	auth, err := cookieSRPAuthFn(ctx, cookieSess, username, []byte(password))
 	if err != nil {
 		return fmt.Errorf("cookie login: SRP: %w", err)
 	}
 
-	session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-	session.AddDeauthHandler(common.NewDeauthHandler())
-
-	// Step 3: 2FA if needed.
-	if err := handleTwoFA(ctx, session); err != nil {
-		return fmt.Errorf("cookie login: 2FA: %w", err)
+	// Step 5: 2FA if needed.
+	if auth.TwoFA.Enabled&proton.HasTOTP != 0 {
+		code := authLoginParams.twoFA
+		if code == "" {
+			code, err = userPromptFn("2FA code", false)
+			if err != nil {
+				return fmt.Errorf("cookie login: 2FA prompt: %w", err)
+			}
+		}
+		if err := cookieTwoFAFn(ctx, cookieSess, code); err != nil {
+			return fmt.Errorf("cookie login: 2FA: %w", err)
+		}
 	}
 
-	// Step 4: Transition to cookies.
-	// Set BaseURL and AppVersion for the account service.
-	session.BaseURL = acctSvc.Host
-	session.AppVersion = acctSvc.AppVersion("")
+	// Step 6: Account operations via cookie session.
+	var userResp struct{ User proton.User }
+	if err := cookieSess.DoJSON(ctx, "GET", "/core/v4/users", nil, &userResp); err != nil {
+		return fmt.Errorf("cookie login: get user: %w", err)
+	}
 
-	if err := deriveAndSave(ctx, session, password, mboxpass, true); err != nil {
+	var addrResp struct{ Addresses []proton.Address }
+	if err := cookieSess.DoJSON(ctx, "GET", "/core/v4/addresses", nil, &addrResp); err != nil {
+		return fmt.Errorf("cookie login: get addresses: %w", err)
+	}
+
+	var saltsResp struct{ KeySalts []proton.Salt }
+	if err := cookieSess.DoJSON(ctx, "GET", "/core/v4/keys/salts", nil, &saltsResp); err != nil {
+		return fmt.Errorf("cookie login: get salts: %w", err)
+	}
+
+	// Step 7: Key derivation.
+	passBytes, err := selectKeyPassword(auth.PasswordMode, password, mboxpass)
+	if err != nil {
+		return err
+	}
+
+	saltedKeypass, err := proton.Salts(saltsResp.KeySalts).SaltForKey(passBytes, userResp.User.Keys.Primary().ID)
+	if err != nil {
+		return fmt.Errorf("cookie login: salt key: %w", err)
+	}
+
+	// Build a Session for Unlock and CookieLoginSave.
+	session := &common.Session{
+		Auth: *auth,
+	}
+	session.SetUser(userResp.User)
+	if err := session.Unlock(saltedKeypass, addrResp.Addresses); err != nil {
+		return fmt.Errorf("cookie login: unlock: %w", err)
+	}
+
+	if err := cookieLoginSaveFn(session, cookieSess, saltedKeypass); err != nil {
 		return err
 	}
 

@@ -222,8 +222,18 @@ func (s *Session) AddressKeyRings() map[string]*crypto.KeyRing {
 // User returns the proton.User for this session.
 func (s *Session) User() proton.User { return s.user }
 
+// SetUser sets the proton.User for this session.
+// Used by cookie login to populate the user from a DoJSON response
+// before calling Unlock.
+func (s *Session) SetUser(u proton.User) { s.user = u }
+
 // CookieJar returns the session's cookie jar.
 func (s *Session) CookieJar() http.CookieJar { return s.cookieJar }
+
+// SetCookieJar sets the session's cookie jar.
+// Used by cookie login to inject the anonymous session's jar before
+// transitioning to cookies.
+func (s *Session) SetCookieJar(jar http.CookieJar) { s.cookieJar = jar }
 
 // Addresses fetches addresses from the API.
 // Service-specific clients call this during their own construction.

@@ -41,6 +41,17 @@ type CookieSession struct {
 	mu         sync.Mutex     // serializes cookie refresh
 }
 
+// NewCookieSession creates a CookieSession with the given parameters.
+// Used by tests and callers that need to construct a CookieSession directly
+// rather than via TransitionToCookies or CookieSessionFromConfig.
+func NewCookieSession(uid, baseURL string, jar http.CookieJar) *CookieSession {
+	return &CookieSession{
+		UID:       uid,
+		BaseURL:   baseURL,
+		cookieJar: jar,
+	}
+}
+
 // CookieDomain is the domain used for all Proton session cookies.
 // The server sets Domain=proton.me on Set-Cookie headers, making cookies
 // valid for all *.proton.me subdomains. We use this constant when loading
