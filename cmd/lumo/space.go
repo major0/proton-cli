@@ -179,15 +179,15 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 	return nil
 }
 
-// classifySpace returns "project", "simple", or "unencrypted" based on
-// the space's encrypted metadata.
+// classifySpace returns "project" or "simple" based on the space's
+// encrypted metadata. Unencrypted spaces are treated as simple.
 func classifySpace(ctx context.Context, client *lumoClient.Client, s *lumo.Space) string {
 	if s.Encrypted == "" {
-		return "unencrypted"
+		return "simple"
 	}
 	dek, err := client.DeriveSpaceDEK(ctx, s)
 	if err != nil {
-		return "simple" // can't decrypt, assume simple
+		return "simple"
 	}
 	ad := lumo.SpaceAD(s.SpaceTag)
 	plainJSON, err := lumo.DecryptString(s.Encrypted, dek, ad)
