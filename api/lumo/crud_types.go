@@ -24,6 +24,18 @@ type Space struct {
 	UpdateTime    string         `json:"UpdateTime,omitempty"`
 	DeleteTime    string         `json:"DeleteTime,omitempty"`
 	Conversations []Conversation `json:"Conversations,omitempty"` // embedded by GET /spaces
+	Assets        []Asset        `json:"Assets,omitempty"`        // embedded by GET /spaces
+}
+
+// Asset is an attachment linked to a space.
+type Asset struct {
+	ID         string `json:"ID"`
+	SpaceID    string `json:"SpaceID"`
+	AssetTag   string `json:"AssetTag"`
+	AssetType  int    `json:"AssetType,omitempty"`
+	Encrypted  string `json:"Encrypted,omitempty"`
+	CreateTime string `json:"CreateTime"`
+	DeleteTime string `json:"DeleteTime,omitempty"`
 }
 
 // Conversation is a conversation from the API.

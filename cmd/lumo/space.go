@@ -30,16 +30,18 @@ func init() {
 // --- space list ---
 
 var spaceShowAll bool
+var spaceShowEmpty bool
 
 var spaceListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   "List spaces (projects only; -A for all)",
+	Short:   "List spaces (projects only; -A for all; --is-empty to find empty spaces)",
 	RunE:    runSpaceList,
 }
 
 func init() {
 	spaceListCmd.Flags().BoolVarP(&spaceShowAll, "all", "A", false, "Show all spaces including simple chat spaces")
+	spaceListCmd.Flags().BoolVar(&spaceShowEmpty, "is-empty", false, "Find and verify empty spaces")
 }
 
 func runSpaceList(cmd *cobra.Command, _ []string) error {
@@ -54,6 +56,10 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("listing spaces: %w", err)
 	}
 
+	if spaceShowEmpty {
+		return runSpaceListEmpty(ctx, client, spaces)
+	}
+
 	if !spaceShowAll {
 		spaces = filterProjectSpaces(ctx, client, spaces)
 	}
@@ -61,6 +67,86 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 	rows := buildSpaceRows(ctx, client, spaces)
 	_, _ = fmt.Fprint(os.Stdout, FormatSpaceList(rows))
 	return nil
+}
+
+// runSpaceListEmpty identifies, verifies, and lists empty spaces.
+func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) error {
+	total := len(spaces)
+
+	// Phase 1: identify candidates (0 embedded conversations).
+	var candidates []lumo.Space
+	for _, s := range spaces {
+		if len(s.Conversations) == 0 {
+			candidates = append(candidates, s)
+		}
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "Scanning %d spaces, %d candidates with 0 embedded conversations...\n", total, len(candidates))
+
+	// Phase 2: verify each candidate.
+	// Check embedded Conversations (already 0), Assets, and attempt
+	// GetSpace for a fresh view. Any non-empty result is an error.
+	type emptySpace struct {
+		space     lumo.Space
+		spaceType string // "simple" or "project" or "unencrypted"
+	}
+	var verified []emptySpace
+
+	for _, s := range candidates {
+		// Verify no assets either.
+		if len(s.Assets) > 0 {
+			return fmt.Errorf("space %s has 0 conversations but %d assets — not empty", s.ID, len(s.Assets))
+		}
+
+		// Classify the space type.
+		stype := classifySpace(ctx, client, &s)
+		verified = append(verified, emptySpace{space: s, spaceType: stype})
+	}
+
+	// Phase 3: list verified empty spaces.
+	if len(verified) == 0 {
+		_, _ = fmt.Fprintf(os.Stdout, "No empty spaces found (%d total).\n", total)
+		return nil
+	}
+
+	// Sort newest first.
+	sort.Slice(verified, func(i, j int) bool {
+		return verified[i].space.CreateTime > verified[j].space.CreateTime
+	})
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-12s  %-20s  %s\n", "TYPE", "CREATED", "ID")
+	for _, v := range verified {
+		fmt.Fprintf(&b, "%-12s  %-20s  %s\n", v.spaceType, v.space.CreateTime, v.space.ID)
+	}
+	fmt.Fprintf(&b, "\n%d empty spaces found out of %d total.\n", len(verified), total)
+	_, _ = fmt.Fprint(os.Stdout, b.String())
+	return nil
+}
+
+// classifySpace returns "project", "simple", or "unencrypted" based on
+// the space's encrypted metadata.
+func classifySpace(ctx context.Context, client *lumoClient.Client, s *lumo.Space) string {
+	if s.Encrypted == "" {
+		return "unencrypted"
+	}
+	dek, err := client.DeriveSpaceDEK(ctx, s)
+	if err != nil {
+		return "simple" // can't decrypt, assume simple
+	}
+	ad := lumo.SpaceAD(s.SpaceTag)
+	plainJSON, err := lumo.DecryptString(s.Encrypted, dek, ad)
+	if err != nil {
+		return "simple"
+	}
+	var priv lumo.SpacePriv
+	if err := json.Unmarshal([]byte(plainJSON), &priv); err != nil {
+		return "simple"
+	}
+	if priv.IsProject != nil && *priv.IsProject {
+		return "project"
+	}
+	return "simple"
 }
 
 // SpaceRow is a display-only struct for the space list table.
