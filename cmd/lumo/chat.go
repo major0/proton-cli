@@ -329,16 +329,43 @@ func init() {
 }
 
 func runChatDelete(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	client, err := restoreClient(cmd)
 	if err != nil {
 		return err
 	}
 
 	convID := args[0]
-	if err := client.DeleteConversation(cmd.Context(), convID); err != nil {
-		return fmt.Errorf("deleting conversation: %w", err)
+
+	// Find the parent space so we can clean it up if it's a simple 1:1 space.
+	spaces, _ := client.ListSpaces(ctx)
+	var parentSpace *lumo.Space
+	for i := range spaces {
+		for _, c := range spaces[i].Conversations {
+			if c.ID == convID {
+				parentSpace = &spaces[i]
+				break
+			}
+		}
+		if parentSpace != nil {
+			break
+		}
 	}
 
+	if err := client.DeleteConversation(ctx, convID); err != nil {
+		return fmt.Errorf("deleting conversation: %w", err)
+	}
 	_, _ = fmt.Fprintf(os.Stderr, "Conversation %s deleted.\n", convID)
+
+	// If the parent space is a simple space with only this conversation,
+	// delete the space too — no point leaving an empty container.
+	if parentSpace != nil && len(parentSpace.Conversations) <= 1 {
+		if err := client.DeleteSpace(ctx, parentSpace.ID); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to delete parent space: %v\n", err)
+		} else {
+			_, _ = fmt.Fprintf(os.Stderr, "Space %s deleted.\n", parentSpace.ID)
+		}
+	}
+
 	return nil
 }

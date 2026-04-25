@@ -79,9 +79,11 @@ func buildSpaceRows(ctx context.Context, client *lumoClient.Client, spaces []lum
 	return rows
 }
 
-// decryptSpaceName attempts to decrypt a space's project name.
-// Returns "(empty)" when no encrypted payload exists, the project name
-// on success, or "(encrypted)" when decryption fails.
+// decryptSpaceName resolves a display name for a space. For project
+// spaces, uses the ProjectName from encrypted metadata. For simple
+// spaces (no ProjectName), uses the title of the first conversation.
+// Returns "(empty)" when nothing is available, "(encrypted)" on
+// decryption failure.
 func decryptSpaceName(ctx context.Context, client *lumoClient.Client, s *lumo.Space) string {
 	if s.Encrypted == "" {
 		return "(empty)"
@@ -103,10 +105,22 @@ func decryptSpaceName(ctx context.Context, client *lumoClient.Client, s *lumo.Sp
 		return "(encrypted)"
 	}
 
-	if priv.ProjectName == "" {
-		return "(empty)"
+	if priv.ProjectName != "" {
+		return priv.ProjectName
 	}
-	return priv.ProjectName
+
+	// Simple space — derive name from the first conversation's title.
+	for _, c := range s.Conversations {
+		if c.Encrypted == "" || c.DeleteTime != "" {
+			continue
+		}
+		title := decryptConversationTitle(c, dek, s.SpaceTag)
+		if title != "" {
+			return title
+		}
+	}
+
+	return "Untitled"
 }
 
 // FormatSpaceList renders a tab-aligned table of spaces sorted by
@@ -123,13 +137,9 @@ func FormatSpaceList(rows []SpaceRow) string {
 	})
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-36s  %-20s  %5s  %-9s  %s\n", "ID", "CREATED", "CONVS", "ENCRYPTED", "NAME")
+	fmt.Fprintf(&b, "%-36s  %-20s  %5s  %s\n", "ID", "CREATED", "CONVS", "NAME")
 	for _, r := range sorted {
-		enc := "no"
-		if r.Encrypted {
-			enc = "yes"
-		}
-		fmt.Fprintf(&b, "%-36s  %-20s  %5d  %-9s  %s\n", r.ID, r.CreateTime, r.ConvCount, enc, r.Name)
+		fmt.Fprintf(&b, "%-36s  %-20s  %5d  %s\n", r.ID, r.CreateTime, r.ConvCount, r.Name)
 	}
 	return b.String()
 }
