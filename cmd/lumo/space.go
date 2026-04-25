@@ -72,15 +72,19 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Hide empty spaces unless -A is set.
+	// Hide deleted and empty spaces unless -A is set.
 	if !spaceShowAll {
-		var nonEmpty []lumo.Space
+		var visible []lumo.Space
 		for _, s := range spaces {
-			if len(s.Conversations) > 0 {
-				nonEmpty = append(nonEmpty, s)
+			if s.DeleteTime != "" {
+				continue
 			}
+			if len(s.Conversations) == 0 {
+				continue
+			}
+			visible = append(visible, s)
 		}
-		spaces = nonEmpty
+		spaces = visible
 	}
 
 	rows := buildSpaceRows(ctx, client, spaces)
@@ -222,6 +226,7 @@ type SpaceRow struct {
 	CreateTime string
 	ConvCount  int
 	Encrypted  bool
+	Deleted    bool
 	Name       string // decrypted name, "(empty)", or "(encrypted)"
 }
 
@@ -231,12 +236,17 @@ type SpaceRow struct {
 func buildSpaceRows(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) []SpaceRow {
 	rows := make([]SpaceRow, len(spaces))
 	for i, s := range spaces {
+		name := decryptSpaceName(ctx, client, &s)
+		if s.DeleteTime != "" {
+			name = "(deleted)"
+		}
 		rows[i] = SpaceRow{
 			ID:         s.ID,
 			CreateTime: s.CreateTime,
 			ConvCount:  len(s.Conversations),
 			Encrypted:  s.Encrypted != "",
-			Name:       decryptSpaceName(ctx, client, &s),
+			Deleted:    s.DeleteTime != "",
+			Name:       name,
 		}
 	}
 	return rows

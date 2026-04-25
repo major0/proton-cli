@@ -273,7 +273,7 @@ func runChatListAll(ctx context.Context, client *lumoClient.Client) error {
 	var rows []ConversationRow
 	for _, p := range pairs {
 		conv := p.Conversation
-		if conv.DeleteTime != "" {
+		if conv.DeleteTime != "" || p.Space.DeleteTime != "" {
 			continue
 		}
 
