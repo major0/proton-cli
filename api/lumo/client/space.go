@@ -13,9 +13,12 @@ import (
 )
 
 // ListSpaces fetches all spaces from the API, paginating with
-// CreateTimeUntil until no more results are returned.
+// CreateTimeUntil until no more results are returned. Deduplicates
+// by ID since page boundaries can overlap when spaces share a
+// CreateTime.
 func (c *Client) ListSpaces(ctx context.Context) ([]lumo.Space, error) {
 	var all []lumo.Space
+	seen := map[string]bool{}
 	var cursor string
 
 	for {
@@ -33,13 +36,26 @@ func (c *Client) ListSpaces(ctx context.Context) ([]lumo.Space, error) {
 			break
 		}
 
-		all = append(all, resp.Spaces...)
+		newCount := 0
+		for _, s := range resp.Spaces {
+			if seen[s.ID] {
+				continue
+			}
+			seen[s.ID] = true
+			all = append(all, s)
+			newCount++
+		}
+
+		// No new spaces on this page — we've exhausted the results.
+		if newCount == 0 {
+			break
+		}
 
 		// Use the last space's CreateTime as the pagination cursor.
 		last := resp.Spaces[len(resp.Spaces)-1]
 		nextCursor := dateToUnix(last.CreateTime)
 		if nextCursor == "" || nextCursor == cursor {
-			break // no progress, stop
+			break
 		}
 		cursor = nextCursor
 	}
