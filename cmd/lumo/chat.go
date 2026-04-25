@@ -8,7 +8,6 @@ import (
 
 	"github.com/major0/proton-cli/api/lumo"
 	lumoClient "github.com/major0/proton-cli/api/lumo/client"
-	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -37,15 +36,6 @@ func resolveSpace(ctx context.Context, client *lumoClient.Client) (string, error
 		return "", fmt.Errorf("resolving default space: %w", err)
 	}
 	return space.ID, nil
-}
-
-// restoreClient restores the session and creates a Lumo client.
-func restoreClient(cmd *cobra.Command) (*lumoClient.Client, error) {
-	session, err := cli.RestoreSession(cmd.Context())
-	if err != nil {
-		return nil, fmt.Errorf("no active session (run 'proton account login' first): %w", err)
-	}
-	return lumoClient.NewClient(session), nil
 }
 
 // --- chat create ---

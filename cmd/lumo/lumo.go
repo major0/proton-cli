@@ -1,6 +1,9 @@
 package lumoCmd
 
 import (
+	"fmt"
+
+	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -25,6 +28,15 @@ var lumoCmd = &cobra.Command{
 
 func init() {
 	cli.AddCommand(lumoCmd)
+}
+
+// restoreClient restores the session and creates a Lumo client.
+func restoreClient(cmd *cobra.Command) (*lumoClient.Client, error) {
+	session, err := cli.RestoreSession(cmd.Context())
+	if err != nil {
+		return nil, fmt.Errorf("no active session (run 'proton account login' first): %w", err)
+	}
+	return lumoClient.NewClient(session), nil
 }
 
 // AddCommand registers a subcommand under the lumo command group.
