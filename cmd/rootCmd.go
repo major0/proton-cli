@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -17,6 +19,7 @@ import (
 type rootParamsType struct {
 	Account     string
 	ConfigFile  string
+	LogLevel    string
 	MaxWorkers  int
 	SessionFile string
 	Verbose     int
@@ -71,15 +74,32 @@ var (
 		Short: "proton is a command line interface for Proton services",
 		Long:  `proton is a command line interface for managing Proton services (Drive, Mail, etc.)`,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			switch {
-			case rootParams.Verbose == 1:
-				logLevel.Set(slog.LevelInfo)
-				slog.Info("verbosity", "verbose", rootParams.Verbose)
-			case rootParams.Verbose > 1:
+			// --log-level takes priority over -v count.
+			switch strings.ToLower(rootParams.LogLevel) {
+			case "trace", "debug":
 				logLevel.Set(slog.LevelDebug)
-				slog.Debug("verbosity", "verbose", rootParams.Verbose)
-			default:
+			case "info":
+				logLevel.Set(slog.LevelInfo)
+			case "warn", "warning":
 				logLevel.Set(slog.LevelWarn)
+			case "error":
+				logLevel.Set(slog.LevelError)
+			case "":
+				// Fall back to -v count.
+				switch {
+				case rootParams.Verbose == 1:
+					logLevel.Set(slog.LevelInfo)
+				case rootParams.Verbose > 1:
+					logLevel.Set(slog.LevelDebug)
+				default:
+					logLevel.Set(slog.LevelWarn)
+				}
+			default:
+				return fmt.Errorf("invalid --log-level %q (use: debug, info, warn, error)", rootParams.LogLevel)
+			}
+
+			if logLevel.Level() <= slog.LevelDebug {
+				slog.Debug("verbosity", "log_level", logLevel.Level(), "verbose", rootParams.Verbose)
 			}
 
 			if rootParams.ConfigFile == "" {
@@ -91,7 +111,7 @@ var (
 			}
 
 			Timeout = rootParams.Timeout
-			DebugHTTP = rootParams.Verbose >= 3
+			DebugHTTP = rootParams.Verbose >= 3 || strings.EqualFold(rootParams.LogLevel, "debug") || strings.EqualFold(rootParams.LogLevel, "trace")
 			Account = rootParams.Account
 
 			// Rebuild proton options based on verbosity.
@@ -230,6 +250,7 @@ func init() {
 	// proton.WithLogger(common.Logger)
 
 	rootCmd.PersistentFlags().CountVarP(&rootParams.Verbose, "verbose", "v", "Enable verbose output. Can be specified multiple times to increase verbosity.")
+	rootCmd.PersistentFlags().StringVar(&rootParams.LogLevel, "log-level", "", "Set log level: debug, info, warn, error")
 	rootCmd.PersistentFlags().StringVarP(&rootParams.Account, "account", "a", "default", "Nickname of the account to use. This can be any string the user desires.")
 	rootCmd.PersistentFlags().StringVar(&rootParams.ConfigFile, "config-file", "", "Config file to use. Defaults to value XDG_CONFIG_FILE")
 	rootCmd.PersistentFlags().StringVar(&rootParams.SessionFile, "session-file", "", "Session file to use. Defaults to value XDG_CACHE_FILE")
