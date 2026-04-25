@@ -70,12 +70,14 @@ func runChatCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	spaceID, err := resolveSpace(ctx, client)
+	// Create a new space for this conversation (matches browser flow:
+	// each chat gets its own space).
+	space, err := client.CreateSpace(ctx, title, false)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating space: %w", err)
 	}
 
-	conv, err := client.CreateConversation(ctx, spaceID, title)
+	conv, err := client.CreateConversation(ctx, space.ID, title)
 	if err != nil {
 		return fmt.Errorf("creating conversation: %w", err)
 	}
@@ -83,7 +85,7 @@ func runChatCreate(cmd *cobra.Command, args []string) error {
 	session := &ChatSession{
 		Client:       client,
 		Conversation: conv,
-		SpaceID:      spaceID,
+		SpaceID:      space.ID,
 		Writer:       os.Stdout,
 		Reader:       os.Stdin,
 	}
