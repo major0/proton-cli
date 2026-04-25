@@ -342,21 +342,48 @@ func FormatSpaceList(rows []SpaceRow) string {
 
 // --- space delete ---
 
+var spaceForceDelete bool
+
 var spaceDeleteCmd = &cobra.Command{
 	Use:   "delete <space-id>",
-	Short: "Delete a space",
+	Short: "Delete a space (must be empty unless -f)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runSpaceDelete,
 }
 
+func init() {
+	spaceDeleteCmd.Flags().BoolVarP(&spaceForceDelete, "force", "f", false, "Delete even if the space has conversations or assets")
+}
+
 func runSpaceDelete(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	client, err := restoreClient(cmd)
 	if err != nil {
 		return err
 	}
 
 	spaceID := args[0]
-	if err := client.DeleteSpace(cmd.Context(), spaceID); err != nil {
+
+	if !spaceForceDelete {
+		// Check if the space is empty before deleting.
+		spaces, err := client.ListSpaces(ctx)
+		if err != nil {
+			return fmt.Errorf("checking space: %w", err)
+		}
+		for _, s := range spaces {
+			if s.ID == spaceID {
+				if len(s.Conversations) > 0 {
+					return fmt.Errorf("space has %d conversations — use -f to force delete", len(s.Conversations))
+				}
+				if len(s.Assets) > 0 {
+					return fmt.Errorf("space has %d assets — use -f to force delete", len(s.Assets))
+				}
+				break
+			}
+		}
+	}
+
+	if err := client.DeleteSpace(ctx, spaceID); err != nil {
 		return fmt.Errorf("deleting space: %w", err)
 	}
 
