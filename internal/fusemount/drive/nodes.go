@@ -25,6 +25,42 @@ func apiErrno(err error) syscall.Errno {
 	return syscall.EIO
 }
 
+// extractParentLink resolves the destination parent *Link and *Share from
+// a fusemount.Node. Returns the fallback (self) if the node type is
+// unrecognized.
+func extractParentLink(node fusemount.Node, fallbackLink *drive.Link, fallbackShare *drive.Share) (*drive.Link, *drive.Share) {
+	switch p := node.(type) {
+	case *LinkDirNode:
+		return p.link, p.link.Share()
+	case *ShareDirNode:
+		return p.share.Link, p.share
+	case nil:
+		// newParent is nil when dispatch couldn't unwrap — use self.
+		return fallbackLink, fallbackShare
+	default:
+		return fallbackLink, fallbackShare
+	}
+}
+
+// renameErrno maps Move/Rename errors to FUSE errnos.
+// Note: Client.Move wraps MoveLink errors with fmt.Errorf — errors.Is
+// traverses the chain. Name-collision detection depends on Client.Move
+// translating API 422 responses to drive.ErrFileNameExist (same pattern
+// as CreateFile). If the API returns an opaque error, it falls through to EIO.
+func renameErrno(err error) syscall.Errno {
+	if errors.Is(err, drive.ErrFileNameExist) {
+		return syscall.EEXIST
+	}
+	if errors.Is(err, proton.ErrFolderNameExist) {
+		return syscall.EEXIST
+	}
+	if errors.Is(err, drive.ErrNotAFolder) {
+		return syscall.ENOTDIR
+	}
+	slog.Debug("rename: failed", "error", err)
+	return syscall.EIO
+}
+
 // ShareDirNode wraps a *drive.Share and implements fusemount.DirNode.
 // It exposes the share's root link children as directory entries.
 // Retains children from the last Readdir so Lookup can resolve locally.
