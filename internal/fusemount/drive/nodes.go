@@ -76,6 +76,7 @@ var _ fusemount.DirNode = (*ShareDirNode)(nil)
 var _ fusemount.NodeCreator = (*ShareDirNode)(nil)
 var _ fusemount.NodeMkdirer = (*ShareDirNode)(nil)
 var _ fusemount.NodeRemover = (*ShareDirNode)(nil)
+var _ fusemount.NodeRenamer = (*ShareDirNode)(nil)
 
 // Getattr returns directory attributes for the share root.
 func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -258,6 +259,41 @@ func (n *ShareDirNode) Rmdir(_ context.Context, name string) syscall.Errno {
 	return 0
 }
 
+// Rename moves or renames a child of the share root.
+func (n *ShareDirNode) Rename(_ context.Context, oldName string, newParent fusemount.Node, newName string) syscall.Errno {
+	child, errno := n.resolveShareChild(oldName)
+	if errno != 0 {
+		return errno
+	}
+
+	dstParentLink, dstShare := extractParentLink(newParent, n.share.Link, n.share)
+
+	// Cross-share move check.
+	if dstShare.ProtonShare().ShareID != n.share.ProtonShare().ShareID {
+		return syscall.EXDEV
+	}
+
+	if dstParentLink.LinkID() == n.share.Link.LinkID() {
+		if err := n.client.Rename(context.Background(), n.share, child, newName); err != nil {
+			return renameErrno(err)
+		}
+	} else {
+		if err := n.client.Move(context.Background(), n.share, child, dstParentLink, newName); err != nil {
+			return renameErrno(err)
+		}
+	}
+
+	n.children = nil
+	if dn, ok := newParent.(*LinkDirNode); ok {
+		dn.children = nil
+	}
+	if sn, ok := newParent.(*ShareDirNode); ok && sn != n {
+		sn.children = nil
+	}
+
+	return 0
+}
+
 // LinkDirNode wraps a *drive.Link (folder) and implements fusemount.DirNode.
 // It exposes the link's children as directory entries.
 // Retains children from the last Readdir so Lookup can resolve locally.
@@ -273,6 +309,7 @@ var _ fusemount.DirNode = (*LinkDirNode)(nil)
 var _ fusemount.NodeCreator = (*LinkDirNode)(nil)
 var _ fusemount.NodeMkdirer = (*LinkDirNode)(nil)
 var _ fusemount.NodeRemover = (*LinkDirNode)(nil)
+var _ fusemount.NodeRenamer = (*LinkDirNode)(nil)
 
 // Getattr returns directory attributes for the folder.
 func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -416,6 +453,46 @@ func (n *LinkDirNode) Rmdir(_ context.Context, name string) syscall.Errno {
 	}
 
 	n.children = nil
+	return 0
+}
+
+// Rename moves or renames a child of this directory.
+func (n *LinkDirNode) Rename(_ context.Context, oldName string, newParent fusemount.Node, newName string) syscall.Errno {
+	child, errno := n.resolveChild(oldName)
+	if errno != 0 {
+		return errno
+	}
+
+	// Determine the destination parent link.
+	dstParentLink, dstShare := extractParentLink(newParent, n.link, n.link.Share())
+
+	// Cross-share move check (compare by ShareID, not pointer).
+	if dstShare.ProtonShare().ShareID != n.link.Share().ProtonShare().ShareID {
+		return syscall.EXDEV
+	}
+
+	share := n.link.Share()
+
+	// Same-directory rename vs cross-directory move.
+	if dstParentLink.LinkID() == n.link.LinkID() {
+		if err := n.client.Rename(context.Background(), share, child, newName); err != nil {
+			return renameErrno(err)
+		}
+	} else {
+		if err := n.client.Move(context.Background(), share, child, dstParentLink, newName); err != nil {
+			return renameErrno(err)
+		}
+	}
+
+	// Invalidate children caches on both source and destination.
+	n.children = nil
+	if dn, ok := newParent.(*LinkDirNode); ok && dn != n {
+		dn.children = nil
+	}
+	if sn, ok := newParent.(*ShareDirNode); ok {
+		sn.children = nil
+	}
+
 	return 0
 }
 

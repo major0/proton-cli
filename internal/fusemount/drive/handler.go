@@ -6,6 +6,7 @@ package drive
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"syscall"
@@ -31,6 +32,7 @@ type DriveHandler struct { //nolint:revive // name specified by design doc
 
 // Compile-time interface assertion.
 var _ fusemount.NamespaceHandler = (*DriveHandler)(nil)
+var _ fusemount.NodeRenamer = (*DriveHandler)(nil)
 
 // NewDriveHandler constructs a DriveHandler with the given drive client.
 func NewDriveHandler(client *drive.Client) *DriveHandler {
@@ -227,10 +229,97 @@ func (h *DriveHandler) SetShares(shares map[string]*drive.Share) {
 	h.sharesMu.Unlock()
 }
 
+// invalidateShares clears the handler's internal share map, forcing the
+// next Readdir/Lookup to reload from the API via RefreshShares.
+func (h *DriveHandler) invalidateShares() {
+	h.sharesMu.Lock()
+	h.shares = make(map[string]*drive.Share)
+	h.sharesMu.Unlock()
+}
+
 // snapshotShares returns the current share map under a read lock.
 // Used by LinkIDDir.Readdir to list share root LinkIDs.
 func (h *DriveHandler) snapshotShares() map[string]*drive.Share {
 	h.sharesMu.RLock()
 	defer h.sharesMu.RUnlock()
 	return h.shares
+}
+
+// findShareByName resolves a share by its display name using the same
+// logic as Lookup: volumes match by hardcoded name ("Home" → main,
+// "Photos" → photos), standard shares match by decrypted name.
+// Returns nil if no share matches.
+// Caller must hold sharesMu (at least RLock).
+func (h *DriveHandler) findShareByName(name string) *drive.Share {
+	switch name {
+	case "Home":
+		for _, share := range h.shares {
+			if share.ProtonShare().Type == proton.ShareTypeMain {
+				return share
+			}
+		}
+		return nil
+
+	case "Photos":
+		for _, share := range h.shares {
+			if share.ProtonShare().Type == drive.ShareTypePhotos {
+				return share
+			}
+		}
+		return nil
+	}
+
+	// O(N) scan for standard shares by decrypted name.
+	for _, share := range h.shares {
+		if share.ProtonShare().Type != proton.ShareTypeStandard {
+			continue
+		}
+		shareName, err := share.GetName(context.Background())
+		if err != nil {
+			continue
+		}
+		if shareName == name {
+			return share
+		}
+	}
+
+	return nil
+}
+
+// Rename supports renaming standard shares at the namespace root.
+// Cross-directory moves of shares are rejected with EXDEV.
+// Volume renames (Home, Photos) are rejected with EPERM.
+func (h *DriveHandler) Rename(_ context.Context, oldName string, newParent fusemount.Node, newName string) syscall.Errno {
+	// Same-directory rename: newParent is nil (dispatch passes dp.node
+	// which is nil for root nodes). Any non-nil newParent means cross-dir.
+	if newParent != nil {
+		return syscall.EXDEV
+	}
+
+	h.sharesMu.RLock()
+	share := h.findShareByName(oldName)
+	h.sharesMu.RUnlock()
+
+	if share == nil {
+		return syscall.ENOENT
+	}
+
+	// Only standard shares can be renamed.
+	if share.ProtonShare().Type != proton.ShareTypeStandard {
+		return syscall.EPERM
+	}
+
+	if err := h.client.ShareRename(context.Background(), share, newName); err != nil {
+		if errors.Is(err, drive.ErrNotStandardShare) {
+			return syscall.EPERM
+		}
+		slog.Debug("DriveHandler.Rename: failed", "error", err)
+		return syscall.EIO
+	}
+
+	// Invalidate the handler's share map — the renamed share has stale
+	// encrypted name data. The next Readdir/Lookup will trigger RefreshShares.
+	h.invalidateShares()
+
+	return 0
 }
