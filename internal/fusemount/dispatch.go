@@ -22,6 +22,7 @@ var _ = (fs.NodeMkdirer)((*DispatchNode)(nil))
 var _ = (fs.NodeOpener)((*DispatchNode)(nil))
 var _ = (fs.NodeReader)((*DispatchNode)(nil))
 var _ = (fs.NodeWriter)((*DispatchNode)(nil))
+var _ = (fs.NodeFlusher)((*DispatchNode)(nil))
 var _ = (fs.NodeReleaser)((*DispatchNode)(nil))
 var _ = (fs.NodeFsyncer)((*DispatchNode)(nil))
 var _ = (fs.NodeUnlinker)((*DispatchNode)(nil))
@@ -358,6 +359,37 @@ func (d *DispatchNode) Fsync(ctx context.Context, f fs.FileHandle, flags uint32)
 	}
 
 	return fsyncer.Fsync(ctx, handle, flags)
+}
+
+// Flush delegates to NodeFlusher if the node supports it. Called on every
+// close(2) — unlike Release, the calling process blocks until Flush returns.
+// This ensures write-mode FDs commit their revision before the caller proceeds.
+func (d *DispatchNode) Flush(ctx context.Context, f fs.FileHandle) (errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in handler Flush: %v\n%s", r, debug.Stack())
+			errno = syscall.EIO
+		}
+	}()
+
+	if d.isRoot || d.node == nil {
+		return 0
+	}
+
+	flusher, ok := d.node.(NodeFlusher)
+	if !ok {
+		return 0
+	}
+
+	var handle FileHandle
+	if dfh, ok := f.(*dispatchFileHandle); ok {
+		handle = dfh.handle
+	}
+
+	return flusher.Flush(ctx, handle)
 }
 
 // Read delegates to NodeReader if the node supports it.

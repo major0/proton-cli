@@ -477,39 +477,72 @@ func (fd *FileDescriptor) Close() error {
 		return nil
 	}
 	fd.closed = true
-	mode := fd.mode
-	hasCurBlock := len(fd.curBlock) > 0
 	fd.mu.Unlock()
 
-	if mode == fdWrite && (hasCurBlock || fd.hasTokens()) {
-		if hasCurBlock {
-			fd.flushBlock(fd.curIdx, fd.curBlock)
-		}
-		fd.inflight.Wait()
+	// Delegate to Flush for the actual commit work. If Flush was already
+	// called (e.g. by the FUSE Flush handler), this is a no-op because
+	// there are no pending blocks or tokens.
+	return fd.Flush()
+}
 
-		fd.tokensMu.Lock()
-		err := fd.firstErr
-		fd.tokensMu.Unlock()
-		if err != nil {
-			return err
-		}
+// Flush commits any pending write data without closing the FD. For
+// write-mode FDs with buffered blocks or uploaded tokens, it flushes
+// the partial block, waits for in-flight uploads, commits the revision,
+// and invalidates the parent's cached children so subsequent directory
+// listings reflect the new file.
+//
+// Flush is idempotent — calling it when no data is pending is a no-op.
+// It is safe to call concurrently with Close (Close delegates to Flush).
+func (fd *FileDescriptor) Flush() error {
+	fd.mu.Lock()
+	mode := fd.mode
+	hasCurBlock := len(fd.curBlock) > 0
+	if hasCurBlock {
+		fd.flushBlock(fd.curIdx, fd.curBlock)
+		fd.curBlock = fd.curBlock[:0]
+	}
+	fd.mu.Unlock()
 
-		if err := fd.commitRevision(); err != nil {
-			return err
-		}
-
-		// Revision committed — the file transitioned from Draft to Active
-		// on the server. Delete the stale link from the table and
-		// invalidate the parent's cached children so the next access
-		// re-fetches fresh state (Active, with FileProperties) from the API.
-		if fd.client != nil {
-			fd.client.deleteLink(fd.linkID)
-		}
-		if fd.link != nil && fd.link.ParentLink() != nil {
-			fd.link.ParentLink().InvalidateChildren()
-		}
-
+	if mode != fdWrite {
 		return nil
+	}
+
+	// Wait for all in-flight block uploads to complete.
+	fd.inflight.Wait()
+
+	fd.tokensMu.Lock()
+	err := fd.firstErr
+	nTokens := len(fd.tokens)
+	fd.tokensMu.Unlock()
+
+	if err != nil {
+		return err
+	}
+
+	// Nothing to commit — either no data was written or a prior
+	// Flush/Sync already committed everything.
+	if nTokens == 0 && !hasCurBlock {
+		return nil
+	}
+
+	if err := fd.commitRevision(); err != nil {
+		return err
+	}
+
+	// Clear tokens so a subsequent Flush/Close is a no-op.
+	fd.tokensMu.Lock()
+	fd.tokens = make(map[int]uploadedBlock)
+	fd.tokensMu.Unlock()
+
+	// Revision committed — the file transitioned from Draft to Active
+	// on the server. Delete the stale link from the table and
+	// invalidate the parent's cached children so the next access
+	// re-fetches fresh state (Active, with FileProperties) from the API.
+	if fd.client != nil {
+		fd.client.deleteLink(fd.linkID)
+	}
+	if fd.link != nil && fd.link.ParentLink() != nil {
+		fd.link.ParentLink().InvalidateChildren()
 	}
 
 	return nil

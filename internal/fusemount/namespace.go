@@ -95,6 +95,14 @@ type NodeFsyncer interface {
 	Fsync(ctx context.Context, fh FileHandle, flags uint32) syscall.Errno
 }
 
+// NodeFlusher indicates the node supports flush (called on every close(2)).
+// Unlike Release (which is asynchronous), Flush blocks the calling process
+// until it returns. Implement Flush to commit pending writes synchronously
+// so that subsequent operations (e.g. ls after echo > file) see the result.
+type NodeFlusher interface {
+	Flush(ctx context.Context, fh FileHandle) syscall.Errno
+}
+
 // NodeRemover indicates the handler supports unlink/rmdir.
 type NodeRemover interface {
 	Unlink(ctx context.Context, name string) syscall.Errno

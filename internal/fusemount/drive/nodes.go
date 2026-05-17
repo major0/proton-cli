@@ -573,6 +573,7 @@ var _ fusemount.NodeOpener = (*FileNode)(nil)
 var _ fusemount.NodeReader = (*FileNode)(nil)
 var _ fusemount.NodeWriter = (*FileNode)(nil)
 var _ fusemount.NodeFsyncer = (*FileNode)(nil)
+var _ fusemount.NodeFlusher = (*FileNode)(nil)
 var _ fusemount.NodeReleaser = (*FileNode)(nil)
 
 // fdHandle wraps a *drive.FileDescriptor as a fusemount.FileHandle.
@@ -682,6 +683,26 @@ func (n *FileNode) Fsync(_ context.Context, fh fusemount.FileHandle, _ uint32) s
 			return 0 // read-only or already-closed FD — no-op
 		}
 		slog.Debug("FileNode.Fsync: EIO", "linkID", n.link.LinkID(), "error", err)
+		return syscall.EIO
+	}
+	return 0
+}
+
+// Flush is called on every close(2) and blocks the calling process until
+// it returns. For write-mode FDs, this commits the revision so the file
+// transitions from Draft to Active before the caller proceeds. This
+// prevents the race where a subsequent ls runs before Release (async)
+// commits the file.
+func (n *FileNode) Flush(_ context.Context, fh fusemount.FileHandle) syscall.Errno {
+	h, ok := fh.(*fdHandle)
+	if !ok || h == nil {
+		return 0
+	}
+	if err := h.fd.Flush(); err != nil {
+		if errors.Is(err, syscall.EBADF) || errors.Is(err, os.ErrClosed) {
+			return 0 // read-only or already-closed FD — no-op
+		}
+		slog.Debug("FileNode.Flush: EIO", "linkID", n.link.LinkID(), "error", err)
 		return syscall.EIO
 	}
 	return 0
