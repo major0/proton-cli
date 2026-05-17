@@ -586,9 +586,14 @@ var _ fusemount.FileHandle = (*fdHandle)(nil)
 
 // Getattr returns file attributes including size and timestamps.
 func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
+	mode := uint32(0600) // default
+	if m := n.link.Mode(); m != 0 {
+		mode = m & 0o7777 // mask to permission bits only
+	}
+
 	//nolint:gosec // Size/ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
-		Mode:  syscall.S_IFREG | 0600,
+		Mode:  syscall.S_IFREG | mode,
 		Size:  uint64(n.link.Size()),
 		Nlink: 1,
 		Mtime: uint64(n.link.ModifyTime()),
