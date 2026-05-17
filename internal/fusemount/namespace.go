@@ -114,6 +114,26 @@ type NodeRenamer interface {
 	Rename(ctx context.Context, oldName string, newParent Node, newName string) syscall.Errno
 }
 
+// SetattrValid bitmask constants.
+const (
+	SetattrMode  uint32 = 1 << 0
+	SetattrSize  uint32 = 1 << 3
+	SetattrMtime uint32 = 1 << 4
+)
+
+// SetattrIn holds the fields from a setattr call that nodes may handle.
+type SetattrIn struct {
+	Valid uint32 // bitmask of which fields are set
+	Mode  uint32 // new permission bits (when SetattrMode is set)
+	Size  uint64 // new file size (when SetattrSize is set)
+	Mtime uint64 // new mtime in Unix seconds (when SetattrMtime is set)
+}
+
+// NodeSetattrer indicates the node supports setattr sub-operations.
+type NodeSetattrer interface {
+	Setattr(ctx context.Context, fh FileHandle, in *SetattrIn) syscall.Errno
+}
+
 // NamespaceRegistry holds registered namespace handlers.
 // Populated at startup, immutable after mount.
 type NamespaceRegistry struct {
