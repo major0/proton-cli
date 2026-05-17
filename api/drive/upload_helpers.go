@@ -26,6 +26,7 @@ type uploadParams struct {
 	linkID     string
 	revisionID string
 	sigAddr    string
+	unixMode   uint32
 }
 
 // encryptAndUploadBlock encrypts a plaintext block, signs it, computes
@@ -147,6 +148,7 @@ func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploa
 		ModificationTime: time.Now().UTC().Format("2006-01-02T15:04:05-0700"),
 		Size:             totalSize,
 		BlockSizes:       blockSizes,
+		Mode:             p.unixMode,
 	}
 
 	req := proton.UpdateRevisionReq{

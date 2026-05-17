@@ -93,6 +93,10 @@ type FileDescriptor struct {
 	// client is set for write-mode FDs created via CreateFD/OverwriteFD.
 	// Used to invalidate the link table after revision commit.
 	client *Client
+
+	// unixMode holds Unix permission bits (lower 12: 0o7777) to store
+	// in the revision XAttr on commit. Zero means "don't store" (omitempty).
+	unixMode uint32
 }
 
 // Compile-time interface checks.
@@ -553,6 +557,14 @@ func (fd *FileDescriptor) Stat() FileInfo {
 	return fd.link.Stat()
 }
 
+// SetMode sets the Unix permission bits to store in the revision XAttr.
+// Must be called before Close(). Zero means don't store (omitempty).
+func (fd *FileDescriptor) SetMode(mode uint32) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	fd.unixMode = mode
+}
+
 // Link returns the Link associated with this FD. For write-mode FDs
 // created via CreateFD, this is the newly created file's link. For
 // read-mode FDs, this is the opened file's link.
@@ -772,6 +784,7 @@ func (fd *FileDescriptor) uploadParams() uploadParams {
 		linkID:     fd.linkID,
 		revisionID: fd.revisionID,
 		sigAddr:    fd.sigAddr,
+		unixMode:   fd.unixMode,
 	}
 }
 
