@@ -376,6 +376,22 @@ func formatSize(size int64, opts listOpts) string {
 	return fmt.Sprintf("%d", size)
 }
 
+// formatMode returns the permission string for a link. If the link has a
+// non-zero Mode in its XAttr, that value is used. Otherwise defaults are
+// applied: 0700 for directories, 0600 for files (matching FUSE defaults).
+// The returned string omits the leading type character (e.g. "rwx------").
+func formatMode(link *drive.Link) string {
+	mode := link.Mode()
+	if mode == 0 {
+		if link.IsDir() {
+			mode = 0700
+		} else {
+			mode = 0600
+		}
+	}
+	return os.FileMode(mode).String()[1:] // strip the leading type char
+}
+
 func formatTimestamp(epoch int64, style timeStyle) string {
 	t := time.Unix(epoch, 0)
 	switch style {
@@ -452,7 +468,7 @@ func printLong(e listEntry, opts listOpts) {
 	fmt.Printf("%s%c%-9s %8s %s %s\n",
 		prefix,
 		typeChar(l.Type()),
-		"rwxr-xr-x",
+		formatMode(l),
 		formatSize(l.Size(), opts),
 		formatTimestamp(l.ModifyTime(), opts.timeStyle),
 		colorName(e.name, l, opts.color, opts.classify),
