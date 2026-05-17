@@ -52,6 +52,11 @@ type Link struct {
 	// a fresh ListLinkChildren API call. Populated by Readdir when the
 	// share's MemoryCacheLevel is >= CacheMetadata.
 	cachedChildIDs []string
+
+	// cachedMode stores the decoded Mode from the XAttr. 0 means either
+	// "not cached" or "not set" — disambiguated by cachedModeValid.
+	cachedMode      uint32
+	cachedModeValid bool
 }
 
 // Type returns the link type (file or folder) without decryption.
@@ -230,6 +235,71 @@ func (l *Link) KeyRing() (*crypto.KeyRing, error) {
 		l.cachedKeyRing = kr
 	}
 	return kr, nil
+}
+
+// Mode returns the Unix permission bits from the revision XAttr.
+// Returns 0 when Mode is not set (legacy files) or the link is a folder.
+// Lazily decrypts the XAttr on first call and caches the result when
+// MemoryCacheLevel >= CacheMetadata (same gating as KeyRing/Stat).
+func (l *Link) Mode() uint32 {
+	if l.protonLink.Type != proton.LinkTypeFile {
+		return 0 // folders have no XAttr
+	}
+
+	l.cacheMu.RLock()
+	if l.cachedModeValid {
+		defer l.cacheMu.RUnlock()
+		return l.cachedMode
+	}
+	l.cacheMu.RUnlock()
+
+	l.cacheMu.Lock()
+	defer l.cacheMu.Unlock()
+	if l.cachedModeValid {
+		return l.cachedMode
+	}
+
+	mode := l.decryptMode()
+	if l.share != nil && l.share.MemoryCacheLevel >= api.CacheMetadata {
+		l.cachedMode = mode
+		l.cachedModeValid = true
+	}
+	return mode
+}
+
+// decryptMode decrypts the XAttr and extracts the Mode field.
+// Returns 0 on any error (non-fatal — use default permissions).
+func (l *Link) decryptMode() uint32 {
+	if l.protonLink.FileProperties == nil {
+		return 0
+	}
+	rev := &l.protonLink.FileProperties.ActiveRevision
+	if rev.XAttr == "" {
+		return 0
+	}
+
+	nodeKR, err := l.KeyRing()
+	if err != nil {
+		return 0
+	}
+
+	// Get address keyring for signature verification.
+	email := rev.SignatureEmail
+	addr, ok := l.resolver.AddressForEmail(email)
+	if !ok {
+		return 0
+	}
+	addrKR, ok := l.resolver.AddressKeyRing(addr.ID)
+	if !ok {
+		return 0
+	}
+
+	xattr, err := rev.GetDecXAttrString(addrKR, nodeKR)
+	if err != nil || xattr == nil {
+		return 0
+	}
+
+	return xattr.Mode
 }
 
 // getParentKeyRing returns the parent's keyring for decryption.
