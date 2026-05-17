@@ -170,6 +170,7 @@ func expandLocalRecursive(ctx context.Context, dc *drive.Client, src, dstBase *r
 // breadth-first TreeWalk.
 func expandProtonRecursive(ctx context.Context, dc *drive.Client, src, dstBase *resolvedEndpoint, opts cpOptions) ([]drive.CopyJob, []preserveEntry, error) {
 	var jobs []drive.CopyJob
+	var preserves []preserveEntry
 
 	results := make(chan drive.WalkEntry, 64)
 	var walkErr error
@@ -214,10 +215,20 @@ func expandProtonRecursive(ctx context.Context, dc *drive.Client, src, dstBase *
 			continue
 		}
 		jobs = append(jobs, *job)
+
+		// Collect preservation metadata for Proton→local.
+		if fileDst.pathType == PathLocal {
+			if m := entry.Link.Mode(); m != 0 {
+				preserves = append(preserves, preserveEntry{
+					dstPath: fileDst.localPath,
+					mode:    os.FileMode(m),
+				})
+			}
+		}
 	}
 
 	if walkErr != nil {
 		return jobs, nil, walkErr
 	}
-	return jobs, nil, nil
+	return jobs, preserves, nil
 }

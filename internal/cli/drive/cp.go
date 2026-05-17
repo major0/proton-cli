@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/ProtonMail/go-proton-api"
 	api "github.com/major0/proton-utils/api"
@@ -230,6 +231,14 @@ func runCp(cmd *cobra.Command, args []string) error {
 				mtime:   srcEp.localInfo.ModTime(),
 			})
 		}
+		if fileDst.pathType == PathLocal && srcEp.pathType == PathProton && srcEp.link != nil {
+			if m := srcEp.link.Mode(); m != 0 {
+				preserves = append(preserves, preserveEntry{
+					dstPath: fileDst.localPath,
+					mode:    os.FileMode(m),
+				})
+			}
+		}
 	}
 
 	if len(jobs) == 0 {
@@ -312,7 +321,9 @@ func buildCopyJob(ctx context.Context, dc *drive.Client, src, dst *resolvedEndpo
 				fh, err := dc.OverwriteFile(ctx, dst.share, dst.link)
 				if err == nil {
 					store := dc.InternalBlockStore()
-					job.Dst = drive.NewProtonWriter(fh, store, dc.Session)
+					pw := drive.NewProtonWriter(fh, store, dc.Session)
+					setProtonWriterMode(pw, src, opts)
+					job.Dst = pw
 					return &job, nil
 				}
 				// OverwriteFile failed (stale link, server-side
@@ -416,8 +427,27 @@ func buildCopyJob(ctx context.Context, dc *drive.Client, src, dst *resolvedEndpo
 			}
 		}
 		store := dc.InternalBlockStore()
-		job.Dst = drive.NewProtonWriter(fh, store, dc.Session)
+		pw := drive.NewProtonWriter(fh, store, dc.Session)
+		setProtonWriterMode(pw, src, opts)
+		job.Dst = pw
 	}
 
 	return &job, nil
+}
+
+// setProtonWriterMode sets the Unix permission bits on a ProtonWriter
+// when the source is a local file and --preserve=mode (or -a) is active.
+// When preserve is not active, Mode stays 0 (omitted from XAttr JSON).
+func setProtonWriterMode(pw *drive.ProtonWriter, src *resolvedEndpoint, opts cpOptions) {
+	if src.pathType != PathLocal {
+		return
+	}
+	preserve := parsePreserve(opts)
+	if !preserve.mode {
+		return
+	}
+	var stat syscall.Stat_t
+	if err := syscall.Lstat(src.localPath, &stat); err == nil {
+		pw.SetMode(stat.Mode & 0o7777)
+	}
 }

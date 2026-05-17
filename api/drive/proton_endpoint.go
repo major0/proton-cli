@@ -115,6 +115,7 @@ type ProtonWriter struct {
 	uploaded  map[int]uploadedBlock
 	totalSize int64
 	closed    bool // prevents double-commit
+	unixMode  uint32
 }
 
 // uploadedBlock holds the result of a single block upload.
@@ -171,6 +172,7 @@ func (w *ProtonWriter) uploadParams() uploadParams {
 		linkID:     w.linkID,
 		revisionID: w.revisionID,
 		sigAddr:    w.sigAddr,
+		unixMode:   w.unixMode,
 	}
 }
 
@@ -191,6 +193,14 @@ func (w *ProtonWriter) WriteBlock(ctx context.Context, index int, data []byte) e
 
 // Describe returns the link ID.
 func (w *ProtonWriter) Describe() string { return w.linkID }
+
+// SetMode sets the Unix permission bits to store in the revision XAttr.
+// Must be called before Close(). Zero means "don't store" (omitempty).
+func (w *ProtonWriter) SetMode(mode uint32) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.unixMode = mode
+}
 
 // Close commits the revision by signing the manifest and calling
 // UpdateRevision with block tokens, XAttr, and manifest signature.
