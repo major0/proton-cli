@@ -105,13 +105,59 @@ func (d *DispatchNode) Getattr(ctx context.Context, _ fs.FileHandle, out *fuse.A
 // For non-root nodes, returns success (no-op) — attribute changes like
 // chmod/chown are silently ignored since Proton Drive manages metadata
 // server-side. Truncation via O_TRUNC is handled in Open/Create, not here.
-// Note: ENOSYS is avoided because go-fuse caches it per-connection,
-// which would disable setattr for the entire filesystem.
-func (d *DispatchNode) Setattr(_ context.Context, _ fs.FileHandle, _ *fuse.SetAttrIn, _ *fuse.AttrOut) syscall.Errno {
+// Setattr handles chmod, truncate, utimes, and chown.
+// Chown is rejected with EPERM at the dispatch level.
+// Other operations are delegated to NodeSetattrer if the node supports it.
+// Nodes that don't implement NodeSetattrer get silent success (0).
+// ENOSYS is never returned — go-fuse caches it per-connection.
+func (d *DispatchNode) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, _ *fuse.AttrOut) syscall.Errno {
 	if d.isRoot {
 		return syscall.EPERM
 	}
-	return 0
+
+	if err := d.checkAccess(ctx); err != 0 {
+		return err
+	}
+
+	// Reject chown before delegation — Proton Drive has no ownership concept.
+	if in.Valid&(fuse.FATTR_UID|fuse.FATTR_GID) != 0 {
+		return syscall.EPERM
+	}
+
+	if d.node == nil {
+		return 0
+	}
+
+	setter, ok := d.node.(NodeSetattrer)
+	if !ok {
+		return 0 // silent success for nodes without setattr support
+	}
+
+	// Translate fuse.SetAttrIn → internal SetattrIn.
+	var sin SetattrIn
+	if in.Valid&fuse.FATTR_MODE != 0 {
+		sin.Valid |= SetattrMode
+		sin.Mode = in.Mode
+	}
+	if sz, ok := in.GetSize(); ok {
+		sin.Valid |= SetattrSize
+		sin.Size = sz
+	}
+	if mt, ok := in.GetMTime(); ok {
+		sin.Valid |= SetattrMtime
+		sin.Mtime = uint64(max(0, mt.Unix())) //nolint:gosec // mtime is never negative in practice
+	}
+
+	if sin.Valid == 0 {
+		return 0 // nothing to do
+	}
+
+	var handle FileHandle
+	if dfh, ok := f.(*dispatchFileHandle); ok {
+		handle = dfh.handle
+	}
+
+	return setter.Setattr(ctx, handle, &sin)
 }
 
 // Readdir returns directory entries, delegating to the handler or DirNode.
