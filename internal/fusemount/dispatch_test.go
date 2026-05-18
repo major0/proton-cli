@@ -434,16 +434,32 @@ func TestDispatchNodeSetattr_NamespaceRoot_ReturnsEPERM(t *testing.T) {
 }
 
 func TestDispatchNodeSetattr_ChildNode_ReturnsSuccess(t *testing.T) {
-	h := &mockHandler{}
-	n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}
-	d := &DispatchNode{handler: h, node: n, isRoot: false}
+	t.Run("node without NodeSetattrer returns 0", func(t *testing.T) {
+		h := &mockHandler{}
+		n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}
+		d := &DispatchNode{handler: h, node: n, isRoot: false}
 
-	var out fuse.AttrOut
-	in := fuse.SetAttrIn{}
-	errno := d.Setattr(context.Background(), nil, &in, &out)
-	if errno != 0 {
-		t.Errorf("Setattr on child node returned errno %d, want 0 (no-op success)", errno)
-	}
+		var out fuse.AttrOut
+		in := fuse.SetAttrIn{}
+		errno := d.Setattr(context.Background(), nil, &in, &out)
+		if errno != 0 {
+			t.Errorf("Setattr on child node returned errno %d, want 0 (no-op success)", errno)
+		}
+	})
+
+	t.Run("chown returns EPERM", func(t *testing.T) {
+		h := &mockHandler{}
+		n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}
+		d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+		var out fuse.AttrOut
+		in := fuse.SetAttrIn{}
+		in.Valid = fuse.FATTR_UID | fuse.FATTR_GID
+		errno := d.Setattr(context.Background(), nil, &in, &out)
+		if errno != syscall.EPERM {
+			t.Errorf("Setattr with chown returned errno %d, want EPERM (%d)", errno, syscall.EPERM)
+		}
+	})
 }
 
 func TestDispatchNodeGetattr_NamespaceRoot_SetsUidGid(t *testing.T) {
