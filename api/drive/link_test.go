@@ -36,8 +36,9 @@ func (m *mockLinkResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (m *mockLinkResolver) Throttle() *api.Throttle { return nil }
-func (m *mockLinkResolver) MaxWorkers() int         { return 1 }
+func (m *mockLinkResolver) Throttle() *api.Throttle                       { return nil }
+func (m *mockLinkResolver) MaxWorkers() int                               { return 1 }
+func (m *mockLinkResolver) FetchRevisionXAttr(_ context.Context, _ *Link) {}
 
 // TestDeriveKeyRing_ErrorContext_Property verifies that deriveKeyRing returns
 // an error wrapping ErrKeyNotFound that contains the signature email string
@@ -515,8 +516,9 @@ func (r *readdirResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (r *readdirResolver) Throttle() *api.Throttle { return nil }
-func (r *readdirResolver) MaxWorkers() int         { return 1 }
+func (r *readdirResolver) Throttle() *api.Throttle                       { return nil }
+func (r *readdirResolver) FetchRevisionXAttr(_ context.Context, _ *Link) {}
+func (r *readdirResolver) MaxWorkers() int                               { return 1 }
 
 // TestDotDotDotCorrectness_Property verifies that the first two entries
 // from Readdir have Link pointers equal to self and Parent() respectively.

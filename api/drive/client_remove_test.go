@@ -34,8 +34,9 @@ func (m *mockResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (m *mockResolver) Throttle() *api.Throttle { return nil }
-func (m *mockResolver) MaxWorkers() int         { return 1 }
+func (m *mockResolver) Throttle() *api.Throttle                             { return nil }
+func (m *mockResolver) MaxWorkers() int                                     { return 1 }
+func (m *mockResolver) FetchRevisionXAttr(_ context.Context, _ *drive.Link) {}
 
 // TestRemove_ShareRoot_Property verifies that Remove rejects share root
 // links for any RemoveOpts combination.
@@ -96,8 +97,9 @@ func (m *mockResolverWithChildren) AddressKeyRing(_ string) (*crypto.KeyRing, bo
 	return nil, false
 }
 
-func (m *mockResolverWithChildren) Throttle() *api.Throttle { return nil }
-func (m *mockResolverWithChildren) MaxWorkers() int         { return 1 }
+func (m *mockResolverWithChildren) Throttle() *api.Throttle                             { return nil }
+func (m *mockResolverWithChildren) MaxWorkers() int                                     { return 1 }
+func (m *mockResolverWithChildren) FetchRevisionXAttr(_ context.Context, _ *drive.Link) {}
 
 // TestRemove_NonRecursiveNonEmpty verifies that Remove returns ErrNotEmpty
 // for a non-empty folder when Recursive is false.

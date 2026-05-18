@@ -44,8 +44,9 @@ func (m *mockRemoveResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (m *mockRemoveResolver) Throttle() *api.Throttle { return nil }
-func (m *mockRemoveResolver) MaxWorkers() int         { return 1 }
+func (m *mockRemoveResolver) Throttle() *api.Throttle                       { return nil }
+func (m *mockRemoveResolver) MaxWorkers() int                               { return 1 }
+func (m *mockRemoveResolver) FetchRevisionXAttr(_ context.Context, _ *Link) {}
 
 // makeTestFolder creates a folder Link with a parent, backed by the
 // given resolver. Uses NewTestLink for test name overrides.

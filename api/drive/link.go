@@ -267,6 +267,15 @@ func (l *Link) Mode() uint32 {
 	return mode
 }
 
+// SetCachedMode updates the in-memory cached mode. Used after a
+// successful Chmod to reflect the change without re-decrypting XAttr.
+func (l *Link) SetCachedMode(mode uint32) {
+	l.cacheMu.Lock()
+	defer l.cacheMu.Unlock()
+	l.cachedMode = mode
+	l.cachedModeValid = true
+}
+
 // decryptMode decrypts the XAttr and extracts the Mode field.
 // Returns 0 on any error (non-fatal — use default permissions).
 func (l *Link) decryptMode() uint32 {

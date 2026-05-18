@@ -96,6 +96,11 @@ func (c *Client) addrKRForLink(l *Link) (*crypto.KeyRing, error) {
 	return nil, fmt.Errorf("addrKRForLink %s: %w", l.ProtonLink().SignatureEmail, api.ErrKeyNotFound)
 }
 
+// AddrKRForLink is the exported version of addrKRForLink.
+func (c *Client) AddrKRForLink(l *Link) (*crypto.KeyRing, error) {
+	return c.addrKRForLink(l)
+}
+
 // signatureAddress returns the signature email address for the link.
 // Returns an error if no address is available.
 func (c *Client) signatureAddress(l *Link) (string, error) {

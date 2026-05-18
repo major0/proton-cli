@@ -1441,8 +1441,9 @@ func (r *testResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (r *testResolver) Throttle() *apiPkg.Throttle { return nil }
-func (r *testResolver) MaxWorkers() int            { return 1 }
+func (r *testResolver) Throttle() *apiPkg.Throttle                          { return nil }
+func (r *testResolver) MaxWorkers() int                                     { return 1 }
+func (r *testResolver) FetchRevisionXAttr(_ context.Context, _ *drive.Link) {}
 
 // makeTestShare creates a test Share with a root link using the given resolver.
 func makeTestShare(resolver drive.LinkResolver) (*drive.Share, *drive.Link) {
@@ -2118,8 +2119,9 @@ func (r *errorResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (r *errorResolver) Throttle() *apiPkg.Throttle { return nil }
-func (r *errorResolver) MaxWorkers() int            { return 1 }
+func (r *errorResolver) Throttle() *apiPkg.Throttle                          { return nil }
+func (r *errorResolver) FetchRevisionXAttr(_ context.Context, _ *drive.Link) {}
+func (r *errorResolver) MaxWorkers() int                                     { return 1 }
 
 // TestCollectEntriesListChildrenError exercises the error path in collectEntries
 // when ListChildren fails (without -a flag).

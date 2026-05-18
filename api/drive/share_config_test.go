@@ -44,8 +44,9 @@ func (m *mockResolver) AddressForEmail(_ string) (proton.Address, bool) {
 func (m *mockResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
-func (m *mockResolver) Throttle() *api.Throttle { return nil }
-func (m *mockResolver) MaxWorkers() int         { return 1 }
+func (m *mockResolver) Throttle() *api.Throttle                       { return nil }
+func (m *mockResolver) MaxWorkers() int                               { return 1 }
+func (m *mockResolver) FetchRevisionXAttr(_ context.Context, _ *Link) {}
 
 func TestApplyShareConfig_MatchingName(t *testing.T) {
 	share := testShare("MyFolder", proton.ShareTypeStandard)

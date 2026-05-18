@@ -42,8 +42,9 @@ func (m *walkResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (m *walkResolver) Throttle() *api.Throttle { return nil }
-func (m *walkResolver) MaxWorkers() int         { return 1 }
+func (m *walkResolver) Throttle() *api.Throttle                             { return nil }
+func (m *walkResolver) MaxWorkers() int                                     { return 1 }
+func (m *walkResolver) FetchRevisionXAttr(_ context.Context, _ *drive.Link) {}
 
 // treeNode describes a node in a generated test tree.
 type treeNode struct {

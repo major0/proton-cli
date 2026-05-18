@@ -304,8 +304,9 @@ func (r *childResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (r *childResolver) Throttle() *api.Throttle { return nil }
-func (r *childResolver) MaxWorkers() int         { return 1 }
+func (r *childResolver) Throttle() *api.Throttle                             { return nil }
+func (r *childResolver) MaxWorkers() int                                     { return 1 }
+func (r *childResolver) FetchRevisionXAttr(_ context.Context, _ *drive.Link) {}
 
 // TestPropertyDirNodeChildOps verifies that for any directory node wrapping
 // a link with an arbitrary set of children (mix of files and folders),
@@ -553,8 +554,9 @@ func (r *errorResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (r *errorResolver) Throttle() *api.Throttle { return nil }
-func (r *errorResolver) MaxWorkers() int         { return 1 }
+func (r *errorResolver) Throttle() *api.Throttle                             { return nil }
+func (r *errorResolver) FetchRevisionXAttr(_ context.Context, _ *drive.Link) {}
+func (r *errorResolver) MaxWorkers() int                                     { return 1 }
 
 // TestPropertyAPIErrorMapping verifies that for any API error returned by
 // the drive client during child listing, the handler returns syscall.EIO
@@ -751,8 +753,9 @@ func (r *decryptFailResolver) AddressKeyRing(_ string) (*crypto.KeyRing, bool) {
 	return nil, false
 }
 
-func (r *decryptFailResolver) Throttle() *api.Throttle { return nil }
-func (r *decryptFailResolver) MaxWorkers() int         { return 1 }
+func (r *decryptFailResolver) FetchRevisionXAttr(_ context.Context, _ *drive.Link) {}
+func (r *decryptFailResolver) Throttle() *api.Throttle                             { return nil }
+func (r *decryptFailResolver) MaxWorkers() int                                     { return 1 }
 
 // failingNameShare creates a *drive.Share where GetName() returns an error.
 // The root link has no testName set, so Name() falls through to real

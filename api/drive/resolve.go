@@ -35,4 +35,9 @@ type LinkResolver interface {
 
 	// MaxWorkers returns the concurrency limit for parallel operations.
 	MaxWorkers() int
+
+	// FetchRevisionXAttr fetches the full revision for a file link and
+	// populates the ActiveRevision.XAttr field on the proton.Link.
+	// No-op for folders or links without an active revision.
+	FetchRevisionXAttr(ctx context.Context, link *Link)
 }
