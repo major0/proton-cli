@@ -575,6 +575,7 @@ var _ fusemount.NodeWriter = (*FileNode)(nil)
 var _ fusemount.NodeFsyncer = (*FileNode)(nil)
 var _ fusemount.NodeFlusher = (*FileNode)(nil)
 var _ fusemount.NodeReleaser = (*FileNode)(nil)
+var _ fusemount.NodeSetattrer = (*FileNode)(nil)
 
 // fdHandle wraps a *drive.FileDescriptor as a fusemount.FileHandle.
 type fdHandle struct {
@@ -599,6 +600,30 @@ func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 		Mtime: uint64(n.link.ModifyTime()),
 		Ctime: uint64(n.link.CreateTime()),
 	}, 0
+}
+
+// Setattr handles truncate (via open write FD). Chmod and utimes are
+// silent no-ops — mode persistence is deferred to a future spec.
+func (n *FileNode) Setattr(_ context.Context, fh fusemount.FileHandle, in *fusemount.SetattrIn) syscall.Errno {
+	// Truncate: only works with an open write-mode FD.
+	if in.Valid&fusemount.SetattrSize != 0 {
+		h, ok := fh.(*fdHandle)
+		if !ok || h == nil {
+			// No write FD — path-based truncate is not supported.
+			// Return success (no-op) to avoid breaking tools.
+			return 0
+		}
+		if err := h.fd.Truncate(int64(in.Size)); err != nil { //nolint:gosec // size from kernel setattr is non-negative
+			slog.Debug("FileNode.Setattr: truncate failed",
+				"linkID", n.link.LinkID(), "error", err)
+			return syscall.EIO
+		}
+	}
+
+	// Mode and Mtime: silent no-ops (return 0 without server call).
+	// Future specs will implement persistence via XAttr revision commit.
+
+	return 0
 }
 
 // Open creates a FileDescriptor for reading or writing depending on flags.
