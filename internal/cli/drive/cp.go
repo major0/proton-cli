@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/ProtonMail/go-proton-api"
 	api "github.com/major0/proton-utils/api"
@@ -433,21 +432,4 @@ func buildCopyJob(ctx context.Context, dc *drive.Client, src, dst *resolvedEndpo
 	}
 
 	return &job, nil
-}
-
-// setProtonWriterMode sets the Unix permission bits on a ProtonWriter
-// when the source is a local file and --preserve=mode (or -a) is active.
-// When preserve is not active, Mode stays 0 (omitted from XAttr JSON).
-func setProtonWriterMode(pw *drive.ProtonWriter, src *resolvedEndpoint, opts cpOptions) {
-	if src.pathType != PathLocal {
-		return
-	}
-	preserve := parsePreserve(opts)
-	if !preserve.mode {
-		return
-	}
-	var stat syscall.Stat_t
-	if err := syscall.Lstat(src.localPath, &stat); err == nil {
-		pw.SetMode(stat.Mode & 0o7777)
-	}
 }
